@@ -1,133 +1,128 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
+import os
+from dotenv import load_dotenv
 
-# ==========================================
-# 1. KONFIGURASI HALAMAN
-# ==========================================
-st.set_page_config(
-    page_title="Dashboard Harga Shipyard",
-    page_icon="🚢",
-    layout="wide",
-    initial_sidebar_state="collapsed" # Sengaja di-collapse biar layar tabel makin lega
-)
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="Katalog Harga Docking", page_icon="🚢", layout="wide")
 
-# ==========================================
-# 2. SISTEM KEAMANAN (PASSWORD GATE)
-# ==========================================
-def check_password():
-    def password_entered():
-        if st.session_state["password"] == st.secrets["APP_PIN"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
+# Load environment variables (.env)
+load_dotenv()
 
-    if "password_correct" not in st.session_state:
-        st.text_input("🔒 Masukkan PIN Dashboard", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("🔒 Masukkan PIN Dashboard", type="password", on_change=password_entered, key="password")
-        st.error("❌ PIN salah. Silakan coba lagi.")
-        return False
-    else:
-        return True
-
-# ==========================================
-# 3. KONEKSI & CACHING DATABASE
-# ==========================================
+# --- KONEKSI DATABASE ---
 @st.cache_resource
 def init_connection():
-    return create_engine(st.secrets["SUPABASE_URL"])
+    # Pastikan nama variabel di .env lu adalah SUPABASE_URL
+    db_url = os.getenv("SUPABASE_URL") 
+    engine = create_engine(db_url)
+    return engine
 
-@st.cache_data(ttl="1d")
-def fetch_all_data():
-    engine = init_connection()
-    try:
-        # Nanti saat tabel benar-benar ada di Supabase, query ini akan berjalan mulus
-        df = pd.read_sql("SELECT * FROM tabel_katalog_harga", engine)
-        return df
-    except Exception as e:
-        return pd.DataFrame() # Return DF kosong kalau belum ada data
+engine = init_connection()
 
-# ==========================================
-# 4. ANTARMUKA UTAMA (MAIN APP)
-# ==========================================
-def main():
-    if not check_password():
-        st.stop()
+# --- LOAD DATA ---
+@st.cache_data(ttl=600)
+def load_data():
+    # Query disesuaikan dengan skema tabel terbaru
+    query = """
+    SELECT 
+        id, nama_perusahaan, nama_kapal, tahun, 
+        kategori_pekerjaan, uraian_pekerjaan, 
+        volume_satuan, harga_satuan
+    FROM tabel_katalog_harga
+    ORDER BY nama_kapal, id
+    """
+    df = pd.read_sql(query, engine)
+    return df
 
-    df = fetch_all_data()
+try:
+    df_raw = load_data()
+except Exception as e:
+    st.error(f"❌ Gagal nyambung ke database. Cek lagi URL Supabase lu. Error: {e}")
+    st.stop()
 
-    if df.empty:
-        st.warning("⚠️ Data belum tersedia. Silakan jalankan script ETL terlebih dahulu.")
-        st.stop()
+# --- SIDEBAR: FILTERING ---
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/984/984233.png", width=100) # Logo kapal
+st.sidebar.header("🔍 Filter Katalog")
 
-    # --- HEADER & PENCARIAN (Mirip Referensi UI) ---
-    header_col1, header_col2 = st.columns([3, 1])
-    
-    with header_col1:
-        st.title("🚢 Katalog Harga Pekerjaan")
-        
-    with header_col2:
-        st.write("") # Kasih jarak sedikit biar pas di tengah
-        st.write("")
-        # Search bar di kanan atas, label disembunyikan biar clean
-        cari_item = st.text_input("Pencarian", placeholder="🔎 Cari uraian pekerjaan...", label_visibility="collapsed")
+# Filter Klien / Perusahaan
+list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
+filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
 
-    st.divider()
+# Filter Kapal (Dinikinkan bergantung pada Klien yang dipilih)
+if filter_perusahaan != "Semua":
+    df_filtered_kapal = df_raw[df_raw['nama_perusahaan'] == filter_perusahaan]
+else:
+    df_filtered_kapal = df_raw
 
-    # --- FILTER BERJENJANG (Di atas tabel) ---
-    st.markdown("**Filter Data**")
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
+list_kapal = ["Semua"] + list(df_filtered_kapal['nama_kapal'].dropna().unique())
+filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
 
-    with filter_col1:
-        list_perusahaan = ["Semua"] + list(df['nama_perusahaan'].dropna().unique())
-        pilih_perusahaan = st.selectbox("🏢 Perusahaan", list_perusahaan, label_visibility="collapsed")
+# Filter Tahun
+list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
+filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
 
-    with filter_col2:
-        if pilih_perusahaan != "Semua":
-            df_filter_kapal = df[df['nama_perusahaan'] == pilih_perusahaan]
-        else:
-            df_filter_kapal = df
-        list_kapal = ["Semua"] + list(df_filter_kapal['nama_kapal'].dropna().unique())
-        pilih_kapal = st.selectbox("⛴️ Kapal", list_kapal, label_visibility="collapsed")
+# Filter Kategori Pekerjaan
+list_kategori = ["Semua"] + list(df_raw['kategori_pekerjaan'].dropna().unique())
+filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
 
-    with filter_col3:
-        list_tahun = ["Semua"] + list(df['tahun'].dropna().astype(str).unique())
-        pilih_tahun = st.selectbox("📅 Tahun", list_tahun, label_visibility="collapsed")
+# PENCARIAN TEKS (Search Bar)
+search_query = st.sidebar.text_input("🔎 Cari Uraian Pekerjaan...", "")
 
-    # --- LOGIKA FILTERING ---
-    df_hasil = df.copy()
+# --- TERAPKAN FILTER ---
+df_final = df_raw.copy()
+if filter_perusahaan != "Semua":
+    df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
+if filter_kapal != "Semua":
+    df_final = df_final[df_final['nama_kapal'] == filter_kapal]
+if filter_tahun != "Semua":
+    df_final = df_final[df_final['tahun'] == filter_tahun]
+if filter_kategori != "Semua":
+    df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
+if search_query:
+    # Filter pencarian teks case-insensitive
+    df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
-    if pilih_perusahaan != "Semua":
-        df_hasil = df_hasil[df_hasil['nama_perusahaan'] == pilih_perusahaan]
-    if pilih_kapal != "Semua":
-        df_hasil = df_hasil[df_hasil['nama_kapal'] == pilih_kapal]
-    if pilih_tahun != "Semua":
-        df_hasil = df_hasil[df_hasil['tahun'].astype(str) == str(pilih_tahun)]
-    if cari_item:
-        df_hasil = df_hasil[df_hasil['uraian_pekerjaan'].str.contains(cari_item, case=False, na=False)]
+# --- MAIN DASHBOARD ---
+st.title("🚢 Katalog Harga Satuan Docking")
+st.markdown("Database referensi historis harga satuan pekerjaan galangan kapal.")
 
-    # --- AREA TABEL DATA ---
-    st.markdown(f"*Menampilkan **{len(df_hasil)}** baris data*")
+# --- KPI / SUMMARY ---
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric(label="Total Item Pekerjaan", value=f"{len(df_final)} Item")
+with col2:
+    # Mengubah Rata-rata Harga Satuan menjadi Total Perusahaan
+    total_perusahaan = df_final['nama_perusahaan'].nunique()
+    st.metric(label="Total Perusahaan", value=f"{total_perusahaan} Klien")
+with col3:
+    total_kapal = df_final['nama_kapal'].nunique()
+    st.metric(label="Total Kapal Direferensikan", value=f"{total_kapal} Kapal")
 
-    if not df_hasil.empty:
-        df_tampil = df_hasil[[
-            'tahun', 'nama_perusahaan', 'nama_kapal', 
-            'kategori_pekerjaan', 'uraian_pekerjaan', 
-            'volume_qty', 'satuan', 'harga_satuan'
-        ]].copy()
-        
-        # Tampilkan tabel yang membentang penuh (width=True) tanpa index nomor di kiri
-        st.dataframe(
-            df_tampil,
-            use_container_width=True,
-            hide_index=True,
-            height=500 # Kunci tinggi tabel biar bisa di-scroll dengan rapi di dalam kotaknya
-        )
-    else:
-        st.info("💡 Tidak ada data yang cocok dengan kriteria filter Anda.")
+st.divider()
 
-if __name__ == "__main__":
-    main()
+# --- DATA TABEL UTAMA ---
+st.subheader("📋 Detail Uraian Harga")
+
+if df_final.empty:
+    st.warning("Data tidak ditemukan. Coba ubah filter di sebelah kiri.")
+else:
+    # Rapikan nama kolom untuk tampilan UI biar enak dibaca
+    df_tampil = df_final.copy()
+    df_tampil.columns = [
+        'ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 
+        'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan (Rp)'
+    ]
+
+    # Format angka ke Rupiah dengan pemisah ribuan koma
+    df_tampil['Harga Satuan (Rp)'] = df_tampil['Harga Satuan (Rp)'].apply(
+        lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-"
+    )
+
+    # Tampilkan tabel interaktif
+    st.dataframe(
+        df_tampil,
+        use_container_width=True,
+        hide_index=True,
+        height=500
+    )
