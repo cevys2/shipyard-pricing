@@ -67,14 +67,21 @@ st.sidebar.header("🔍 Filter Katalog")
 list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
 filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
 
-# Filter Kapal (Dinikinkan bergantung pada Klien yang dipilih)
+# Filter Kapal (Dinamis bergantung pada Klien yang dipilih)
 if filter_perusahaan != "Semua":
     df_filtered_kapal = df_raw[df_raw['nama_perusahaan'] == filter_perusahaan]
 else:
     df_filtered_kapal = df_raw
 
 list_kapal = ["Semua"] + list(df_filtered_kapal['nama_kapal'].dropna().unique())
-filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
+
+# 🛡️ TAMBAHAN KUNCI DINAMIS DI SINI 🛡️
+# Kita bikin 'key' yang berubah tiap kali perusahaannya berubah
+filter_kapal = st.sidebar.selectbox(
+    "⛴️ Nama Kapal", 
+    list_kapal,
+    key=f"filter_kapal_{filter_perusahaan}" 
+)
 
 # Filter Tahun
 list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
