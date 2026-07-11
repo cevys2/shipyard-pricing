@@ -33,6 +33,15 @@ def load_data():
     ORDER BY nama_kapal, id
     """
     df = pd.read_sql(query, engine)
+    
+    # 🛡️ TAMBAHAN DARURAT ANTI-ERROR BEDA LAPTOP 🛡️
+    # Paksa semua kolom yang mau difilter jadi string dan hilangkan NaN
+    df['nama_perusahaan'] = df['nama_perusahaan'].fillna('TIDAK DIKETAHUI').astype(str)
+    df['nama_kapal'] = df['nama_kapal'].fillna('TIDAK DIKETAHUI').astype(str)
+    df['tahun'] = df['tahun'].fillna('-').astype(str)
+    df['kategori_pekerjaan'] = df['kategori_pekerjaan'].fillna('-').astype(str)
+    df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
+    
     return df
 
 try:
