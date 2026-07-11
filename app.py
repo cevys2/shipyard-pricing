@@ -13,8 +13,17 @@ load_dotenv()
 # --- KONEKSI DATABASE ---
 @st.cache_resource
 def init_connection():
-    # Pastikan nama variabel di .env lu adalah SUPABASE_URL
-    db_url = os.getenv("SUPABASE_URL") 
+    # Coba ambil dari environment/env lokal dulu
+    db_url = os.getenv("SUPABASE_URL")
+    
+    # Kalau kosong (biasanya pas di cloud), ambil dari Streamlit Secrets
+    if not db_url:
+        try:
+            db_url = st.secrets["SUPABASE_URL"]
+        except FileNotFoundError:
+            st.error("URL Database tidak ditemukan! Pastikan sudah set Secrets di Streamlit Cloud.")
+            st.stop()
+            
     engine = create_engine(db_url)
     return engine
 
