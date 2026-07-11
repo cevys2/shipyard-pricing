@@ -7,16 +7,14 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Katalog Harga Docking", page_icon="🚢", layout="wide")
 load_dotenv()
 
-# --- STYLING CSS CUSTOM ---
+# --- STYLING CSS CUSTOM (BERSIH & NATIVE) ---
 st.markdown("""
     <style>
-    [data-testid="stSidebar"] { background-color: #1a64bc !important; }
-    [data-testid="stSidebar"] * { color: white !important; }
-    .stApp { background-color: #f4f7f6; }
+    /* Mengurangi jarak kosong berlebih di atas layar */
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
     
-    /* Styling tombol khusus di sidebar agar teksnya tetap biru */
-    div[data-testid="stSidebar"] button { color: #1a64bc !important; font-weight: bold; }
+    /* Mempercantik tombol export/import biar seragam */
+    .stButton > button { font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -72,10 +70,10 @@ except Exception as e:
     st.error(f"❌ Gagal mengambil data dari database. Error: {e}")
     st.stop()
 
-# --- SIDEBAR: KEMBALINYA SANG PENYARING ---
+# --- SIDEBAR: PENYARING DATA BERSAHABAT DENGAN TEMA ---
 st.sidebar.markdown("### 🔍 Filter Data")
 
-search_query = st.sidebar.text_input("🔎 Cari Uraian Pekerjaan...", placeholder="Contoh: Plat, Pipa...")
+search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 
 list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
 filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
@@ -110,7 +108,7 @@ if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(s
 df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'jenis_perjanjian', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
 df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Jenis Perjanjian', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
 
-# --- TABEL UTAMA & EDITOR (INLINE EDITING) ---
+# --- TABEL UTAMA & EDITOR ---
 if df_final.empty:
     st.warning("⚠️ Data tidak ditemukan. Silakan ubah filter di sidebar.")
 else:
@@ -124,10 +122,9 @@ else:
     with tab2:
         st.info("💡 **Cara Edit:** Klik ganda pada sel untuk mengubah data. **Cara Tambah Data:** Scroll ke baris paling bawah, klik baris yang kosong/pudar, lalu ketik data baru.")
         
-        # Fitur data_editor dengan num_rows="dynamic" memungkinkan inline ngetik nambah baris
         edited_df = st.data_editor(
             df_tampil,
-            num_rows="dynamic", # Kunci utama biar bisa nambah row manual dengan ngetik
+            num_rows="dynamic", 
             width="stretch",
             height=550,
             hide_index=True,
@@ -135,4 +132,4 @@ else:
         )
         
         if st.button("💾 Simpan Perubahan Langsung", type="primary"):
-            st.success("Tampilan Edit berhasil! Nanti kita hubungkan data hasil editan ini (edited_df) ke database Supabase biar tersimpan permanen.")
+            st.success("Tampilan Edit berhasil! Nanti kita hubungkan data hasil editan ini ke database Supabase biar tersimpan permanen.")
