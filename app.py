@@ -4,34 +4,41 @@ import os
 from dotenv import load_dotenv
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Katalog Harga Docking", page_icon="🚢", layout="wide")
+st.set_page_config(page_title="Dukuh Raya Maintenance", page_icon="🚢", layout="wide")
 load_dotenv()
 
-# --- STYLING CSS CUSTOM (BERSIH & NATIVE) ---
+# --- STYLING CSS CUSTOM (COMPACT & NATIVE) ---
 st.markdown("""
     <style>
-    /* Mengurangi jarak kosong berlebih di atas layar */
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    /* Mengurangi jarak kosong di atas layar biar tabel makin naik */
+    .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
     
-    /* Mempercantik tombol export/import biar seragam */
-    .stButton > button { font-weight: bold; }
+    /* Styling untuk Mini Card KPI */
+    .mini-card {
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 15px;
+        background-color: transparent;
+    }
+    .mc-title {
+        font-size: 11px;
+        color: #888;
+        font-weight: bold;
+        text-transform: uppercase;
+        margin-bottom: 0px;
+    }
+    .mc-val {
+        font-size: 20px;
+        font-weight: 800;
+        margin-top: 0px;
+        margin-bottom: 0px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER & TOMBOL EXPORT/IMPORT ---
-header_col1, header_col2 = st.columns([3, 1])
-with header_col1:
-    st.markdown("<h2 style='margin-bottom:0px; color:#1a64bc;'>Analisis Harga Satuan Docking</h2>", unsafe_allow_html=True)
-with header_col2:
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        st.button("📥 Import Excel", width="stretch")
-    with btn_col2:
-        st.button("📤 Export CSV", type="primary", width="stretch")
-
-st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
-
 # --- LOAD DATA PURE PYTHON (ANTI-SEGFAULT) ---
+@st.cache_data(ttl=600)
 def load_data():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
     
@@ -67,10 +74,54 @@ def load_data():
 try:
     df_raw = load_data()
 except Exception as e:
-    st.error(f"❌ Gagal mengambil data dari database. Error: {e}")
+    st.error(f"❌ Gagal mengambil data. Error: {e}")
     st.stop()
 
-# --- SIDEBAR: PENYARING DATA BERSAHABAT DENGAN TEMA ---
+# --- HEADER COMPACT ---
+header_col1, header_col2 = st.columns([3, 1])
+with header_col1:
+    # Judul diganti dan ukurannya dikecilin (pakai h3/h4)
+    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc;'>Dukuh Raya Maintenance Pricing</h3>", unsafe_allow_html=True)
+with header_col2:
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        st.button("📥 Import", width="stretch")
+    with btn_col2:
+        st.button("📤 Export", type="primary", width="stretch")
+
+# --- MINI CARDS KPI BERWARNA ---
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.markdown(f"""
+        <div class="mini-card" style="border-left: 4px solid #1f77b4;">
+            <p class="mc-title">📋 Total Item Pekerjaan</p>
+            <p class="mc-val">{len(df_raw)}</p>
+        </div>
+    """, unsafe_allow_html=True)
+with c2:
+    st.markdown(f"""
+        <div class="mini-card" style="border-left: 4px solid #28a745;">
+            <p class="mc-title">🏢 Total Klien</p>
+            <p class="mc-val">{df_raw['nama_perusahaan'].nunique()}</p>
+        </div>
+    """, unsafe_allow_html=True)
+with c3:
+    st.markdown(f"""
+        <div class="mini-card" style="border-left: 4px solid #ffc107;">
+            <p class="mc-title">⛴️ Kapal Direferensikan</p>
+            <p class="mc-val">{df_raw['nama_kapal'].nunique()}</p>
+        </div>
+    """, unsafe_allow_html=True)
+with c4:
+    st.markdown(f"""
+        <div class="mini-card" style="border-left: 4px solid #dc3545;">
+            <p class="mc-title">📅 Tahun Referensi</p>
+            <p class="mc-val">{df_raw['tahun'].nunique()}</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- SIDEBAR: PENYARING DATA ---
 st.sidebar.markdown("### 🔍 Filter Data")
 
 search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
@@ -117,19 +168,20 @@ else:
     with tab1:
         df_view = df_tampil.copy()
         df_view['Harga Satuan'] = df_view['Harga Satuan'].apply(lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-")
-        st.dataframe(df_view, width="stretch", hide_index=True, height=600)
+        # Tinggi tabel dimaksimalkan karena header udah kecil
+        st.dataframe(df_view, width="stretch", hide_index=True, height=650)
         
     with tab2:
-        st.info("💡 **Cara Edit:** Klik ganda pada sel untuk mengubah data. **Cara Tambah Data:** Scroll ke baris paling bawah, klik baris yang kosong/pudar, lalu ketik data baru.")
+        st.info("💡 **Cara Edit:** Klik ganda pada sel. **Cara Tambah Data:** Scroll ke baris paling bawah dan ketik di baris kosong.")
         
         edited_df = st.data_editor(
             df_tampil,
             num_rows="dynamic", 
             width="stretch",
-            height=550,
+            height=600,
             hide_index=True,
             key="tabel_editor"
         )
         
         if st.button("💾 Simpan Perubahan Langsung", type="primary"):
-            st.success("Tampilan Edit berhasil! Nanti kita hubungkan data hasil editan ini ke database Supabase biar tersimpan permanen.")
+            st.success("Tampilan Edit berhasil! Backend akan dihubungkan di fase berikutnya.")
