@@ -24,7 +24,12 @@ def init_connection():
             st.error("URL Database tidak ditemukan! Pastikan sudah set Secrets di Streamlit Cloud.")
             st.stop()
             
-    engine = create_engine(db_url)
+    # 🛡️ TAMBAHAN ANTI-PUTUS KONEKSI (THE LIFESAVER) 🛡️
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,  # Ngecek koneksi masih hidup atau nggak sebelum query
+        pool_recycle=300,    # Refresh/restart koneksi tiap 5 menit biar nggak diputus sepihak
+    )
     return engine
 
 engine = init_connection()
