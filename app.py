@@ -13,14 +13,10 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #1a64bc !important; }
     [data-testid="stSidebar"] * { color: white !important; }
     .stApp { background-color: #f4f7f6; }
-    .filter-banner {
-        background-color: #1a64bc;
-        padding: 15px;
-        border-radius: 8px 8px 0px 0px;
-        color: white;
-        font-weight: bold;
-    }
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    
+    /* Styling tombol khusus di sidebar agar teksnya tetap biru */
+    div[data-testid="stSidebar"] button { color: #1a64bc !important; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -31,18 +27,11 @@ with header_col1:
 with header_col2:
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
-        # Mengganti use_container_width dengan width='stretch' sesuai log error
-        st.button("📥 Import", width="stretch")
+        st.button("📥 Import Excel", width="stretch")
     with btn_col2:
-        st.button("📤 Export", type="primary", width="stretch")
+        st.button("📤 Export CSV", type="primary", width="stretch")
 
-st.markdown("<br>", unsafe_allow_html=True)
-
-# --- SIDEBAR NAVIGASI ---
-st.sidebar.markdown("### ⚙️ Menu Navigasi")
-st.sidebar.markdown("📁 Laporan")
-st.sidebar.markdown("📊 Analisis Harga")
-st.sidebar.markdown("👥 Manajemen Pengguna")
+st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
 
 # --- LOAD DATA PURE PYTHON (ANTI-SEGFAULT) ---
 def load_data():
@@ -52,8 +41,6 @@ def load_data():
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
-    # SUNTIKAN PURE PYTHON DRIVER (pg8000)
-    # Ini yang akan mencegah mesin Streamlit Cloud mengalami Segmentation Fault
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
@@ -85,30 +72,37 @@ except Exception as e:
     st.error(f"❌ Gagal mengambil data dari database. Error: {e}")
     st.stop()
 
-# --- FILTER HORIZONTAL ---
-st.markdown('<div class="filter-banner">Pencarian & Filter Data</div>', unsafe_allow_html=True)
-f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
+# --- SIDEBAR: KEMBALINYA SANG PENYARING ---
+st.sidebar.markdown("### 🔍 Filter Data")
 
-with f_col1:
-    search_query = st.text_input("Cari Pekerjaan", placeholder="Ketik di sini...")
-with f_col2:
-    list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
-    filter_perusahaan = st.selectbox("Klien / Pemilik", list_perusahaan)
-with f_col3:
-    df_filtered_kapal = df_raw[df_raw['nama_perusahaan'] == filter_perusahaan] if filter_perusahaan != "Semua" else df_raw
-    list_kapal = ["Semua"] + list(df_filtered_kapal['nama_kapal'].dropna().unique())
-    filter_kapal = st.selectbox("Nama Kapal", list_kapal, key=f"kapal_{filter_perusahaan}")
-with f_col4:
-    list_kategori = ["Semua"] + list(df_raw['kategori_pekerjaan'].dropna().unique())
-    filter_kategori = st.selectbox("Kategori", list_kategori)
-with f_col5:
-    list_perjanjian = ["Semua"] + list(df_raw['jenis_perjanjian'].dropna().unique())
-    filter_perjanjian = st.selectbox("Jenis Perjanjian", list_perjanjian)
+search_query = st.sidebar.text_input("🔎 Cari Uraian Pekerjaan...", placeholder="Contoh: Plat, Pipa...")
+
+list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
+filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
+
+df_filtered_kapal = df_raw[df_raw['nama_perusahaan'] == filter_perusahaan] if filter_perusahaan != "Semua" else df_raw
+list_kapal = ["Semua"] + list(df_filtered_kapal['nama_kapal'].dropna().unique())
+filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal, key=f"kapal_{filter_perusahaan}")
+
+list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
+filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
+
+list_perjanjian = ["Semua"] + list(df_raw['jenis_perjanjian'].dropna().unique())
+filter_perjanjian = st.sidebar.selectbox("📄 Jenis Perjanjian", list_perjanjian)
+
+list_kategori = ["Semua"] + list(df_raw['kategori_pekerjaan'].dropna().unique())
+filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚙️ Menu Tambahan")
+st.sidebar.markdown("📁 Laporan Lengkap")
+st.sidebar.markdown("👥 Kelola Akses")
 
 # --- TERAPKAN FILTER ---
 df_final = df_raw.copy()
 if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
 if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
+if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
 if filter_perjanjian != "Semua": df_final = df_final[df_final['jenis_perjanjian'] == filter_perjanjian]
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
@@ -116,27 +110,29 @@ if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(s
 df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'jenis_perjanjian', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
 df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Jenis Perjanjian', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
 
-# --- TABEL UTAMA & EDITOR ---
+# --- TABEL UTAMA & EDITOR (INLINE EDITING) ---
 if df_final.empty:
-    st.warning("⚠️ Data tidak ditemukan.")
+    st.warning("⚠️ Data tidak ditemukan. Silakan ubah filter di sidebar.")
 else:
-    tab1, tab2 = st.tabs(["👁️ View Data", "✏️ Mode Edit"])
+    tab1, tab2 = st.tabs(["👁️ View Data", "✏️ Mode Edit (Ketik Langsung)"])
     
     with tab1:
         df_view = df_tampil.copy()
         df_view['Harga Satuan'] = df_view['Harga Satuan'].apply(lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-")
-        # Fix parameter width
         st.dataframe(df_view, width="stretch", hide_index=True, height=600)
         
     with tab2:
+        st.info("💡 **Cara Edit:** Klik ganda pada sel untuk mengubah data. **Cara Tambah Data:** Scroll ke baris paling bawah, klik baris yang kosong/pudar, lalu ketik data baru.")
+        
+        # Fitur data_editor dengan num_rows="dynamic" memungkinkan inline ngetik nambah baris
         edited_df = st.data_editor(
             df_tampil,
-            num_rows="dynamic",
+            num_rows="dynamic", # Kunci utama biar bisa nambah row manual dengan ngetik
             width="stretch",
             height=550,
             hide_index=True,
             key="tabel_editor"
         )
         
-        if st.button("💾 Simpan Perubahan", type="primary"):
-            st.info("UI Edit aktif. Hubungkan backend di fase berikutnya.")
+        if st.button("💾 Simpan Perubahan Langsung", type="primary"):
+            st.success("Tampilan Edit berhasil! Nanti kita hubungkan data hasil editan ini (edited_df) ke database Supabase biar tersimpan permanen.")
