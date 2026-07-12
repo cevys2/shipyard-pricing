@@ -10,10 +10,12 @@ load_dotenv()
 # --- STYLING CSS CUSTOM (COMPACT & NATIVE) ---
 st.markdown("""
     <style>
-    /* Mengurangi jarak kosong di atas layar biar tabel makin naik */
+    [data-testid="stSidebar"] { background-color: #1a64bc !important; }
+    [data-testid="stSidebar"] * { color: white !important; }
+    .stApp { background-color: #f4f7f6; }
     .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    div[data-testid="stSidebar"] button { color: #1a64bc !important; font-weight: bold; }
     
-    /* Styling untuk Mini Card KPI */
     .mini-card {
         border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 6px;
@@ -21,21 +23,21 @@ st.markdown("""
         margin-bottom: 15px;
         background-color: transparent;
     }
-    .mc-title {
-        font-size: 11px;
-        color: #888;
-        font-weight: bold;
-        text-transform: uppercase;
-        margin-bottom: 0px;
-    }
-    .mc-val {
-        font-size: 20px;
-        font-weight: 800;
-        margin-top: 0px;
-        margin-bottom: 0px;
-    }
+    .mc-title { font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase; margin-bottom: 0px; }
+    .mc-val { font-size: 20px; font-weight: 800; margin-top: 0px; margin-bottom: 0px; }
     </style>
 """, unsafe_allow_html=True)
+
+# --- HEADER COMPACT ---
+header_col1, header_col2 = st.columns([3, 1])
+with header_col1:
+    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc;'>Dukuh Raya Maintenance Pricing</h3>", unsafe_allow_html=True)
+with header_col2:
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        st.button("📥 Import", width="stretch")
+    with btn_col2:
+        st.button("📤 Export", type="primary", width="stretch")
 
 # --- LOAD DATA PURE PYTHON (ANTI-SEGFAULT) ---
 @st.cache_data(ttl=600)
@@ -77,53 +79,20 @@ except Exception as e:
     st.error(f"❌ Gagal mengambil data. Error: {e}")
     st.stop()
 
-# --- HEADER COMPACT ---
-header_col1, header_col2 = st.columns([3, 1])
-with header_col1:
-    # Judul diganti dan ukurannya dikecilin (pakai h3/h4)
-    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc;'>Dukuh Raya Maintenance Pricing</h3>", unsafe_allow_html=True)
-with header_col2:
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        st.button("📥 Import", width="stretch")
-    with btn_col2:
-        st.button("📤 Export", type="primary", width="stretch")
-
 # --- MINI CARDS KPI BERWARNA ---
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    st.markdown(f"""
-        <div class="mini-card" style="border-left: 4px solid #1f77b4;">
-            <p class="mc-title">📋 Total Item Pekerjaan</p>
-            <p class="mc-val">{len(df_raw)}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item Pekerjaan</p><p class="mc-val">{len(df_raw)}</p></div>', unsafe_allow_html=True)
 with c2:
-    st.markdown(f"""
-        <div class="mini-card" style="border-left: 4px solid #28a745;">
-            <p class="mc-title">🏢 Total Klien</p>
-            <p class="mc-val">{df_raw['nama_perusahaan'].nunique()}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #28a745;"><p class="mc-title">🏢 Total Klien</p><p class="mc-val">{df_raw["nama_perusahaan"].nunique()}</p></div>', unsafe_allow_html=True)
 with c3:
-    st.markdown(f"""
-        <div class="mini-card" style="border-left: 4px solid #ffc107;">
-            <p class="mc-title">⛴️ Kapal Direferensikan</p>
-            <p class="mc-val">{df_raw['nama_kapal'].nunique()}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #ffc107;"><p class="mc-title">⛴️ Kapal Direferensikan</p><p class="mc-val">{df_raw["nama_kapal"].nunique()}</p></div>', unsafe_allow_html=True)
 with c4:
-    st.markdown(f"""
-        <div class="mini-card" style="border-left: 4px solid #dc3545;">
-            <p class="mc-title">📅 Tahun Referensi</p>
-            <p class="mc-val">{df_raw['tahun'].nunique()}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{df_raw["tahun"].nunique()}</p></div>', unsafe_allow_html=True)
 
 # --- SIDEBAR: PENYARING DATA ---
 st.sidebar.markdown("### 🔍 Filter Data")
-
 search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 
 list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
@@ -168,20 +137,11 @@ else:
     with tab1:
         df_view = df_tampil.copy()
         df_view['Harga Satuan'] = df_view['Harga Satuan'].apply(lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-")
-        # Tinggi tabel dimaksimalkan karena header udah kecil
         st.dataframe(df_view, width="stretch", hide_index=True, height=650)
         
     with tab2:
         st.info("💡 **Cara Edit:** Klik ganda pada sel. **Cara Tambah Data:** Scroll ke baris paling bawah dan ketik di baris kosong.")
-        
-        edited_df = st.data_editor(
-            df_tampil,
-            num_rows="dynamic", 
-            width="stretch",
-            height=600,
-            hide_index=True,
-            key="tabel_editor"
-        )
+        edited_df = st.data_editor(df_tampil, num_rows="dynamic", width="stretch", height=600, hide_index=True, key="tabel_editor")
         
         if st.button("💾 Simpan Perubahan Langsung", type="primary"):
             st.success("Tampilan Edit berhasil! Backend akan dihubungkan di fase berikutnya.")
