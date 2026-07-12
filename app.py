@@ -9,14 +9,17 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Dukuh Raya Maintenance", page_icon="🚢", layout="wide")
 load_dotenv()
 
-# --- STYLING CSS CUSTOM (BERSIH DARI SIDEBAR OVERRIDE) ---
+# --- STYLING CSS CUSTOM ---
 st.markdown("""
     <style>
-    /* Background utama sedikit abu-abu bersih, biarkan sidebar ngikutin tema bawaan device (Light/Dark) */
-    .stApp { background-color: #f4f7f6; } 
-    .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    /* MENGHILANGKAN WHITE BAR (STREAMLIT HEADER BAWAAN) */
+    header {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     
-    /* Styling untuk Mini Card KPI */
+    .stApp { background-color: #f4f7f6; } 
+    .block-container { padding-top: 1rem; padding-bottom: 1.5rem; }
+    
     .mini-card {
         border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 6px;
@@ -29,10 +32,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER COMPACT ---
+# --- HEADER COMPACT (JUDUL BARU) ---
 header_col1, header_col2 = st.columns([3, 1])
 with header_col1:
-    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc;'>Dukuh Raya Maintenance Pricing</h3>", unsafe_allow_html=True)
+    # Memakai line-height agar jarak antar baris rapi
+    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
 with header_col2:
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
@@ -40,19 +44,17 @@ with header_col2:
     with btn_col2:
         st.button("📤 Export", type="primary", width="stretch")
 
-# --- LOAD DATA PURE PYTHON + NULLPOOL (ANTI-SEGFAULT) ---
+# --- LOAD DATA PURE PYTHON + NULLPOOL ---
 @st.cache_data(ttl=600)
 def load_data():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
-    
     if not db_url:
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
     if db_url.startswith("postgresql://"):
-       db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
+        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    # KUNCI UTAMA ANTI-CRASH: create_engine dengan NullPool
     engine = create_engine(db_url, poolclass=NullPool)
     
     query = """
@@ -63,8 +65,6 @@ def load_data():
     FROM tabel_katalog_harga
     ORDER BY nama_kapal, id
     """
-    
-    # Eksekusi dengan pandas read_sql
     df = pd.read_sql(query, engine)
     
     df['nama_perusahaan'] = df['nama_perusahaan'].fillna('TIDAK DIKETAHUI').astype(str)
@@ -73,7 +73,6 @@ def load_data():
     df['kategori_pekerjaan'] = df['kategori_pekerjaan'].fillna('-').astype(str)
     df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
     df['jenis_perjanjian'] = "Induk" 
-    
     return df
 
 try:
@@ -82,18 +81,7 @@ except Exception as e:
     st.error(f"❌ Gagal mengambil data. Error: {e}")
     st.stop()
 
-# --- MINI CARDS KPI BERWARNA ---
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item Pekerjaan</p><p class="mc-val">{len(df_raw)}</p></div>', unsafe_allow_html=True)
-with c2:
-    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #28a745;"><p class="mc-title">🏢 Total Klien</p><p class="mc-val">{df_raw["nama_perusahaan"].nunique()}</p></div>', unsafe_allow_html=True)
-with c3:
-    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #ffc107;"><p class="mc-title">⛴️ Kapal Direferensikan</p><p class="mc-val">{df_raw["nama_kapal"].nunique()}</p></div>', unsafe_allow_html=True)
-with c4:
-    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{df_raw["tahun"].nunique()}</p></div>', unsafe_allow_html=True)
-
-# --- SIDEBAR: PENYARING DATA (WARNA NATIVE AMAN) ---
+# --- SIDEBAR: PENYARING DATA ---
 st.sidebar.markdown("### 🔍 Filter Data")
 search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 
@@ -118,7 +106,7 @@ st.sidebar.markdown("### ⚙️ Menu Tambahan")
 st.sidebar.markdown("📁 Laporan Lengkap")
 st.sidebar.markdown("👥 Kelola Akses")
 
-# --- TERAPKAN FILTER ---
+# --- TERAPKAN FILTER SEBELUM MEMBUAT CARD ---
 df_final = df_raw.copy()
 if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
 if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
@@ -127,10 +115,30 @@ if filter_perjanjian != "Semua": df_final = df_final[df_final['jenis_perjanjian'
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
-df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'jenis_perjanjian', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
-df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Jenis Perjanjian', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
+# --- MINI CARDS KPI BERWARNA (SEKARANG DINAMIS) ---
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item Pekerjaan</p><p class="mc-val">{len(df_final)}</p></div>', unsafe_allow_html=True)
+with c2:
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #28a745;"><p class="mc-title">🏢 Total Klien</p><p class="mc-val">{df_final["nama_perusahaan"].nunique()}</p></div>', unsafe_allow_html=True)
+with c3:
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #ffc107;"><p class="mc-title">⛴️ Kapal Direferensikan</p><p class="mc-val">{df_final["nama_kapal"].nunique()}</p></div>', unsafe_allow_html=True)
+with c4:
+    # Logika untuk menampilkan Tahun secara spesifik
+    unique_years = df_final["tahun"].dropna().unique()
+    if len(unique_years) == 1:
+        tahun_display = unique_years[0]
+    else:
+        tahun_display = f"{len(unique_years)} Tahun"
+        
+    st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{tahun_display}</p></div>', unsafe_allow_html=True)
 
 # --- TABEL UTAMA & EDITOR ---
+# Reset index untuk keamanan data editor
+df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'jenis_perjanjian', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
+df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Jenis Perjanjian', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
+df_tampil = df_tampil.reset_index(drop=True)
+
 if df_final.empty:
     st.warning("⚠️ Data tidak ditemukan. Silakan ubah filter di sidebar.")
 else:
