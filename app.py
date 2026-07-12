@@ -12,7 +12,6 @@ load_dotenv()
 # --- STYLING CSS CUSTOM ---
 st.markdown("""
     <style>
-    /* MENGHILANGKAN WHITE BAR (STREAMLIT HEADER BAWAAN) */
     header {visibility: hidden;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -32,18 +31,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER COMPACT (JUDUL BARU) ---
-header_col1, header_col2 = st.columns([3, 1])
-with header_col1:
-    # Memakai line-height agar jarak antar baris rapi
-    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
-with header_col2:
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        st.button("📥 Import", width="stretch")
-    with btn_col2:
-        st.button("📤 Export", type="primary", width="stretch")
-
 # --- LOAD DATA PURE PYTHON + NULLPOOL ---
 @st.cache_data(ttl=600)
 def load_data():
@@ -62,13 +49,13 @@ def load_data():
         id, nama_perusahaan, nama_kapal, tahun, 
         kategori_pekerjaan, uraian_pekerjaan, 
         volume_satuan, harga_satuan
-    FROM tabel_katalog_harga
+    FROM tabel_katalog_harga1
     ORDER BY nama_kapal, id
     """
     df = pd.read_sql(query, engine)
     
-    df['nama_perusahaan'] = df['nama_perusahaan'].fillna('TIDAK DIKETAHUI').astype(str)
-    df['nama_kapal'] = df['nama_kapal'].fillna('TIDAK DIKETAHUI').astype(str)
+    df['nama_perusahaan'] = df['nama_perusahaan'].fillna('-').astype(str)
+    df['nama_kapal'] = df['nama_kapal'].fillna('-').astype(str)
     df['tahun'] = df['tahun'].fillna('-').astype(str)
     df['kategori_pekerjaan'] = df['kategori_pekerjaan'].fillna('-').astype(str)
     df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
@@ -81,7 +68,12 @@ except Exception as e:
     st.error(f"❌ Gagal mengambil data. Error: {e}")
     st.stop()
 
-# --- SIDEBAR: PENYARING DATA ---
+# --- SIDEBAR: LOGO & FILTER ---
+# 🚨 PENGINGAT LOGO DUKUH RAYA 🚨
+# Ganti URL di bawah dengan URL logo asli Dukuh Raya atau path lokal file gambarnya
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/984/984233.png", width=120)
+st.sidebar.markdown("---")
+
 st.sidebar.markdown("### 🔍 Filter Data")
 search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 
@@ -95,27 +87,29 @@ filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal, key=f"kapal
 list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
 filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
 
-list_perjanjian = ["Semua"] + list(df_raw['jenis_perjanjian'].dropna().unique())
-filter_perjanjian = st.sidebar.selectbox("📄 Jenis Perjanjian", list_perjanjian)
-
 list_kategori = ["Semua"] + list(df_raw['kategori_pekerjaan'].dropna().unique())
 filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚙️ Menu Tambahan")
-st.sidebar.markdown("📁 Laporan Lengkap")
-st.sidebar.markdown("👥 Kelola Akses")
+# --- HEADER COMPACT ---
+header_col1, header_col2 = st.columns([3, 1])
+with header_col1:
+    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
+with header_col2:
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        st.button("📥 Import", width="stretch")
+    with btn_col2:
+        st.button("📤 Export", type="primary", width="stretch")
 
-# --- TERAPKAN FILTER SEBELUM MEMBUAT CARD ---
+# --- TERAPKAN FILTER ---
 df_final = df_raw.copy()
 if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
 if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
 if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
-if filter_perjanjian != "Semua": df_final = df_final[df_final['jenis_perjanjian'] == filter_perjanjian]
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
-# --- MINI CARDS KPI BERWARNA (SEKARANG DINAMIS) ---
+# --- MINI CARDS KPI ---
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item Pekerjaan</p><p class="mc-val">{len(df_final)}</p></div>', unsafe_allow_html=True)
@@ -124,34 +118,74 @@ with c2:
 with c3:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #ffc107;"><p class="mc-title">⛴️ Kapal Direferensikan</p><p class="mc-val">{df_final["nama_kapal"].nunique()}</p></div>', unsafe_allow_html=True)
 with c4:
-    # Logika untuk menampilkan Tahun secara spesifik
     unique_years = df_final["tahun"].dropna().unique()
-    if len(unique_years) == 1:
-        tahun_display = unique_years[0]
-    else:
-        tahun_display = f"{len(unique_years)} Tahun"
-        
+    tahun_display = unique_years[0] if len(unique_years) == 1 and len(unique_years) > 0 else f"{len(unique_years)} Tahun"
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{tahun_display}</p></div>', unsafe_allow_html=True)
 
-# --- TABEL UTAMA & EDITOR ---
-# Reset index untuk keamanan data editor
-df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'jenis_perjanjian', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
-df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Jenis Perjanjian', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
+# --- TABEL & FORM AREA ---
+df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
+df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
 df_tampil = df_tampil.reset_index(drop=True)
 
-if df_final.empty:
-    st.warning("⚠️ Data tidak ditemukan. Silakan ubah filter di sidebar.")
-else:
-    tab1, tab2 = st.tabs(["👁️ View Data", "✏️ Mode Edit (Ketik Langsung)"])
-    
-    with tab1:
+tab1, tab2, tab3 = st.tabs(["👁️ View Data", "➕ Tambah Data Baru", "✏️ Mode Edit"])
+
+with tab1:
+    if df_final.empty:
+        st.warning("⚠️ Data tidak ditemukan.")
+    else:
         df_view = df_tampil.copy()
         df_view['Harga Satuan'] = df_view['Harga Satuan'].apply(lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-")
         st.dataframe(df_view, width="stretch", hide_index=True, height=650)
+
+with tab2:
+    st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
+    st.info("💡 **Tips:** ID Referensi akan dibuat secara otomatis berdasarkan Nama Kapal dan Tahun yang Anda masukkan.")
+    
+    with st.form("form_tambah_data", clear_on_submit=True):
+        col_form1, col_form2 = st.columns(2)
         
-    with tab2:
-        st.info("💡 **Cara Edit:** Klik ganda pada sel. **Cara Tambah Data:** Scroll ke baris paling bawah dan ketik di baris kosong.")
-        edited_df = st.data_editor(df_tampil, num_rows="dynamic", width="stretch", height=600, hide_index=True, key="tabel_editor")
+        with col_form1:
+            input_pt = st.text_input("🏢 Nama Klien / Perusahaan", placeholder="Contoh: PT. JEMBATAN NUSANTARA")
+            input_kpl = st.text_input("⛴️ Nama Kapal", placeholder="Contoh: MISHIMA")
+            input_thn = st.text_input("📅 Tahun", placeholder="Contoh: 2024")
+            input_kat = st.text_input("🛠️ Kategori Pekerjaan (Opsional)", placeholder="Contoh: DOCKING")
+            
+        with col_form2:
+            input_urai = st.text_area("📝 Uraian Pekerjaan", placeholder="Ketik deskripsi pekerjaan di sini...")
+            input_sat = st.text_input("📏 Satuan (Volume)", placeholder="Contoh: Kg, Ls, Unit, Titik")
+            input_hrg = st.number_input("💰 Harga Satuan (Rp)", min_value=0.0, step=1000.0)
+            
+        submit_tambah = st.form_submit_button("💾 Simpan Data Baru", type="primary", use_container_width=True)
         
-        if st.button("💾 Simpan Perubahan Langsung", type="primary"):
-            st.success("Tampilan Edit berhasil! Backend akan dihubungkan di fase berikutnya.")
+        if submit_tambah:
+            if not input_kpl or not input_thn or not input_urai:
+                st.error("⚠️ Nama Kapal, Tahun, dan Uraian Pekerjaan WAJIB diisi!")
+            else:
+                # ⚙️ LOGIKA PEMBUATAN ID OTOMATIS
+                slug = str(input_kpl).strip().replace(" ", "_").upper()
+                tahun_str = str(input_thn).strip()
+                prefix = f"{slug}-{tahun_str}-"
+                
+                # Mencari ID tertinggi di kapal dan tahun yang sama
+                df_cek = df_raw[df_raw['id'].str.startswith(prefix, na=False)]
+                if not df_cek.empty:
+                    last_id = df_cek['id'].max()
+                    try:
+                        last_num = int(last_id.split('-')[-1])
+                        new_num = last_num + 1
+                    except:
+                        new_num = len(df_cek) + 1
+                else:
+                    new_num = 1
+                    
+                new_id = f"{prefix}{new_num:03d}"
+                
+                st.success(f"✅ Data berhasil ditangkap! ID terbuat: **{new_id}** (Backend insert menyusul).")
+
+with tab3:
+    st.info("💡 **Mode Edit:** Klik ganda pada teks atau angka di tabel untuk mengoreksi data. (Fitur tambah baris dimatikan di sini).")
+    # num_rows dibuat "fixed" agar user tidak bingung nambah data di tabel
+    edited_df = st.data_editor(df_tampil, num_rows="fixed", width="stretch", height=600, hide_index=True, key="tabel_editor")
+    
+    if st.button("💾 Simpan Perubahan Edit", type="primary"):
+        st.success("Tampilan Edit berhasil ditangkap! (Backend update menyusul).")
