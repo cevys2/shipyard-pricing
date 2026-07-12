@@ -49,9 +49,8 @@ def load_data():
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
-    # Mengganti ke driver pg8000
     if db_url.startswith("postgresql://"):
-        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
+    db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
     # KUNCI UTAMA ANTI-CRASH: create_engine dengan NullPool
     engine = create_engine(db_url, poolclass=NullPool)
