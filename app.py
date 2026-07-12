@@ -50,7 +50,7 @@ def load_data():
         st.stop()
         
     if db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
+       db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
     # KUNCI UTAMA ANTI-CRASH: create_engine dengan NullPool
     engine = create_engine(db_url, poolclass=NullPool)
