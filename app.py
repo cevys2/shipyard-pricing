@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 import os
 from dotenv import load_dotenv
 
@@ -7,15 +9,14 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Dukuh Raya Maintenance", page_icon="🚢", layout="wide")
 load_dotenv()
 
-# --- STYLING CSS CUSTOM (COMPACT & NATIVE) ---
+# --- STYLING CSS CUSTOM (BERSIH DARI SIDEBAR OVERRIDE) ---
 st.markdown("""
     <style>
-    [data-testid="stSidebar"] { background-color: #1a64bc !important; }
-    [data-testid="stSidebar"] * { color: white !important; }
-    .stApp { background-color: #f4f7f6; }
+    /* Background utama sedikit abu-abu bersih, biarkan sidebar ngikutin tema bawaan device (Light/Dark) */
+    .stApp { background-color: #f4f7f6; } 
     .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-    div[data-testid="stSidebar"] button { color: #1a64bc !important; font-weight: bold; }
     
+    /* Styling untuk Mini Card KPI */
     .mini-card {
         border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 6px;
@@ -39,7 +40,7 @@ with header_col2:
     with btn_col2:
         st.button("📤 Export", type="primary", width="stretch")
 
-# --- LOAD DATA PURE PYTHON (ANTI-SEGFAULT) ---
+# --- LOAD DATA PURE PYTHON + NULLPOOL (ANTI-SEGFAULT) ---
 @st.cache_data(ttl=600)
 def load_data():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
@@ -48,10 +49,12 @@ def load_data():
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
+    # Mengganti ke driver pg8000
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    conn = st.connection("supabase", type="sql", url=db_url)
+    # KUNCI UTAMA ANTI-CRASH: create_engine dengan NullPool
+    engine = create_engine(db_url, poolclass=NullPool)
     
     query = """
     SELECT 
@@ -62,7 +65,8 @@ def load_data():
     ORDER BY nama_kapal, id
     """
     
-    df = conn.query(query, ttl=600)
+    # Eksekusi dengan pandas read_sql
+    df = pd.read_sql(query, engine)
     
     df['nama_perusahaan'] = df['nama_perusahaan'].fillna('TIDAK DIKETAHUI').astype(str)
     df['nama_kapal'] = df['nama_kapal'].fillna('TIDAK DIKETAHUI').astype(str)
@@ -81,7 +85,6 @@ except Exception as e:
 
 # --- MINI CARDS KPI BERWARNA ---
 c1, c2, c3, c4 = st.columns(4)
-
 with c1:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item Pekerjaan</p><p class="mc-val">{len(df_raw)}</p></div>', unsafe_allow_html=True)
 with c2:
@@ -91,7 +94,7 @@ with c3:
 with c4:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{df_raw["tahun"].nunique()}</p></div>', unsafe_allow_html=True)
 
-# --- SIDEBAR: PENYARING DATA ---
+# --- SIDEBAR: PENYARING DATA (WARNA NATIVE AMAN) ---
 st.sidebar.markdown("### 🔍 Filter Data")
 search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 
