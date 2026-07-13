@@ -241,16 +241,22 @@ df_tampil = df_tampil.rename(columns={
     'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
 }).reset_index(drop=True)
 
-# 🚀 OPTIMASI MEMORI EKSTREM: Ganti Tabs dengan Conditional Rendering Menu
-menu_list = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
+# --- TABEL & FORM AREA ---
+df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
+df_tampil = df_tampil.rename(columns={
+    'id': 'ID Referensi', 'nama_perusahaan': 'Perusahaan', 'nama_kapal': 'Kapal', 
+    'tahun': 'Tahun', 'kategori_pekerjaan': 'Kategori', 'uraian_pekerjaan': 'Uraian Pekerjaan', 
+    'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
+}).reset_index(drop=True)
+
+# 🚀 KEMBALI KE TABS: Mesin sudah stabil dan RAM besar
+tabs_list = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
 if st.session_state['role'] == 'admin':
-    menu_list.append("👥 Kelola Akses")
+    tabs_list.append("👥 Kelola Akses")
 
-# Menggunakan radio button horizontal agar terlihat seperti tabs
-selected_menu = st.radio("📌 Navigasi Menu", menu_list, horizontal=True, label_visibility="collapsed")
-st.markdown("---")
+tabs = st.tabs(tabs_list)
 
-if selected_menu == "👁️ View Data": 
+with tabs[0]: 
     if df_tampil.empty:
         st.warning("⚠️ Data tidak ditemukan.")
     else:
@@ -264,7 +270,7 @@ if selected_menu == "👁️ View Data":
             }
         )
 
-elif selected_menu == "➕ Tambah Data Baru": 
+with tabs[1]: 
     st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
     with st.form("form_tambah_data", clear_on_submit=True):
         col_form1, col_form2 = st.columns(2)
@@ -310,7 +316,7 @@ elif selected_menu == "➕ Tambah Data Baru":
                 except Exception as e:
                     st.error(f"❌ Gagal menyimpan data: {e}")
 
-elif selected_menu == "✏️ Edit & Hapus": 
+with tabs[2]: 
     st.info("💡 **Mode Edit:** Klik ganda pada teks untuk mengoreksi. **Untuk menghapus baris, centang kotak di kolom '❌ Hapus'.**")
     
     df_edit_view = df_tampil.copy()
@@ -373,8 +379,9 @@ elif selected_menu == "✏️ Edit & Hapus":
             except Exception as e:
                 st.error(f"❌ Gagal memproses data ke database: {e}")
 
-elif selected_menu == "👥 Kelola Akses":
-    if st.session_state['role'] == 'admin':
+# --- TAB 4: KELOLA AKSES (HANYA ADMIN) ---
+if st.session_state['role'] == 'admin':
+    with tabs[3]:
         st.markdown("### 👥 Manajemen Pengguna")
         
         users_df = load_users()
@@ -437,5 +444,7 @@ elif selected_menu == "👥 Kelola Akses":
                             load_users.clear()
                             st.success(f"✅ Password untuk {user_to_edit} berhasil diubah!")
                             st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Gagal mengubah password: {e}")
                         except Exception as e:
                             st.error(f"❌ Gagal mengubah password: {e}")
