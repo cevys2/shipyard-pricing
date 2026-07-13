@@ -57,7 +57,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INISIALISASI DATABASE ENGINE (SUPER FAST) ---
+# --- INISIALISASI DATABASE ENGINE ---
 @st.cache_resource
 def init_engine():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
@@ -65,11 +65,11 @@ def init_engine():
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
-    if db_url.startswith("postgresql://"):
-        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
+    # Kalau formatnya postgres://, kita pastikan jadi postgresql:// agar SQLAlchemy bisa baca
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-    # KITA BUANG NullPool KARENA BIKIN LEMOT!
-    # Ganti dengan pooling agar koneksi stabil dan kilat:
+    # Menggunakan connection pooling standar, tanpa NullPool, dan driver langsung Psycopg2
     return create_engine(
         db_url, 
         pool_size=10, 
