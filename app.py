@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
-from sqlalchemy.pool import NullPool
 import os
+import gc  # 🚀 PENTING: Untuk mengontrol dan membersihkan RAM Railway
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -56,7 +56,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INISIALISASI DATABASE ENGINE ---
+# --- INISIALISASI DATABASE ENGINE (DIOPTIMALKAN) ---
 @st.cache_resource
 def init_engine():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
@@ -67,7 +67,15 @@ def init_engine():
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    return create_engine(db_url, poolclass=NullPool)
+    # 🚀 OPTIMASI KONEKSI DATABASE: Menghentikan NullPool, menggantinya dengan pool cerdas 
+    # Mencegah Railway Hang & Supabase memblokir IP
+    return create_engine(
+        db_url, 
+        pool_size=10,         # Mempertahankan maksimal 10 koneksi terbuka
+        max_overflow=20,      
+        pool_pre_ping=True,   # Mengecek kesehatan koneksi sebelum dipakai (Anti-Crash)
+        pool_recycle=300      # Me-reset koneksi setiap 5 menit
+    )
 
 engine = init_engine()
 
@@ -143,7 +151,8 @@ if not st.session_state['logged_in']:
 # 🚀 APLIKASI UTAMA (SETELAH LOGIN)
 # ==========================================
 
-@st.cache_data(ttl=600)
+# 🚀 OPTIMASI MEMORI: Tambahkan show_spinner=False agar UI tidak "berkedip"
+@st.cache_data(ttl=600, show_spinner=False)
 def load_data():
     query = f"""
     SELECT 
@@ -155,18 +164,11 @@ def load_data():
     """
     df = pd.read_sql(query, engine)
     
-    # 🚀 OPTIMASI MEMORI
     for col in ['nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan']:
         df[col] = df[col].fillna('-').astype('category')
         
     df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
     return df
-
-try:
-    df_raw = load_data()
-except Exception as e:
-    st.error(f"❌ Gagal mengambil data. Error: {e}")
-    st.stop()
 
 # --- SIDEBAR & NAVIGASI MENU ---
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/984/984233.png", width=120)
@@ -177,199 +179,22 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-
-# 🚀 MENGUBAH TABS MENJADI MENU SIDEBAR AGAR LEBIH RINGAN
 st.sidebar.markdown("### 📌 Navigasi Menu")
 menu_options = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
 if st.session_state['role'] == 'admin':
     menu_options.append("👥 Kelola Akses")
     
 menu_terpilih = st.sidebar.radio("Pilih Halaman:", menu_options)
-
 st.sidebar.markdown("---")
 
 # --- HEADER COMPACT ---
 st.markdown("<h3 style='margin-bottom:15px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
 
-
 # ==========================================
-# 📂 HALAMAN: VIEW DATA & EDIT DATA
+# 📂 LAZY LOADING LOGIC (MENCEGAH CRASH KELOLA AKSES)
 # ==========================================
-if menu_terpilih in ["👁️ View Data", "✏️ Edit & Hapus"]:
-    
-    st.sidebar.markdown("### 🔍 Filter Data")
-    search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
-
-    list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
-    filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
-
-    df_final = df_raw 
-
-    if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
-    list_kapal = ["Semua"] + list(df_final['nama_kapal'].dropna().unique())
-    filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
-
-    list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
-    filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
-
-    if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
-    if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
-
-    list_kategori = ["Semua"] + list(df_final['kategori_pekerjaan'].dropna().unique())
-    filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
-
-    if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
-    if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
-
-    # --- MINI CARDS KPI ---
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item</p><p class="mc-val">{len(df_final)}</p></div>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<div class="mini-card" style="border-left: 4px solid #28a745;"><p class="mc-title">🏢 Total Klien</p><p class="mc-val">{df_final["nama_perusahaan"].nunique()}</p></div>', unsafe_allow_html=True)
-    with c3: st.markdown(f'<div class="mini-card" style="border-left: 4px solid #ffc107;"><p class="mc-title">⛴️ Kapal</p><p class="mc-val">{df_final["nama_kapal"].nunique()}</p></div>', unsafe_allow_html=True)
-    with c4:
-        thn_val = df_final["tahun"].nunique()
-        st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{thn_val}</p></div>', unsafe_allow_html=True)
-
-    # --- PERSIAPKAN DATA UNTUK DITAMPILKAN ---
-    df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
-    df_tampil = df_tampil.rename(columns={
-        'id': 'ID Referensi', 'nama_perusahaan': 'Perusahaan', 'nama_kapal': 'Kapal', 
-        'tahun': 'Tahun', 'kategori_pekerjaan': 'Kategori', 'uraian_pekerjaan': 'Uraian Pekerjaan', 
-        'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
-    }).reset_index(drop=True)
-
-    # VIEW TAMPILAN KACA (READ-ONLY)
-    if menu_terpilih == "👁️ View Data":
-        if df_tampil.empty:
-            st.warning("⚠️ Data tidak ditemukan.")
-        else:
-            st.dataframe(
-                df_tampil, 
-                use_container_width=True, 
-                hide_index=True, 
-                height=600,
-                column_config={
-                    "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
-                }
-            )
-
-    # VIEW EDIT TAMPILAN EDITOR
-    elif menu_terpilih == "✏️ Edit & Hapus":
-        st.info("💡 **Mode Edit:** Klik ganda pada teks untuk mengoreksi. **Untuk menghapus baris, centang kotak di kolom '❌ Hapus'.**")
-        
-        df_edit_view = df_tampil.copy()
-        df_edit_view.insert(0, '❌ Hapus', False)
-        
-        edited_df = st.data_editor(
-            df_edit_view, 
-            num_rows="fixed", 
-            use_container_width=True, 
-            height=600, 
-            hide_index=True, 
-            key="tabel_editor",
-            column_config={
-                "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
-            }
-        )
-        
-        if st.button("💾 Simpan Perubahan Edit & Hapus", type="primary"):
-            ids_to_delete = edited_df[edited_df['❌ Hapus'] == True]['ID Referensi'].tolist()
-            
-            changed_indices = []
-            for i in range(len(df_tampil)):
-                if df_tampil.iloc[i]['ID Referensi'] in ids_to_delete:
-                    continue 
-                if not df_tampil.iloc[i].equals(edited_df.iloc[i].drop('❌ Hapus')):
-                    changed_indices.append(i)
-                    
-            if not ids_to_delete and not changed_indices:
-                st.warning("⚠️ Tidak ada perubahan atau penghapusan data yang terdeteksi.")
-            else:
-                try:
-                    with engine.begin() as conn:
-                        if ids_to_delete:
-                            delete_query = text(f"DELETE FROM {NAMA_TABEL} WHERE id = :id")
-                            for del_id in ids_to_delete:
-                                conn.execute(delete_query, {"id": del_id})
-                                
-                        if changed_indices:
-                            update_query = text(f"""
-                                UPDATE {NAMA_TABEL} 
-                                SET nama_perusahaan = :pt, nama_kapal = :kpl, tahun = :thn, 
-                                    kategori_pekerjaan = :kat, uraian_pekerjaan = :urai, 
-                                    volume_satuan = :sat, harga_satuan = :hrg
-                                WHERE id = :id
-                            """)
-                            for idx in changed_indices:
-                                row = edited_df.iloc[idx]
-                                conn.execute(update_query, {
-                                    "pt": row['Perusahaan'], "kpl": row['Kapal'], "thn": row['Tahun'],
-                                    "kat": row['Kategori'], "urai": row['Uraian Pekerjaan'],
-                                    "sat": row['Satuan'], "hrg": row['Harga Satuan'], "id": row['ID Referensi']
-                                })
-                    
-                    st.cache_data.clear()
-                    msg = "✅ Berhasil! "
-                    if ids_to_delete: msg += f"Menghapus {len(ids_to_delete)} baris. "
-                    if changed_indices: msg += f"Memperbarui {len(changed_indices)} baris."
-                    st.success(msg)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Gagal memproses data ke database: {e}")
-
-# ==========================================
-# 📂 HALAMAN: TAMBAH DATA BARU
-# ==========================================
-elif menu_terpilih == "➕ Tambah Data Baru":
-    st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
-    with st.form("form_tambah_data", clear_on_submit=True):
-        col_form1, col_form2 = st.columns(2)
-        with col_form1:
-            input_pt = st.text_input("🏢 Nama Klien / Perusahaan")
-            input_kpl = st.text_input("⛴️ Nama Kapal")
-            input_thn = st.text_input("📅 Tahun")
-            input_kat = st.text_input("🛠️ Kategori Pekerjaan")
-        with col_form2:
-            input_urai = st.text_area("📝 Uraian Pekerjaan")
-            input_sat = st.text_input("📏 Satuan (Volume)")
-            input_hrg = st.number_input("💰 Harga Satuan (Rp)", min_value=0.0, step=1000.0)
-            
-        if st.form_submit_button("💾 Simpan Data Baru", type="primary", use_container_width=True):
-            if not input_kpl or not input_thn or not input_urai:
-                st.error("⚠️ Nama Kapal, Tahun, dan Uraian Pekerjaan WAJIB diisi!")
-            else:
-                slug = str(input_kpl).strip().replace(" ", "_").upper()
-                prefix = f"{slug}-{str(input_thn).strip()}-"
-                df_cek = df_raw[df_raw['id'].str.startswith(prefix, na=False)]
-                
-                try:
-                    new_num = (int(df_cek['id'].max().split('-')[-1]) + 1) if not df_cek.empty else 1
-                except:
-                    new_num = len(df_cek) + 1
-                    
-                new_id = f"{prefix}{new_num:03d}"
-                
-                try:
-                    with engine.begin() as conn:
-                        conn.execute(text(f"""
-                            INSERT INTO {NAMA_TABEL} 
-                            (id, nama_perusahaan, nama_kapal, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
-                            VALUES (:id, :pt, :kpl, :thn, :kat, :urai, :sat, :hrg)
-                        """), {
-                            "id": new_id, "pt": input_pt.upper(), "kpl": input_kpl.upper(), 
-                            "thn": input_thn, "kat": input_kat, "urai": input_urai, 
-                            "sat": input_sat, "hrg": input_hrg
-                        })
-                    st.cache_data.clear()
-                    st.success(f"✅ Data berhasil disimpan! ID: **{new_id}**")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Gagal menyimpan data: {e}")
-
-# ==========================================
-# 📂 HALAMAN: KELOLA AKSES (ADMIN ONLY)
-# ==========================================
-elif menu_terpilih == "👥 Kelola Akses":
+if menu_terpilih == "👥 Kelola Akses":
+    # 🚀 Di sini kita TIDAK memanggil load_data()! RAM Anda aman 100%!
     st.markdown("### 👥 Manajemen Pengguna")
     
     with engine.connect() as conn:
@@ -432,3 +257,174 @@ elif menu_terpilih == "👥 Kelola Akses":
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Gagal mengubah password: {e}")
+
+else:
+    # 🚀 JIKA BUKAN KELOLA AKSES, BARU KITA LOAD DATA DATABASE UTAMA
+    try:
+        df_raw = load_data()
+    except Exception as e:
+        st.error(f"❌ Gagal mengambil data. Error: {e}")
+        st.stop()
+
+    if menu_terpilih in ["👁️ View Data", "✏️ Edit & Hapus"]:
+        st.sidebar.markdown("### 🔍 Filter Data")
+        search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
+
+        list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
+        filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
+
+        df_final = df_raw 
+
+        if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
+        list_kapal = ["Semua"] + list(df_final['nama_kapal'].dropna().unique())
+        filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
+
+        list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
+        filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
+
+        if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
+        if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
+
+        list_kategori = ["Semua"] + list(df_final['kategori_pekerjaan'].dropna().unique())
+        filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
+
+        if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
+        if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
+
+        # --- MINI CARDS KPI ---
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item</p><p class="mc-val">{len(df_final)}</p></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="mini-card" style="border-left: 4px solid #28a745;"><p class="mc-title">🏢 Total Klien</p><p class="mc-val">{df_final["nama_perusahaan"].nunique()}</p></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="mini-card" style="border-left: 4px solid #ffc107;"><p class="mc-title">⛴️ Kapal</p><p class="mc-val">{df_final["nama_kapal"].nunique()}</p></div>', unsafe_allow_html=True)
+        with c4:
+            thn_val = df_final["tahun"].nunique()
+            st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{thn_val}</p></div>', unsafe_allow_html=True)
+
+        # --- PERSIAPKAN DATA ---
+        df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
+        df_tampil = df_tampil.rename(columns={
+            'id': 'ID Referensi', 'nama_perusahaan': 'Perusahaan', 'nama_kapal': 'Kapal', 
+            'tahun': 'Tahun', 'kategori_pekerjaan': 'Kategori', 'uraian_pekerjaan': 'Uraian Pekerjaan', 
+            'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
+        }).reset_index(drop=True)
+
+        if menu_terpilih == "👁️ View Data":
+            if df_tampil.empty:
+                st.warning("⚠️ Data tidak ditemukan.")
+            else:
+                st.dataframe(
+                    df_tampil, 
+                    use_container_width=True, 
+                    hide_index=True, 
+                    height=600,
+                    column_config={"Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")}
+                )
+
+        elif menu_terpilih == "✏️ Edit & Hapus":
+            st.info("💡 **Mode Edit:** Klik ganda pada teks untuk mengoreksi. **Untuk menghapus baris, centang kotak di kolom '❌ Hapus'.**")
+            
+            df_edit_view = df_tampil.copy()
+            df_edit_view.insert(0, '❌ Hapus', False)
+            
+            edited_df = st.data_editor(
+                df_edit_view, 
+                num_rows="fixed", 
+                use_container_width=True, 
+                height=600, 
+                hide_index=True, 
+                key="tabel_editor",
+                column_config={"Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")}
+            )
+            
+            if st.button("💾 Simpan Perubahan Edit & Hapus", type="primary"):
+                ids_to_delete = edited_df[edited_df['❌ Hapus'] == True]['ID Referensi'].tolist()
+                
+                changed_indices = []
+                for i in range(len(df_tampil)):
+                    if df_tampil.iloc[i]['ID Referensi'] in ids_to_delete: continue 
+                    if not df_tampil.iloc[i].equals(edited_df.iloc[i].drop('❌ Hapus')):
+                        changed_indices.append(i)
+                        
+                if not ids_to_delete and not changed_indices:
+                    st.warning("⚠️ Tidak ada perubahan atau penghapusan data yang terdeteksi.")
+                else:
+                    try:
+                        with engine.begin() as conn:
+                            if ids_to_delete:
+                                delete_query = text(f"DELETE FROM {NAMA_TABEL} WHERE id = :id")
+                                for del_id in ids_to_delete:
+                                    conn.execute(delete_query, {"id": del_id})
+                                    
+                            if changed_indices:
+                                update_query = text(f"""
+                                    UPDATE {NAMA_TABEL} 
+                                    SET nama_perusahaan = :pt, nama_kapal = :kpl, tahun = :thn, 
+                                        kategori_pekerjaan = :kat, uraian_pekerjaan = :urai, 
+                                        volume_satuan = :sat, harga_satuan = :hrg
+                                    WHERE id = :id
+                                """)
+                                for idx in changed_indices:
+                                    row = edited_df.iloc[idx]
+                                    conn.execute(update_query, {
+                                        "pt": row['Perusahaan'], "kpl": row['Kapal'], "thn": row['Tahun'],
+                                        "kat": row['Kategori'], "urai": row['Uraian Pekerjaan'],
+                                        "sat": row['Satuan'], "hrg": row['Harga Satuan'], "id": row['ID Referensi']
+                                    })
+                        
+                        st.cache_data.clear()
+                        msg = "✅ Berhasil! "
+                        if ids_to_delete: msg += f"Menghapus {len(ids_to_delete)} baris. "
+                        if changed_indices: msg += f"Memperbarui {len(changed_indices)} baris."
+                        st.success(msg)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Gagal memproses data ke database: {e}")
+
+    elif menu_terpilih == "➕ Tambah Data Baru":
+        st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
+        with st.form("form_tambah_data", clear_on_submit=True):
+            col_form1, col_form2 = st.columns(2)
+            with col_form1:
+                input_pt = st.text_input("🏢 Nama Klien / Perusahaan")
+                input_kpl = st.text_input("⛴️ Nama Kapal")
+                input_thn = st.text_input("📅 Tahun")
+                input_kat = st.text_input("🛠️ Kategori Pekerjaan")
+            with col_form2:
+                input_urai = st.text_area("📝 Uraian Pekerjaan")
+                input_sat = st.text_input("📏 Satuan (Volume)")
+                input_hrg = st.number_input("💰 Harga Satuan (Rp)", min_value=0.0, step=1000.0)
+                
+            if st.form_submit_button("💾 Simpan Data Baru", type="primary", use_container_width=True):
+                if not input_kpl or not input_thn or not input_urai:
+                    st.error("⚠️ Nama Kapal, Tahun, dan Uraian Pekerjaan WAJIB diisi!")
+                else:
+                    slug = str(input_kpl).strip().replace(" ", "_").upper()
+                    prefix = f"{slug}-{str(input_thn).strip()}-"
+                    df_cek = df_raw[df_raw['id'].str.startswith(prefix, na=False)]
+                    
+                    try:
+                        new_num = (int(df_cek['id'].max().split('-')[-1]) + 1) if not df_cek.empty else 1
+                    except:
+                        new_num = len(df_cek) + 1
+                        
+                    new_id = f"{prefix}{new_num:03d}"
+                    
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(text(f"""
+                                INSERT INTO {NAMA_TABEL} 
+                                (id, nama_perusahaan, nama_kapal, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                                VALUES (:id, :pt, :kpl, :thn, :kat, :urai, :sat, :hrg)
+                            """), {
+                                "id": new_id, "pt": input_pt.upper(), "kpl": input_kpl.upper(), 
+                                "thn": input_thn, "kat": input_kat, "urai": input_urai, 
+                                "sat": input_sat, "hrg": input_hrg
+                            })
+                        st.cache_data.clear()
+                        st.success(f"✅ Data berhasil disimpan! ID: **{new_id}**")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Gagal menyimpan data: {e}")
+
+# 🚀 FITUR PAMUNGKAS: Memaksa Python membuang sampah memori RAM di akhir eksekusi kode
+gc.collect()
