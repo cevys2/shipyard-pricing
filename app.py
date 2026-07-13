@@ -50,6 +50,8 @@ def init_engine():
 engine = init_engine()
 
 # --- SETUP TABEL USERS ---
+# DITAMBAHKAN CACHE AGAR TIDAK DIJALANKAN BERULANG KALI
+@st.cache_resource
 def setup_user_table():
     try:
         with engine.begin() as conn:
@@ -171,16 +173,8 @@ filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_katego
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
-# --- HEADER COMPACT ---
-header_col1, header_col2 = st.columns([3, 1])
-with header_col1:
-    st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
-with header_col2:
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        st.button("📥 Import", width="stretch") 
-    with btn_col2:
-        st.button("📤 Export", type="primary", width="stretch")
+# --- HEADER COMPACT (Tombol Import/Export Dihilangkan) ---
+st.markdown("<h3 style='margin-bottom:15px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
 
 # --- MINI CARDS KPI ---
 c1, c2, c3, c4 = st.columns(4)
