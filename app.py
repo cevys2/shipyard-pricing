@@ -349,3 +349,24 @@ if st.session_state['role'] == 'admin':
                                          {"usr": new_user, "pw": hashed_pw, "role": new_role})
                         st.success(f"✅ Akun {new_user} berhasil dibuat!")
                         st.rerun()
+
+            # ======== TAMBAHKAN BLOK INI DI SINI ========
+            st.markdown("#### 🔑 Ubah Password")
+            with st.form("form_ubah_password", clear_on_submit=True):
+                user_to_edit = st.selectbox("Pilih Username", users_df['username'].tolist())
+                new_pass_edit = st.text_input("Password Baru", type="password")
+                
+                if st.form_submit_button("Update Password", use_container_width=True):
+                    if not new_pass_edit:
+                        st.error("⚠️ Password baru tidak boleh kosong!")
+                    else:
+                        new_hashed_pw = generate_password_hash(new_pass_edit, method='pbkdf2:sha256')
+                        try:
+                            with engine.begin() as conn:
+                                conn.execute(text("UPDATE users SET password_hash = :pw WHERE username = :usr"), 
+                                             {"pw": new_hashed_pw, "usr": user_to_edit})
+                            st.success(f"✅ Password untuk {user_to_edit} berhasil diubah!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Gagal mengubah password: {e}")
+            # ============================================
