@@ -30,7 +30,35 @@ st.markdown("""
     .mc-title { font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase; margin-bottom: 0px; }
     .mc-val { font-size: 20px; font-weight: 800; margin-top: 0px; margin-bottom: 0px; }
     
-    .login-container { max-width: 400px; margin: 100px auto; padding: 30px; background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    /* --- POLISHED LOGIN UI TWEAKS --- */
+    /* Kotak form utama dibuat lebih tebal dengan shadow dalam */
+    div[data-testid="stForm"] {
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        border-top: 6px solid #1a64bc; /* Aksen biru tebal di atas */
+        box-shadow: 0 15px 35px rgba(0,0,0,0.08); /* Efek melayang */
+        padding: 2rem !important;
+        background-color: white;
+    }
+
+    /* Kotak input dipertegas pinggirannya */
+    div[data-testid="stTextInput"] input {
+        border-radius: 6px;
+        border: 1.5px solid #cbd5e1;
+        font-size: 15px;
+        transition: all 0.3s;
+    }
+    div[data-testid="stTextInput"] input:focus {
+        border-color: #1a64bc;
+        box-shadow: 0 0 0 2px rgba(26,100,188,0.2);
+    }
+
+    /* Tombol dipertebal */
+    div[data-testid="stFormSubmitButton"] button {
+        border-radius: 6px;
+        font-weight: 800;
+        letter-spacing: 1px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -79,34 +107,46 @@ if 'logged_in' not in st.session_state:
     st.session_state['role'] = ''
 
 # ==========================================
-# 🔐 HALAMAN LOGIN (GATEKEEPER)
+# 🔐 HALAMAN LOGIN (POLISHED)
 # ==========================================
 if not st.session_state['logged_in']:
-    st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: #1a64bc;'>Dukuh Raya Login</h2>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True) # Jarak dari atas layar
     
-    with st.form("login_form"):
-        login_user = st.text_input("Username")
-        login_pass = st.text_input("Password", type="password")
-        submit_login = st.form_submit_button("Masuk", use_container_width=True, type="primary")
+    # Gunakan kolom untuk menjepit form agar ukurannya "tight" di tengah
+    col_kiri, col_login, col_kanan = st.columns([1.2, 1.5, 1.2])
+    
+    with col_login:
+        # Teks Header
+        st.markdown("""
+            <div style='text-align: center; margin-bottom: 20px;'>
+                <h1 style='color: #1a64bc; font-weight: 900; margin-bottom: 0px; font-size: 32px; letter-spacing: -1px;'>DUKUH RAYA</h1>
+                <p style='color: #64748b; font-size: 14px; margin-top: 5px; font-weight: 500;'>SILAKAN MASUK KE SISTEM MANAJEMEN</p>
+            </div>
+        """, unsafe_allow_html=True)
         
-        if submit_login:
-            if login_user and login_pass:
-                with engine.connect() as conn:
-                    result = conn.execute(text("SELECT password_hash, role FROM users WHERE username = :usr"), {"usr": login_user}).fetchone()
-                    
-                if result and check_password_hash(result[0], login_pass):
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = login_user
-                    st.session_state['role'] = result[1]
-                    st.success("Login berhasil!")
-                    st.rerun()
+        with st.form("login_form"):
+            login_user = st.text_input("👤 Username", placeholder="Masukkan username")
+            login_pass = st.text_input("🔒 Password", type="password", placeholder="••••••••")
+            
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True) # Spasi ekstra
+            submit_login = st.form_submit_button("LOGIN DASHBOARD", use_container_width=True, type="primary")
+            
+            if submit_login:
+                if login_user and login_pass:
+                    with engine.connect() as conn:
+                        result = conn.execute(text("SELECT password_hash, role FROM users WHERE username = :usr"), {"usr": login_user}).fetchone()
+                        
+                    if result and check_password_hash(result[0], login_pass):
+                        st.session_state['logged_in'] = True
+                        st.session_state['username'] = login_user
+                        st.session_state['role'] = result[1]
+                        st.success("Login berhasil!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Username atau Password salah!")
                 else:
-                    st.error("❌ Username atau Password salah!")
-            else:
-                st.warning("⚠️ Harap isi username dan password.")
-                
-    st.markdown("</div>", unsafe_allow_html=True)
+                    st.warning("⚠️ Harap isi username dan password.")
+                    
     st.stop() 
 
 # ==========================================
