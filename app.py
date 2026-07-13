@@ -54,7 +54,7 @@ def load_data():
         id, nama_perusahaan, nama_kapal, tahun, 
         kategori_pekerjaan, uraian_pekerjaan, 
         volume_satuan, harga_satuan
-    FROM tabel_katalog_harga1
+    FROM tabel_katalog_harga
     ORDER BY nama_kapal, id
     """
     df = pd.read_sql(query, engine)
