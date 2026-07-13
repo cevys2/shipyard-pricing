@@ -185,7 +185,7 @@ with tab2:
                 # 💾 IMPLEMENTASI INSERT KE DATABASE
                 try:
                     insert_query = text("""
-                        INSERT INTO tabel_katalog_harga1 
+                        INSERT INTO tabel_katalog_harga 
                         (id, nama_perusahaan, nama_kapal, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
                         VALUES (:id, :pt, :kpl, :thn, :kat, :urai, :sat, :hrg)
                     """)
@@ -220,7 +220,7 @@ with tab3:
             # 💾 IMPLEMENTASI UPDATE KE DATABASE
             try:
                 update_query = text("""
-                    UPDATE tabel_katalog_harga1 
+                    UPDATE tabel_katalog_harga 
                     SET nama_perusahaan = :pt, nama_kapal = :kpl, tahun = :thn, 
                         kategori_pekerjaan = :kat, uraian_pekerjaan = :urai, 
                         volume_satuan = :sat, harga_satuan = :hrg
