@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
-from sqlalchemy.pool import NullPool
 import os
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -58,7 +57,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INISIALISASI DATABASE ENGINE (Mempertahankan NullPool untuk PgBouncer Supabase) ---
+# --- INISIALISASI DATABASE ENGINE (SUPER FAST) ---
 @st.cache_resource
 def init_engine():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
@@ -69,8 +68,15 @@ def init_engine():
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    return create_engine(db_url, poolclass=NullPool)
-
+    # KITA BUANG NullPool KARENA BIKIN LEMOT!
+    # Ganti dengan pooling agar koneksi stabil dan kilat:
+    return create_engine(
+        db_url, 
+        pool_size=10, 
+        max_overflow=20, 
+        pool_pre_ping=True, 
+        pool_recycle=300
+    )
 engine = init_engine()
 
 # --- SETUP TABEL USERS ---
