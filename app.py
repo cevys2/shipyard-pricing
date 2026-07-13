@@ -91,7 +91,7 @@ def setup_user_table():
                 default_hash = generate_password_hash("admin123", method='pbkdf2:sha256')
                 conn.execute(text("INSERT INTO users (username, password_hash, role) VALUES ('admin', :pw, 'admin')"), {"pw": default_hash})
     except Exception as e:
-        st.error(f"Gagal inisialisasi tabel users: {e}")
+        st.error(f"Gagal inisialisasi  users: {e}")
 
 setup_user_table()
 
@@ -233,17 +233,19 @@ df_tampil = df_tampil.rename(columns={
     'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
 }).reset_index(drop=True)
 
-tabs_list = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
+# 🚀 OPTIMASI MEMORI EKSTREM: Ganti Tabs dengan Conditional Rendering Menu
+menu_list = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
 if st.session_state['role'] == 'admin':
-    tabs_list.append("👥 Kelola Akses")
+    menu_list.append("👥 Kelola Akses")
 
-tabs = st.tabs(tabs_list)
+# Menggunakan radio button horizontal agar terlihat seperti tabs
+selected_menu = st.radio("📌 Navigasi Menu", menu_list, horizontal=True, label_visibility="collapsed")
+st.markdown("---")
 
-with tabs[0]: 
+if selected_menu == "👁️ View Data": 
     if df_tampil.empty:
         st.warning("⚠️ Data tidak ditemukan.")
     else:
-        # OPTIMASI CPU: Format Rupiah diurus langsung oleh Streamlit
         st.dataframe(
             df_tampil, 
             use_container_width=True, 
@@ -254,7 +256,7 @@ with tabs[0]:
             }
         )
 
-with tabs[1]: 
+elif selected_menu == "➕ Tambah Data Baru": 
     st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
     with st.form("form_tambah_data", clear_on_submit=True):
         col_form1, col_form2 = st.columns(2)
@@ -300,7 +302,7 @@ with tabs[1]:
                 except Exception as e:
                     st.error(f"❌ Gagal menyimpan data: {e}")
 
-with tabs[2]: 
+elif selected_menu == "✏️ Edit & Hapus": 
     st.info("💡 **Mode Edit:** Klik ganda pada teks untuk mengoreksi. **Untuk menghapus baris, centang kotak di kolom '❌ Hapus'.**")
     
     df_edit_view = df_tampil.copy()
@@ -363,12 +365,10 @@ with tabs[2]:
             except Exception as e:
                 st.error(f"❌ Gagal memproses data ke database: {e}")
 
-# --- TAB 4: KELOLA AKSES (HANYA ADMIN) ---
-if st.session_state['role'] == 'admin':
-    with tabs[3]:
+elif selected_menu == "👥 Kelola Akses":
+    if st.session_state['role'] == 'admin':
         st.markdown("### 👥 Manajemen Pengguna")
         
-        # 🚀 OPTIMASI BESAR: Menggunakan cache load_users() agar Supabase tidak kewalahan
         users_df = load_users()
             
         col_user1, col_user2 = st.columns([2, 1])
@@ -387,7 +387,7 @@ if st.session_state['role'] == 'admin':
                 else:
                     with engine.begin() as conn:
                         conn.execute(text("DELETE FROM users WHERE username = :usr"), {"usr": del_username})
-                    load_users.clear() # Reset cache setelah penghapusan
+                    load_users.clear()
                     st.success(f"✅ User {del_username} berhasil dihapus!")
                     st.rerun()
                     
@@ -408,7 +408,7 @@ if st.session_state['role'] == 'admin':
                         with engine.begin() as conn:
                             conn.execute(text("INSERT INTO users (username, password_hash, role) VALUES (:usr, :pw, :role)"), 
                                          {"usr": new_user, "pw": hashed_pw, "role": new_role})
-                        load_users.clear() # Reset cache setelah penambahan user baru
+                        load_users.clear()
                         st.success(f"✅ Akun {new_user} berhasil dibuat!")
                         st.rerun()
 
@@ -426,7 +426,7 @@ if st.session_state['role'] == 'admin':
                             with engine.begin() as conn:
                                 conn.execute(text("UPDATE users SET password_hash = :pw WHERE username = :usr"), 
                                              {"pw": new_hashed_pw, "usr": user_to_edit})
-                            load_users.clear() # Reset cache setelah modifikasi password
+                            load_users.clear()
                             st.success(f"✅ Password untuk {user_to_edit} berhasil diubah!")
                             st.rerun()
                         except Exception as e:
