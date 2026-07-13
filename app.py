@@ -65,7 +65,7 @@ def setup_user_table():
             """))
             cek_user = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
             if cek_user == 0:
-                default_hash = generate_password_hash("admin123")
+                default_hash = generate_password_hash("admin123", method='pbkdf2:sha256')
                 conn.execute(text("INSERT INTO users (username, password_hash, role) VALUES ('admin', :pw, 'admin')"), {"pw": default_hash})
     except Exception as e:
         st.error(f"Gagal inisialisasi tabel users: {e}")
@@ -343,7 +343,7 @@ if st.session_state['role'] == 'admin':
                     elif new_user in users_df['username'].values:
                         st.error("⚠️ Username sudah terdaftar!")
                     else:
-                        hashed_pw = generate_password_hash(new_pass)
+                        hashed_pw = generate_password_hash(new_pass, method='pbkdf2:sha256')
                         with engine.begin() as conn:
                             conn.execute(text("INSERT INTO users (username, password_hash, role) VALUES (:usr, :pw, :role)"), 
                                          {"usr": new_user, "pw": hashed_pw, "role": new_role})
