@@ -3,3 +3,4 @@ pandas
 SQLAlchemy
 python-dotenv
 pg8000
+Werkzeug
