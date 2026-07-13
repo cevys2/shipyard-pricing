@@ -10,7 +10,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 st.set_page_config(page_title="Dukuh Raya Maintenance", page_icon="🚢", layout="wide")
 load_dotenv()
 
-# Gunakan tabel utama
 NAMA_TABEL = "tabel_katalog_harga"
 
 # --- STYLING CSS CUSTOM ---
@@ -31,17 +30,15 @@ st.markdown("""
     .mc-val { font-size: 20px; font-weight: 800; margin-top: 0px; margin-bottom: 0px; }
     
     /* --- POLISHED LOGIN UI TWEAKS --- */
-    /* Kotak form utama dibuat lebih tebal dengan shadow dalam */
     div[data-testid="stForm"] {
         border-radius: 12px;
         border: 1px solid #e2e8f0;
-        border-top: 6px solid #1a64bc; /* Aksen biru tebal di atas */
-        box-shadow: 0 15px 35px rgba(0,0,0,0.08); /* Efek melayang */
+        border-top: 6px solid #1a64bc; 
+        box-shadow: 0 15px 35px rgba(0,0,0,0.08); 
         padding: 2rem !important;
         background-color: white;
     }
 
-    /* Kotak input dipertegas pinggirannya */
     div[data-testid="stTextInput"] input {
         border-radius: 6px;
         border: 1.5px solid #cbd5e1;
@@ -53,7 +50,6 @@ st.markdown("""
         box-shadow: 0 0 0 2px rgba(26,100,188,0.2);
     }
 
-    /* Tombol dipertebal */
     div[data-testid="stFormSubmitButton"] button {
         border-radius: 6px;
         font-weight: 800;
@@ -78,7 +74,6 @@ def init_engine():
 engine = init_engine()
 
 # --- SETUP TABEL USERS ---
-# DITAMBAHKAN CACHE AGAR TIDAK DIJALANKAN BERULANG KALI
 @st.cache_resource
 def setup_user_table():
     try:
@@ -110,13 +105,11 @@ if 'logged_in' not in st.session_state:
 # 🔐 HALAMAN LOGIN (POLISHED)
 # ==========================================
 if not st.session_state['logged_in']:
-    st.markdown("<br><br>", unsafe_allow_html=True) # Jarak dari atas layar
+    st.markdown("<br><br>", unsafe_allow_html=True) 
     
-    # Gunakan kolom untuk menjepit form agar ukurannya "tight" di tengah
     col_kiri, col_login, col_kanan = st.columns([1.2, 1.5, 1.2])
     
     with col_login:
-        # Teks Header
         st.markdown("""
             <div style='text-align: center; margin-bottom: 20px;'>
                 <h1 style='color: #1a64bc; font-weight: 900; margin-bottom: 0px; font-size: 32px; letter-spacing: -1px;'>DUKUH RAYA</h1>
@@ -128,7 +121,7 @@ if not st.session_state['logged_in']:
             login_user = st.text_input("👤 Username", placeholder="Masukkan username")
             login_pass = st.text_input("🔒 Password", type="password", placeholder="••••••••")
             
-            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True) # Spasi ekstra
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
             submit_login = st.form_submit_button("LOGIN DASHBOARD", use_container_width=True, type="primary")
             
             if submit_login:
@@ -165,8 +158,11 @@ def load_data():
     """
     df = pd.read_sql(query, engine)
     
-    for col in ['nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan']:
-        df[col] = df[col].fillna('-').astype(str)
+    # 🚀 OPTIMASI MEMORI
+    for col in ['nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan']:
+        df[col] = df[col].fillna('-').astype('category')
+        
+    df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
     return df
 
 try:
@@ -192,28 +188,26 @@ search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh:
 list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
 filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
 
-df_filtered_kapal = df_raw[df_raw['nama_perusahaan'] == filter_perusahaan] if filter_perusahaan != "Semua" else df_raw
-list_kapal = ["Semua"] + list(df_filtered_kapal['nama_kapal'].dropna().unique())
+# 🚀 OPTIMASI MEMORI: Hapus .copy()
+df_final = df_raw 
+
+if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
+list_kapal = ["Semua"] + list(df_final['nama_kapal'].dropna().unique())
 filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
 
 list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
 filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
 
-# Terapkan filter tahap 1 agar Kategori jadi Dinamis
-df_final = df_raw.copy()
-if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
 if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
 if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
 
-# Filter Kategori Dinamis (Daftar menyusut sesuai kapal yang dipilih)
 list_kategori = ["Semua"] + list(df_final['kategori_pekerjaan'].dropna().unique())
 filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
 
-# Terapkan filter tahap 2 (Kategori & Search)
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
-# --- HEADER COMPACT (Tombol Import/Export Dihilangkan) ---
+# --- HEADER COMPACT ---
 st.markdown("<h3 style='margin-bottom:15px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
 
 # --- MINI CARDS KPI ---
@@ -226,9 +220,12 @@ with c4:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{thn_val}</p></div>', unsafe_allow_html=True)
 
 # --- TABEL & FORM AREA ---
-df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']].copy()
-df_tampil.columns = ['ID Referensi', 'Perusahaan', 'Kapal', 'Tahun', 'Kategori', 'Uraian Pekerjaan', 'Satuan', 'Harga Satuan']
-df_tampil = df_tampil.reset_index(drop=True)
+df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
+df_tampil = df_tampil.rename(columns={
+    'id': 'ID Referensi', 'nama_perusahaan': 'Perusahaan', 'nama_kapal': 'Kapal', 
+    'tahun': 'Tahun', 'kategori_pekerjaan': 'Kategori', 'uraian_pekerjaan': 'Uraian Pekerjaan', 
+    'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
+}).reset_index(drop=True)
 
 tabs_list = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
 if st.session_state['role'] == 'admin':
@@ -237,12 +234,19 @@ if st.session_state['role'] == 'admin':
 tabs = st.tabs(tabs_list)
 
 with tabs[0]: 
-    if df_final.empty:
+    if df_tampil.empty:
         st.warning("⚠️ Data tidak ditemukan.")
     else:
-        df_view = df_tampil.copy()
-        df_view['Harga Satuan'] = df_view['Harga Satuan'].apply(lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-")
-        st.dataframe(df_view, width="stretch", hide_index=True, height=650)
+        # 🚀 OPTIMASI CPU: Format Rupiah diurus langsung oleh Streamlit
+        st.dataframe(
+            df_tampil, 
+            use_container_width=True, 
+            hide_index=True, 
+            height=650,
+            column_config={
+                "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
+            }
+        )
 
 with tabs[1]: 
     st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
@@ -296,7 +300,17 @@ with tabs[2]:
     df_edit_view = df_tampil.copy()
     df_edit_view.insert(0, '❌ Hapus', False)
     
-    edited_df = st.data_editor(df_edit_view, num_rows="fixed", width="stretch", height=600, hide_index=True, key="tabel_editor")
+    edited_df = st.data_editor(
+        df_edit_view, 
+        num_rows="fixed", 
+        use_container_width=True, 
+        height=600, 
+        hide_index=True, 
+        key="tabel_editor",
+        column_config={
+            "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
+        }
+    )
     
     if st.button("💾 Simpan Perubahan Edit & Hapus", type="primary"):
         ids_to_delete = edited_df[edited_df['❌ Hapus'] == True]['ID Referensi'].tolist()
@@ -390,7 +404,6 @@ if st.session_state['role'] == 'admin':
                         st.success(f"✅ Akun {new_user} berhasil dibuat!")
                         st.rerun()
 
-            # ======== TAMBAHKAN BLOK INI DI SINI ========
             st.markdown("#### 🔑 Ubah Password")
             with st.form("form_ubah_password", clear_on_submit=True):
                 user_to_edit = st.selectbox("Pilih Username", users_df['username'].tolist())
@@ -409,4 +422,3 @@ if st.session_state['role'] == 'admin':
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Gagal mengubah password: {e}")
-            # ============================================
