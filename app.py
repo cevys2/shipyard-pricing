@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Dukuh Raya Maintenance", page_icon="🚢", layout="wide")
 load_dotenv()
 
-# --- STYLING CSS CUSTOM ---
+# --- STYLING CSS CUSTOM (TETAP SAMA) ---
 st.markdown("""
     <style>
     header {visibility: hidden;}
@@ -31,9 +31,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- LOAD DATA PURE PYTHON + NULLPOOL ---
-@st.cache_data(ttl=600)
-def load_data():
+# --- INISIALISASI DATABASE ENGINE ---
+@st.cache_resource
+def init_engine():
     db_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
     if not db_url:
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
@@ -42,8 +42,13 @@ def load_data():
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    engine = create_engine(db_url, poolclass=NullPool)
-    
+    return create_engine(db_url, poolclass=NullPool)
+
+engine = init_engine()
+
+# --- LOAD DATA PURE PYTHON + NULLPOOL ---
+@st.cache_data(ttl=600)
+def load_data():
     query = """
     SELECT 
         id, nama_perusahaan, nama_kapal, tahun, 
@@ -68,9 +73,7 @@ except Exception as e:
     st.error(f"❌ Gagal mengambil data. Error: {e}")
     st.stop()
 
-# --- SIDEBAR: LOGO & FILTER ---
-# 🚨 PENGINGAT LOGO DUKUH RAYA 🚨
-# Ganti URL di bawah dengan URL logo asli Dukuh Raya atau path lokal file gambarnya
+# --- SIDEBAR: LOGO & FILTER (TETAP SAMA) ---
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/984/984233.png", width=120)
 st.sidebar.markdown("---")
 
@@ -90,14 +93,14 @@ filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
 list_kategori = ["Semua"] + list(df_raw['kategori_pekerjaan'].dropna().unique())
 filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
 
-# --- HEADER COMPACT ---
+# --- HEADER COMPACT (TETAP SAMA) ---
 header_col1, header_col2 = st.columns([3, 1])
 with header_col1:
     st.markdown("<h3 style='margin-bottom:5px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
 with header_col2:
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
-        st.button("📥 Import", width="stretch")
+        st.button("📥 Import", width="stretch") # Disimpan untuk nanti
     with btn_col2:
         st.button("📤 Export", type="primary", width="stretch")
 
@@ -109,7 +112,7 @@ if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahu
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
-# --- MINI CARDS KPI ---
+# --- MINI CARDS KPI (TETAP SAMA) ---
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #1f77b4;"><p class="mc-title">📋 Total Item Pekerjaan</p><p class="mc-val">{len(df_final)}</p></div>', unsafe_allow_html=True)
@@ -166,7 +169,6 @@ with tab2:
                 tahun_str = str(input_thn).strip()
                 prefix = f"{slug}-{tahun_str}-"
                 
-                # Mencari ID tertinggi di kapal dan tahun yang sama
                 df_cek = df_raw[df_raw['id'].str.startswith(prefix, na=False)]
                 if not df_cek.empty:
                     last_id = df_cek['id'].max()
@@ -180,12 +182,62 @@ with tab2:
                     
                 new_id = f"{prefix}{new_num:03d}"
                 
-                st.success(f"✅ Data berhasil ditangkap! ID terbuat: **{new_id}** (Backend insert menyusul).")
+                # 💾 IMPLEMENTASI INSERT KE DATABASE
+                try:
+                    insert_query = text("""
+                        INSERT INTO tabel_katalog_harga1 
+                        (id, nama_perusahaan, nama_kapal, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                        VALUES (:id, :pt, :kpl, :thn, :kat, :urai, :sat, :hrg)
+                    """)
+                    with engine.begin() as conn:
+                        conn.execute(insert_query, {
+                            "id": new_id, "pt": input_pt.upper(), "kpl": input_kpl.upper(), 
+                            "thn": input_thn, "kat": input_kat, "urai": input_urai, 
+                            "sat": input_sat, "hrg": input_hrg
+                        })
+                    
+                    st.cache_data.clear() # Hapus cache agar data baru terbaca
+                    st.success(f"✅ Data berhasil disimpan ke Database! ID: **{new_id}**")
+                    st.rerun() # Refresh halaman
+                except Exception as e:
+                    st.error(f"❌ Gagal menyimpan data: {e}")
 
 with tab3:
     st.info("💡 **Mode Edit:** Klik ganda pada teks atau angka di tabel untuk mengoreksi data. (Fitur tambah baris dimatikan di sini).")
-    # num_rows dibuat "fixed" agar user tidak bingung nambah data di tabel
+    
     edited_df = st.data_editor(df_tampil, num_rows="fixed", width="stretch", height=600, hide_index=True, key="tabel_editor")
     
     if st.button("💾 Simpan Perubahan Edit", type="primary"):
-        st.success("Tampilan Edit berhasil ditangkap! (Backend update menyusul).")
+        # 🔍 MENCARI BARIS MANA SAJA YANG BERUBAH
+        changed_indices = []
+        for i in range(len(df_tampil)):
+            if not df_tampil.iloc[i].equals(edited_df.iloc[i]):
+                changed_indices.append(i)
+                
+        if not changed_indices:
+            st.warning("⚠️ Tidak ada perubahan data yang terdeteksi.")
+        else:
+            # 💾 IMPLEMENTASI UPDATE KE DATABASE
+            try:
+                update_query = text("""
+                    UPDATE tabel_katalog_harga1 
+                    SET nama_perusahaan = :pt, nama_kapal = :kpl, tahun = :thn, 
+                        kategori_pekerjaan = :kat, uraian_pekerjaan = :urai, 
+                        volume_satuan = :sat, harga_satuan = :hrg
+                    WHERE id = :id
+                """)
+                
+                with engine.begin() as conn:
+                    for idx in changed_indices:
+                        row = edited_df.iloc[idx]
+                        conn.execute(update_query, {
+                            "pt": row['Perusahaan'], "kpl": row['Kapal'], "thn": row['Tahun'],
+                            "kat": row['Kategori'], "urai": row['Uraian Pekerjaan'],
+                            "sat": row['Satuan'], "hrg": row['Harga Satuan'], "id": row['ID Referensi']
+                        })
+                
+                st.cache_data.clear()
+                st.success(f"✅ {len(changed_indices)} baris data berhasil diperbarui di Database!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Gagal memperbarui data: {e}")
