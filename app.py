@@ -90,7 +90,8 @@ filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal, key=f"kapal
 list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
 filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
 
-list_kategori = ["Semua"] + list(df_raw['kategori_pekerjaan'].dropna().unique())
+# Kategori sekarang ngebaca dari data yang UDAH difilter berdasarkan Kapal/Tahun
+list_kategori = ["Semua"] + list(df_final['kategori_pekerjaan'].dropna().unique())
 filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
 
 # --- HEADER COMPACT (TETAP SAMA) ---
