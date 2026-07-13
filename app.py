@@ -164,9 +164,9 @@ def load_data():
     """
     df = pd.read_sql(query, engine)
     
-    # OPTIMASI MEMORI
+    # KITA JADIKAN STRING BIASA KARENA RAM SUDAH 8GB (ANTI-CRASH)
     for col in ['nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan']:
-        df[col] = df[col].fillna('-').astype('category')
+        df[col] = df[col].fillna('-').astype(str)
         
     df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
     return df
