@@ -65,11 +65,13 @@ def init_engine():
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
-    # Kalau formatnya postgres://, kita pastikan jadi postgresql:// agar SQLAlchemy bisa baca
+    # Otomatis konversi URL Supabase agar menggunakan driver pg8000
     if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        db_url = db_url.replace("postgres://", "postgresql+pg8000://", 1)
+    elif db_url.startswith("postgresql://") and "pg8000" not in db_url:
+        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    # Menggunakan connection pooling standar, tanpa NullPool, dan driver langsung Psycopg2
+    # KUNCI KECEPATAN: Gunakan connection pooling bawaan (Tanpa NullPool)
     return create_engine(
         db_url, 
         pool_size=10, 
