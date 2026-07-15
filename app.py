@@ -186,7 +186,7 @@ except Exception as e:
     st.stop()
 
 # --- SIDEBAR & FILTER DINAMIS ---
-st.sidebar.image("LOGO_DR1.png", width=120)
+st.sidebar.image("LOGO_DR1.png", width=250)
 
 st.sidebar.markdown(f"👤 **Halo, {st.session_state['username']}** ({st.session_state['role']})")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
