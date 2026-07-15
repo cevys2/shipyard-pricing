@@ -194,32 +194,36 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔍 Filter Data")
-search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 
+# 1. FILTER PERUSAHAAN (Paling Atas)
 list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
 filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
 
 df_final = df_raw 
-
 if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
+
+# 2. FILTER KAPAL
 list_kapal = ["Semua"] + list(df_final['nama_kapal'].dropna().unique())
 filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
-
-# Tambahan Filter Tipe Perjanjian di Sidebar
-list_tipe = ["Semua"] + list(df_raw['tipe_perjanjian'].dropna().unique())
-filter_tipe = st.sidebar.selectbox("📄 Tipe Perjanjian", list_tipe)
-
-list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
-filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
-
 if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
-if filter_tipe != "Semua": df_final = df_final[df_final['tipe_perjanjian'] == filter_tipe]
-if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
 
+# 3. FILTER KATEGORI (Dipindah ke atas/tengah agar dropdown yang panjang tidak kepotong)
 list_kategori = ["Semua"] + list(df_final['kategori_pekerjaan'].dropna().unique())
 filter_kategori = st.sidebar.selectbox("🛠️ Kategori Pekerjaan", list_kategori)
-
 if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'] == filter_kategori]
+
+# 4. FILTER TAHUN
+list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
+filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
+if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
+
+# 5. FILTER TIPE PERJANJIAN (Cuma 3 opsi, aman di bawah)
+list_tipe = ["Semua"] + list(df_raw['tipe_perjanjian'].dropna().unique())
+filter_tipe = st.sidebar.selectbox("📄 Tipe Perjanjian", list_tipe)
+if filter_tipe != "Semua": df_final = df_final[df_final['tipe_perjanjian'] == filter_tipe]
+
+# 6. PENCARIAN URAIAN (Teks Input, tidak ada dropdown, posisi mentok bawah sangat aman)
+search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh: Plat, Pipa...")
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
 # --- HEADER COMPACT ---
