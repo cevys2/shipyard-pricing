@@ -186,7 +186,7 @@ except Exception as e:
     st.stop()
 
 # --- SIDEBAR & FILTER DINAMIS ---
-st.sidebar.image("logo.jpeg", width=120)
+st.sidebar.image("logo_dukuh_raya.jpeg", width=120)
 
 st.sidebar.markdown(f"👤 **Halo, {st.session_state['username']}** ({st.session_state['role']})")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -266,6 +266,7 @@ with tabs[0]:
             hide_index=True, 
             height=650,
             column_config={
+                "ID Referensi": None,  # 👈 BARIS INI YANG MENYEMBUNYIKAN KOLOM ID
                 "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
             }
         )
@@ -330,6 +331,7 @@ with tabs[2]:
         hide_index=True, 
         key="tabel_editor",
         column_config={
+            "ID Referensi": None,  # 👈 BARIS INI JUGA DITAMBAHKAN DI SINI
             "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
         }
     )
