@@ -128,7 +128,7 @@ if not st.session_state['logged_in']:
             login_pass = st.text_input("🔒 Password", type="password", placeholder="••••••••")
             
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            submit_login = st.form_submit_button("LOGIN DASHBOARD", use_container_width=True, type="primary")
+            submit_login = st.form_submit_button("LOGIN DASHBOARD", width="stretch", type="primary")
             
             if submit_login:
                 if login_user and login_pass:
@@ -186,7 +186,7 @@ except Exception as e:
 st.sidebar.image("LOGO_DR1.png", width=250)
 
 st.sidebar.markdown(f"👤 **Halo, {st.session_state['username']}** ({st.session_state['role']})")
-if st.sidebar.button("🚪 Logout", use_container_width=True):
+if st.sidebar.button("🚪 Logout", width="stretch"):
     st.session_state['logged_in'] = False
     st.session_state['username'] = ''
     st.session_state['role'] = ''
@@ -260,7 +260,7 @@ with tabs[0]:
     else:
         st.dataframe(
             df_tampil, 
-            use_container_width=True, 
+            width="stretch", 
             hide_index=True, 
             height=650,
             column_config={
@@ -305,7 +305,7 @@ with tabs[1]:
         edited_bulk = st.data_editor(
             df_template,
             num_rows="dynamic", # Kunci utama agar bisa nambah/copy-paste baris tanpa batas
-            use_container_width=True,
+            width="stretch",
             height=350,
             column_config={
                 "Kategori Pekerjaan": st.column_config.TextColumn("Kategori Pekerjaan"),
@@ -318,7 +318,7 @@ with tabs[1]:
         st.markdown("<br>", unsafe_allow_html=True)
         
         # --- 3. TOMBOL EKSEKUSI ---
-        submit_bulk = st.form_submit_button("💾 Simpan Semua Data Pekerjaan", type="primary", use_container_width=True)
+        submit_bulk = st.form_submit_button("💾 Simpan Semua Data Pekerjaan", type="primary", width="stretch")
         
         if submit_bulk:
             if not input_kpl or not input_thn:
@@ -393,7 +393,7 @@ with tabs[2]:
     edited_df = st.data_editor(
         df_edit_view, 
         num_rows="fixed", 
-        use_container_width=True, 
+        width="stretch", 
         height=600, 
         hide_index=True, 
         key="tabel_editor",
@@ -465,7 +465,7 @@ if st.session_state['role'] == 'admin':
         
         with col_user1:
             st.markdown("#### Daftar Pengguna Aktif")
-            st.dataframe(users_df, use_container_width=True, hide_index=True)
+            st.dataframe(users_df, width="stretch", hide_index=True)
             
             st.markdown("#### Hapus Pengguna")
             del_username = st.selectbox("Pilih Username yang akan dihapus", users_df['username'].tolist())
@@ -488,7 +488,7 @@ if st.session_state['role'] == 'admin':
                 new_pass = st.text_input("Password", type="password")
                 new_role = st.selectbox("Role", ["user", "admin"])
                 
-                if st.form_submit_button("Tambah User", use_container_width=True):
+                if st.form_submit_button("Tambah User", width="stretch"):
                     if not new_user or not new_pass:
                         st.error("⚠️ Username dan Password wajib diisi!")
                     elif new_user in users_df['username'].values:
@@ -507,7 +507,7 @@ if st.session_state['role'] == 'admin':
                 user_to_edit = st.selectbox("Pilih Username", users_df['username'].tolist())
                 new_pass_edit = st.text_input("Password Baru", type="password")
                 
-                if st.form_submit_button("Update Password", use_container_width=True):
+                if st.form_submit_button("Update Password", width="stretch"):
                     if not new_pass_edit:
                         st.error("⚠️ Password baru tidak boleh kosong!")
                     else:
