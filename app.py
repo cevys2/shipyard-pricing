@@ -222,7 +222,7 @@ if filter_kategori != "Semua": df_final = df_final[df_final['kategori_pekerjaan'
 if search_query: df_final = df_final[df_final['uraian_pekerjaan'].str.contains(search_query, case=False, na=False)]
 
 # --- HEADER COMPACT ---
-st.markdown("<h3 style='margin-bottom:15px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br>Docking Repair Pricing</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='margin-bottom:15px; color:#1a64bc; line-height: 1.2;'>PT. DUKUH RAYA Shipyard<br><i>Docking Repair Pricing</i></h3>", unsafe_allow_html=True)
 
 # --- MINI CARDS KPI ---
 c1, c2, c3, c4 = st.columns(4)
