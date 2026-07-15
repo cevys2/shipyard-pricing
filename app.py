@@ -273,7 +273,7 @@ with tabs[1]:
     st.markdown("### 📝 Formulir Penambahan Item Pekerjaan (Bulk Entry)")
     
     # Karena kita pakai tabel dinamis, kita bungkus dalam Form agar tidak me-refresh tiap kali ngetik
-    with st.form("form_bulk_entry", clear_on_submit=True):
+    with st.form("form_bulk_entry", clear_on_submit=False):
         
         # --- 1. BAGIAN MASTER DATA ---
         st.markdown("#### 📌 Informasi Utama (Diisi Sekali)")
