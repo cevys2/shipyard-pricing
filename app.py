@@ -270,51 +270,119 @@ with tabs[0]:
         )
 
 with tabs[1]: 
-    st.markdown("### 📝 Formulir Penambahan Item Pekerjaan")
-    with st.form("form_tambah_data", clear_on_submit=True):
-        col_form1, col_form2 = st.columns(2)
-        with col_form1:
-            input_pt = st.text_input("🏢 Nama Klien / Perusahaan")
+    st.markdown("### 📝 Formulir Penambahan Item Pekerjaan (Bulk Entry)")
+    
+    # Karena kita pakai tabel dinamis, kita bungkus dalam Form agar tidak me-refresh tiap kali ngetik
+    with st.form("form_bulk_entry", clear_on_submit=True):
+        
+        # --- 1. BAGIAN MASTER DATA ---
+        st.markdown("#### 📌 Informasi Utama (Diisi Sekali)")
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            input_pt = st.text_input("🏢 Klien / Perusahaan")
+        with col_m2:
             input_kpl = st.text_input("⛴️ Nama Kapal")
-            input_tipe = st.selectbox("📄 Tipe Perjanjian", ["Induk", "Addendum"])
+        with col_m3:
             input_thn = st.text_input("📅 Tahun")
-            input_kat = st.text_input("🛠️ Kategori Pekerjaan")
-        with col_form2:
-            input_urai = st.text_area("📝 Uraian Pekerjaan")
-            input_sat = st.text_input("📏 Satuan (Volume)")
-            input_hrg = st.number_input("💰 Harga Satuan (Rp)", min_value=0.0, step=1000.0)
+        with col_m4:
+            input_tipe = st.selectbox("📄 Tipe Perjanjian", ["Induk", "Addendum"])
             
-        if st.form_submit_button("💾 Simpan Data Baru", type="primary", use_container_width=True):
-            if not input_kpl or not input_thn or not input_urai:
-                st.error("⚠️ Nama Kapal, Tahun, dan Uraian Pekerjaan WAJIB diisi!")
+        st.markdown("---")
+        
+        # --- 2. BAGIAN DETAIL PEKERJAAN ---
+        st.markdown("#### 📋 Detail Item Pekerjaan")
+        st.info("💡 **Tips Cepat:** Anda bisa klik tanda **'+'** di bawah tabel untuk menambah baris, atau langsung **Copy-Paste baris dari Excel** Anda langsung ke dalam tabel di bawah ini!")
+        
+        # Bikin template DataFrame kosong untuk tabel input
+        df_template = pd.DataFrame(columns=[
+            "Kategori Pekerjaan", 
+            "Uraian Pekerjaan", 
+            "Satuan (Volume)", 
+            "Harga Satuan"
+        ])
+        
+        # Data Editor Dinamis
+        edited_bulk = st.data_editor(
+            df_template,
+            num_rows="dynamic", # Kunci utama agar bisa nambah/copy-paste baris tanpa batas
+            use_container_width=True,
+            height=350,
+            column_config={
+                "Kategori Pekerjaan": st.column_config.TextColumn("Kategori Pekerjaan"),
+                "Uraian Pekerjaan": st.column_config.TextColumn("Uraian Pekerjaan", required=True),
+                "Satuan (Volume)": st.column_config.TextColumn("Satuan (Volume)"),
+                "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0.0, step=1000.0)
+            }
+        )
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # --- 3. TOMBOL EKSEKUSI ---
+        submit_bulk = st.form_submit_button("💾 Simpan Semua Data Pekerjaan", type="primary", use_container_width=True)
+        
+        if submit_bulk:
+            if not input_kpl or not input_thn:
+                st.error("⚠️ Nama Kapal dan Tahun pada Informasi Utama WAJIB diisi!")
+            elif edited_bulk.empty:
+                st.error("⚠️ Tabel Detail Item Pekerjaan masih kosong! Silakan isi minimal 1 baris.")
             else:
-                slug = str(input_kpl).strip().replace(" ", "_").upper()
-                prefix = f"{slug}-{str(input_thn).strip()}-"
-                df_cek = df_raw[df_raw['id'].str.startswith(prefix, na=False)]
+                # Membuang baris yang kosong semua (misal kepencet tambah row tapi nggak diisi)
+                valid_rows = edited_bulk.dropna(how='all')
                 
-                try:
-                    new_num = (int(df_cek['id'].max().split('-')[-1]) + 1) if not df_cek.empty else 1
-                except:
-                    new_num = len(df_cek) + 1
+                # Pastikan setelah difilter masih ada isinya
+                if valid_rows.empty:
+                    st.error("⚠️ Tidak ada data uraian pekerjaan yang valid untuk disimpan.")
+                else:
+                    # Bikin prefix ID untuk kapal ini
+                    slug = str(input_kpl).strip().replace(" ", "_").upper()
+                    prefix = f"{slug}-{str(input_thn).strip()}-"
                     
-                new_id = f"{prefix}{new_num:03d}"
-                
-                try:
-                    with engine.begin() as conn:
-                        conn.execute(text(f"""
-                            INSERT INTO {NAMA_TABEL} 
-                            (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
-                            VALUES (:id, :pt, :kpl, :tipe, :thn, :kat, :urai, :sat, :hrg)
-                        """), {
-                            "id": new_id, "pt": input_pt.upper(), "kpl": input_kpl.upper(), "tipe": input_tipe,
-                            "thn": input_thn, "kat": input_kat, "urai": input_urai, 
-                            "sat": input_sat, "hrg": input_hrg
-                        })
-                    st.cache_data.clear()
-                    st.success(f"✅ Data berhasil disimpan! ID: **{new_id}**")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Gagal menyimpan data: {e}")
+                    # Cari ID terakhir untuk kapal & tahun yang sama di database
+                    df_cek = df_raw[df_raw['id'].str.startswith(prefix, na=False)]
+                    try:
+                        last_num = int(df_cek['id'].max().split('-')[-1]) if not df_cek.empty else 0
+                    except:
+                        last_num = len(df_cek)
+                        
+                    try:
+                        # Buka satu koneksi transaksi (Bulk Insert) untuk kecepatan & keamanan
+                        with engine.begin() as conn:
+                            insert_query = text(f"""
+                                INSERT INTO {NAMA_TABEL} 
+                                (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                                VALUES (:id, :pt, :kpl, :tipe, :thn, :kat, :urai, :sat, :hrg)
+                            """)
+                            
+                            # Looping baris di tabel dan masukkan ke database
+                            for index, row in valid_rows.iterrows():
+                                last_num += 1
+                                new_id = f"{prefix}{last_num:03d}"
+                                
+                                # Mengatasi data kosong (NaN/None) kalau user skip kolom tertentu
+                                kat = row['Kategori Pekerjaan'] if pd.notna(row['Kategori Pekerjaan']) else "-"
+                                urai = row['Uraian Pekerjaan'] if pd.notna(row['Uraian Pekerjaan']) else "-"
+                                sat = row['Satuan (Volume)'] if pd.notna(row['Satuan (Volume)']) else "-"
+                                hrg = row['Harga Satuan'] if pd.notna(row['Harga Satuan']) else 0.0
+                                
+                                conn.execute(insert_query, {
+                                    "id": new_id, 
+                                    "pt": input_pt.upper(), 
+                                    "kpl": input_kpl.upper(), 
+                                    "tipe": input_tipe,
+                                    "thn": input_thn, 
+                                    "kat": kat, 
+                                    "urai": urai, 
+                                    "sat": sat, 
+                                    "hrg": float(hrg)
+                                })
+                        
+                        # Refresh sistem
+                        st.cache_data.clear()
+                        st.success(f"✅ Berhasil! **{len(valid_rows)}** item pekerjaan untuk kapal {input_kpl.upper()} telah disimpan ke database.")
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Gagal menyimpan data: {e}")
 
 with tabs[2]: 
     st.info("💡 **Mode Edit:** Klik ganda pada teks untuk mengoreksi. **Untuk menghapus baris, centang kotak di kolom '❌ Hapus'.**")
