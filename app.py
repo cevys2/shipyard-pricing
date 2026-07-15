@@ -65,13 +65,11 @@ def init_engine():
         st.error("❌ SUPABASE_URL tidak ditemukan di Secrets!")
         st.stop()
         
-    # Otomatis konversi URL Supabase agar menggunakan driver pg8000
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql+pg8000://", 1)
     elif db_url.startswith("postgresql://") and "pg8000" not in db_url:
         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
         
-    # KUNCI KECEPATAN: Gunakan connection pooling bawaan (Tanpa NullPool)
     return create_engine(
         db_url, 
         pool_size=10, 
@@ -99,7 +97,7 @@ def setup_user_table():
                 default_hash = generate_password_hash("admin123", method='pbkdf2:sha256')
                 conn.execute(text("INSERT INTO users (username, password_hash, role) VALUES ('admin', :pw, 'admin')"), {"pw": default_hash})
     except Exception as e:
-        st.error(f"Gagal inisialisasi  users: {e}")
+        st.error(f"Gagal inisialisasi users: {e}")
 
 setup_user_table()
 
@@ -156,9 +154,10 @@ if not st.session_state['logged_in']:
 
 @st.cache_data(ttl=600)
 def load_data():
+    # Menambahkan tipe_perjanjian ke dalam query SQL
     query = f"""
     SELECT 
-        id, nama_perusahaan, nama_kapal, tahun, 
+        id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun, 
         kategori_pekerjaan, uraian_pekerjaan, 
         volume_satuan, harga_satuan
     FROM {NAMA_TABEL}
@@ -166,14 +165,12 @@ def load_data():
     """
     df = pd.read_sql(query, engine)
     
-    # KITA JADIKAN STRING BIASA KARENA RAM SUDAH 8GB (ANTI-CRASH)
-    for col in ['nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan']:
+    for col in ['nama_perusahaan', 'nama_kapal', 'tipe_perjanjian', 'tahun', 'kategori_pekerjaan']:
         df[col] = df[col].fillna('-').astype(str)
         
     df['uraian_pekerjaan'] = df['uraian_pekerjaan'].fillna('-').astype(str)
     return df
 
-# 🚀 FITUR BARU: Caching tabel Users (Mencegah Query SQL berulang-ulang saat navigasi)
 @st.cache_data(ttl=60)
 def load_users():
     with engine.connect() as conn:
@@ -186,7 +183,7 @@ except Exception as e:
     st.stop()
 
 # --- SIDEBAR & FILTER DINAMIS ---
-st.sidebar.image("LOGO_DR1.png", width=250)
+st.logo("LOGO_DR1.png") # Memperbaiki logo agar HD
 
 st.sidebar.markdown(f"👤 **Halo, {st.session_state['username']}** ({st.session_state['role']})")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -202,17 +199,21 @@ search_query = st.sidebar.text_input("🔎 Cari Uraian...", placeholder="Contoh:
 list_perusahaan = ["Semua"] + list(df_raw['nama_perusahaan'].dropna().unique())
 filter_perusahaan = st.sidebar.selectbox("🏢 Klien / Pemilik", list_perusahaan)
 
-# OPTIMASI MEMORI: Hapus .copy()
 df_final = df_raw 
 
 if filter_perusahaan != "Semua": df_final = df_final[df_final['nama_perusahaan'] == filter_perusahaan]
 list_kapal = ["Semua"] + list(df_final['nama_kapal'].dropna().unique())
 filter_kapal = st.sidebar.selectbox("⛴️ Nama Kapal", list_kapal)
 
+# Tambahan Filter Tipe Perjanjian di Sidebar
+list_tipe = ["Semua"] + list(df_raw['tipe_perjanjian'].dropna().unique())
+filter_tipe = st.sidebar.selectbox("📄 Tipe Perjanjian", list_tipe)
+
 list_tahun = ["Semua"] + list(df_raw['tahun'].dropna().unique())
 filter_tahun = st.sidebar.selectbox("📅 Tahun", list_tahun)
 
 if filter_kapal != "Semua": df_final = df_final[df_final['nama_kapal'] == filter_kapal]
+if filter_tipe != "Semua": df_final = df_final[df_final['tipe_perjanjian'] == filter_tipe]
 if filter_tahun != "Semua": df_final = df_final[df_final['tahun'] == filter_tahun]
 
 list_kategori = ["Semua"] + list(df_final['kategori_pekerjaan'].dropna().unique())
@@ -234,22 +235,15 @@ with c4:
     st.markdown(f'<div class="mini-card" style="border-left: 4px solid #dc3545;"><p class="mc-title">📅 Tahun Referensi</p><p class="mc-val">{thn_val}</p></div>', unsafe_allow_html=True)
 
 # --- TABEL & FORM AREA ---
-df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
+# Menyusun ulang kolom agar Tipe Perjanjian berada di antara Nama Kapal dan Tahun
+df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tipe_perjanjian', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
 df_tampil = df_tampil.rename(columns={
     'id': 'ID Referensi', 'nama_perusahaan': 'Perusahaan', 'nama_kapal': 'Kapal', 
+    'tipe_perjanjian': 'Tipe Perjanjian',
     'tahun': 'Tahun', 'kategori_pekerjaan': 'Kategori', 'uraian_pekerjaan': 'Uraian Pekerjaan', 
     'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
 }).reset_index(drop=True)
 
-# --- TABEL & FORM AREA ---
-df_tampil = df_final[['id', 'nama_perusahaan', 'nama_kapal', 'tahun', 'kategori_pekerjaan', 'uraian_pekerjaan', 'volume_satuan', 'harga_satuan']]
-df_tampil = df_tampil.rename(columns={
-    'id': 'ID Referensi', 'nama_perusahaan': 'Perusahaan', 'nama_kapal': 'Kapal', 
-    'tahun': 'Tahun', 'kategori_pekerjaan': 'Kategori', 'uraian_pekerjaan': 'Uraian Pekerjaan', 
-    'volume_satuan': 'Satuan', 'harga_satuan': 'Harga Satuan'
-}).reset_index(drop=True)
-
-# 🚀 KEMBALI KE TABS: Mesin sudah stabil dan RAM besar
 tabs_list = ["👁️ View Data", "➕ Tambah Data Baru", "✏️ Edit & Hapus"]
 if st.session_state['role'] == 'admin':
     tabs_list.append("👥 Kelola Akses")
@@ -266,7 +260,7 @@ with tabs[0]:
             hide_index=True, 
             height=650,
             column_config={
-                "ID Referensi": None,  # 👈 BARIS INI YANG MENYEMBUNYIKAN KOLOM ID
+                "ID Referensi": None,
                 "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
             }
         )
@@ -278,6 +272,7 @@ with tabs[1]:
         with col_form1:
             input_pt = st.text_input("🏢 Nama Klien / Perusahaan")
             input_kpl = st.text_input("⛴️ Nama Kapal")
+            input_tipe = st.selectbox("📄 Tipe Perjanjian", ["Induk", "Addendum"])
             input_thn = st.text_input("📅 Tahun")
             input_kat = st.text_input("🛠️ Kategori Pekerjaan")
         with col_form2:
@@ -304,10 +299,10 @@ with tabs[1]:
                     with engine.begin() as conn:
                         conn.execute(text(f"""
                             INSERT INTO {NAMA_TABEL} 
-                            (id, nama_perusahaan, nama_kapal, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
-                            VALUES (:id, :pt, :kpl, :thn, :kat, :urai, :sat, :hrg)
+                            (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun, kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                            VALUES (:id, :pt, :kpl, :tipe, :thn, :kat, :urai, :sat, :hrg)
                         """), {
-                            "id": new_id, "pt": input_pt.upper(), "kpl": input_kpl.upper(), 
+                            "id": new_id, "pt": input_pt.upper(), "kpl": input_kpl.upper(), "tipe": input_tipe,
                             "thn": input_thn, "kat": input_kat, "urai": input_urai, 
                             "sat": input_sat, "hrg": input_hrg
                         })
@@ -331,7 +326,13 @@ with tabs[2]:
         hide_index=True, 
         key="tabel_editor",
         column_config={
-            "ID Referensi": None,  # 👈 BARIS INI JUGA DITAMBAHKAN DI SINI
+            "ID Referensi": None,
+            "Tipe Perjanjian": st.column_config.SelectboxColumn(
+                "Tipe Perjanjian",
+                help="Pilih Tipe Perjanjian",
+                options=["Induk", "Addendum"],
+                required=True
+            ),
             "Harga Satuan": st.column_config.NumberColumn("Harga Satuan", format="Rp %d")
         }
     )
@@ -359,7 +360,7 @@ with tabs[2]:
                     if changed_indices:
                         update_query = text(f"""
                             UPDATE {NAMA_TABEL} 
-                            SET nama_perusahaan = :pt, nama_kapal = :kpl, tahun = :thn, 
+                            SET nama_perusahaan = :pt, nama_kapal = :kpl, tipe_perjanjian = :tipe, tahun = :thn, 
                                 kategori_pekerjaan = :kat, uraian_pekerjaan = :urai, 
                                 volume_satuan = :sat, harga_satuan = :hrg
                             WHERE id = :id
@@ -367,7 +368,7 @@ with tabs[2]:
                         for idx in changed_indices:
                             row = edited_df.iloc[idx]
                             conn.execute(update_query, {
-                                "pt": row['Perusahaan'], "kpl": row['Kapal'], "thn": row['Tahun'],
+                                "pt": row['Perusahaan'], "kpl": row['Kapal'], "tipe": row['Tipe Perjanjian'], "thn": row['Tahun'],
                                 "kat": row['Kategori'], "urai": row['Uraian Pekerjaan'],
                                 "sat": row['Satuan'], "hrg": row['Harga Satuan'], "id": row['ID Referensi']
                             })
@@ -446,7 +447,5 @@ if st.session_state['role'] == 'admin':
                             load_users.clear()
                             st.success(f"✅ Password untuk {user_to_edit} berhasil diubah!")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Gagal mengubah password: {e}")
                         except Exception as e:
                             st.error(f"❌ Gagal mengubah password: {e}")
