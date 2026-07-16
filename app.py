@@ -273,7 +273,7 @@ with tabs[1]:
     st.markdown("### 📝 Formulir Penambahan Item Pekerjaan (Bulk Entry)")
     
     # Karena kita pakai tabel dinamis, kita bungkus dalam Form agar tidak me-refresh tiap kali ngetik
-    with st.form("form_bulk_entry", clear_on_submit=False):
+    with st.form("form_bulk_entry", clear_on_submit=True):
         
         # --- 1. BAGIAN MASTER DATA ---
         st.markdown("#### 📌 Informasi Utama (Diisi Sekali)")
@@ -387,8 +387,14 @@ with tabs[1]:
 with tabs[2]: 
     st.info("💡 **Mode Edit:** Klik ganda pada teks untuk mengoreksi. **Untuk menghapus baris, centang kotak di kolom '❌ Hapus'.**")
     
+    # --- TAMBAHAN FITUR CHECKLIST ALL DI SINI ---
+    pilih_semua = st.checkbox("☑️ Centang Semua (Hapus Massal Data di Bawah)")
+    
     df_edit_view = df_tampil.copy()
-    df_edit_view.insert(0, '❌ Hapus', False)
+    
+    # Modifikasi baris ini: Jika 'pilih_semua' dicentang, isi kolom dengan True, jika tidak False
+    df_edit_view.insert(0, '❌ Hapus', pilih_semua)
+    # ---------------------------------------------
     
     edited_df = st.data_editor(
         df_edit_view, 
