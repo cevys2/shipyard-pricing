@@ -3,3 +3,7 @@
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }
+
+.cell-input {
+  @apply w-full rounded border border-slate-300 px-2 py-1 text-sm outline-none ring-blue-500 focus:ring-2;
+}

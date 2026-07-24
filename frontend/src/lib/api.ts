@@ -71,6 +71,86 @@ export const api = {
       token,
     );
   },
+  addRow(token: string, header: CatalogHeader, item: CatalogItemInput) {
+    return request<{ saved: number }>(
+      "/catalog/bulk",
+      { method: "POST", body: JSON.stringify({ ...header, items: [item] }) },
+      token,
+    );
+  },
+  bulkCreateMany(token: string, header: CatalogHeader, items: CatalogItemInput[]) {
+    return request<{ saved: number }>(
+      "/catalog/bulk",
+      { method: "POST", body: JSON.stringify({ ...header, items }) },
+      token,
+    );
+  },
+  patchCatalog(token: string, body: { updates?: { id: string; data: CatalogRowInput }[]; delete_ids?: string[] }) {
+    return request<{ deleted: number; updated: number }>(
+      "/catalog",
+      { method: "PATCH", body: JSON.stringify(body) },
+      token,
+    );
+  },
+  dockingPreview(token: string, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<DockingImportPreview>(
+      "/catalog/import/docking-preview",
+      { method: "POST", body: fd },
+      token,
+    );
+  },
+  dockingCommit(token: string, body: DockingImportCommit) {
+    return request<{ saved: number }>(
+      "/catalog/import/docking-commit",
+      { method: "POST", body: JSON.stringify(body) },
+      token,
+    );
+  },
+};
+
+export type CatalogHeader = {
+  nama_perusahaan: string;
+  nama_kapal: string;
+  tahun: string;
+  tipe_perjanjian: "Induk" | "Addendum";
+};
+
+export type CatalogItemInput = {
+  kategori_pekerjaan: string;
+  uraian_pekerjaan: string;
+  volume_satuan: string;
+  harga_satuan: number;
+};
+
+export type CatalogRowInput = CatalogHeader & CatalogItemInput;
+
+export type DockingParsedItem = {
+  row: number;
+  kategori: string | null;
+  uraian: string;
+  volume_satuan: string;
+  keterangan: string;
+  harga: number;
+};
+
+export type DockingImportPreview = {
+  sheet_name: string;
+  detected_nama_kapal: string;
+  detected_nama_perusahaan: string;
+  detected_tahun: string;
+  induk: DockingParsedItem[];
+  addendum: DockingParsedItem[];
+  warnings: string[];
+};
+
+export type DockingImportCommit = {
+  nama_perusahaan: string;
+  nama_kapal: string;
+  tahun: string;
+  induk_items: CatalogItemInput[];
+  addendum_items: CatalogItemInput[];
 };
 
 export type CatalogRow = {

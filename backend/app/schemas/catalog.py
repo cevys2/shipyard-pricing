@@ -85,3 +85,30 @@ class BulkUpdateItem(BaseModel):
 class BulkPatchRequest(BaseModel):
     updates: list[BulkUpdateItem] = Field(default_factory=list)
     delete_ids: list[str] = Field(default_factory=list)
+
+
+class DockingParsedItem(BaseModel):
+    row: int
+    kategori: str | None = None
+    uraian: str
+    volume_satuan: str = "-"
+    keterangan: str = ""
+    harga: float = 0
+
+
+class DockingImportPreview(BaseModel):
+    sheet_name: str
+    detected_nama_kapal: str = ""
+    detected_nama_perusahaan: str = ""
+    detected_tahun: str = ""
+    induk: list[DockingParsedItem]
+    addendum: list[DockingParsedItem]
+    warnings: list[str]
+
+
+class DockingImportCommit(BaseModel):
+    nama_perusahaan: str = ""
+    nama_kapal: Annotated[str, Field(min_length=1, max_length=200)]
+    tahun: Annotated[str, Field(min_length=1, max_length=20)]
+    induk_items: list[CatalogItemBase] = Field(default_factory=list)
+    addendum_items: list[CatalogItemBase] = Field(default_factory=list)

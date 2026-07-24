@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
-  formatRp,
   type AuthUser,
   type CatalogRow,
   type CatalogStats,
   type FilterOptions,
 } from "../lib/api";
+import EditableCatalogTable from "../components/EditableCatalogTable";
+import DockingImportPanel from "../components/DockingImportPanel";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
@@ -29,6 +30,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   const [stats, setStats] = useState<CatalogStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [importMsg, setImportMsg] = useState("");
+  const [importMode, setImportMode] = useState<"docking" | "flat">("docking");
 
   const queryParams = useMemo(
     () => ({
@@ -172,63 +174,66 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                 />
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                {loading ? (
-                  <p className="p-8 text-center text-slate-500">Memuat data...</p>
-                ) : (
-                  <div className="max-h-[560px] overflow-auto">
-                    <table className="min-w-full text-left text-sm">
-                      <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3">Perusahaan</th>
-                          <th className="px-4 py-3">Kapal</th>
-                          <th className="px-4 py-3">Tipe</th>
-                          <th className="px-4 py-3">Tahun</th>
-                          <th className="px-4 py-3">Kategori</th>
-                          <th className="px-4 py-3">Uraian</th>
-                          <th className="px-4 py-3">Satuan</th>
-                          <th className="px-4 py-3 text-right">Harga</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((r) => (
-                          <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
-                            <td className="px-4 py-2">{r.nama_perusahaan}</td>
-                            <td className="px-4 py-2">{r.nama_kapal}</td>
-                            <td className="px-4 py-2">{r.tipe_perjanjian}</td>
-                            <td className="px-4 py-2">{r.tahun}</td>
-                            <td className="px-4 py-2">{r.kategori_pekerjaan}</td>
-                            <td className="px-4 py-2">{r.uraian_pekerjaan}</td>
-                            <td className="px-4 py-2">{r.volume_satuan}</td>
-                            <td className="px-4 py-2 text-right font-medium">{formatRp(r.harga_satuan)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              <EditableCatalogTable
+                token={auth.token}
+                rows={rows}
+                filterOpts={filterOpts}
+                loading={loading}
+                onChanged={refresh}
+              />
             </>
           )}
 
           {tab === "import" && (
-            <div className="max-w-xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-              <h3 className="text-lg font-bold">Import otomatis dari Excel / CSV</h3>
-              <p className="mt-2 text-sm text-slate-600">
-                Kolom wajib: <strong>Uraian Pekerjaan</strong>, plus <strong>Nama Kapal</strong> dan{" "}
-                <strong>Tahun</strong> (boleh diisi sama di setiap baris). Backend validasi pakai Pydantic
-                sebelum simpan ke Supabase.
-              </p>
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="mt-6 block w-full text-sm"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImport(f);
-                }}
-              />
-              {importMsg && <p className="mt-4 text-sm text-slate-700">{importMsg}</p>}
+            <div className="max-w-3xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+              <div className="mb-5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportMode("docking")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${importMode === "docking" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-700"}`}
+                >
+                  Laporan Docking (otomatis Induk/Addendum)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportMode("flat")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${importMode === "flat" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-700"}`}
+                >
+                  Format Rapi (kolom sudah bersih)
+                </button>
+              </div>
+
+              {importMode === "docking" ? (
+                <>
+                  <h3 className="text-lg font-bold">Import file laporan "REALISASI BIAYA DOCKING"</h3>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Otomatis pisah baris ke <strong>Induk</strong> vs <strong>Addendum</strong> berdasarkan kata
+                    "tambahan" di kolom Keterangan. Preview dulu sebelum simpan - baris yang meragukan ditandai
+                    dan bisa di-uncheck manual.
+                  </p>
+                  <div className="mt-6">
+                    <DockingImportPanel token={auth.token} onImported={refresh} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold">Import otomatis dari Excel / CSV (kolom rapi)</h3>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Kolom wajib: <strong>Uraian Pekerjaan</strong>, plus <strong>Nama Kapal</strong> dan{" "}
+                    <strong>Tahun</strong> (boleh diisi sama di setiap baris).
+                  </p>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="mt-6 block w-full text-sm"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void onImport(f);
+                    }}
+                  />
+                  {importMsg && <p className="mt-4 text-sm text-slate-700">{importMsg}</p>}
+                </>
+              )}
             </div>
           )}
         </main>

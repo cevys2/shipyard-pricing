@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/components/DockingImportPanel.tsx","./src/components/EditableCatalogTable.tsx","./src/lib/api.ts","./src/lib/tsv.ts","./src/pages/DashboardPage.tsx","./src/pages/LoginPage.tsx"],"version":"5.8.3"}
