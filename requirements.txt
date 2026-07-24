@@ -2,5 +2,6 @@ streamlit
 pandas
 SQLAlchemy
 python-dotenv
-pg8000
 Werkzeug
+streamlit-antd-components
+pg8000
