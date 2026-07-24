@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pg8000
+python-dotenv
+pydantic[email]
+pydantic-settings
+python-jose[cryptography]
+python-multipart
+pandas
+openpyxl
