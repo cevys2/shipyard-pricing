@@ -1,8 +1,13 @@
 import os
+import secrets
+import logging
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app.config import settings
+
+logger = logging.getLogger("app.database")
 
 
 def normalize_db_url(db_url: str) -> str:
@@ -47,10 +52,16 @@ def ensure_users_table() -> None:
         if count == 0:
             from app.auth import hash_password
 
-            default_hash = hash_password("admin123")
+            temp_password = secrets.token_urlsafe(12)
+            default_hash = hash_password(temp_password)
             conn.execute(
                 text(
                     "INSERT INTO users (username, password_hash, role) VALUES ('admin', :pw, 'admin')"
                 ),
                 {"pw": default_hash},
+            )
+            logger.warning(
+                "Created initial admin user. Username: admin | Temporary password: %s "
+                "-- log in and change this immediately (POST /users/password).",
+                temp_password,
             )

@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     supabase_url: str = ""
-    jwt_secret: str = "change-me-in-production-use-long-random-string"
+    jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
