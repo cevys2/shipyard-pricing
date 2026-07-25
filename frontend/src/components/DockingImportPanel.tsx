@@ -1,16 +1,43 @@
 import { useState } from "react";
-import { api, formatRp, type DockingImportPreview, type DockingParsedItem } from "../lib/api";
+import { api, formatRp, type DockingImportPreview } from "../lib/api";
 
 type Props = {
   token: string;
   onImported: () => void;
 };
 
+type EditRow = {
+  key: string;
+  kategori: string;
+  uraian: string;
+  volume_satuan: string;
+  harga: number;
+};
+
+let counter = 0;
+function newKey() {
+  counter += 1;
+  return `new-${Date.now()}-${counter}`;
+}
+
+function fromParsed(items: DockingImportPreview["induk"]): EditRow[] {
+  return items.map((it) => ({
+    key: `p-${it.row}`,
+    kategori: it.kategori || "-",
+    uraian: it.uraian,
+    volume_satuan: it.volume_satuan,
+    harga: it.harga,
+  }));
+}
+
+const emptyRow = (): EditRow => ({ key: newKey(), kategori: "-", uraian: "", volume_satuan: "-", harga: 0 });
+
 export default function DockingImportPanel({ token, onImported }: Props) {
-  const [preview, setPreview] = useState<DockingImportPreview | null>(null);
+  const [sheetName, setSheetName] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [header, setHeader] = useState({ nama_perusahaan: "", nama_kapal: "", tahun: "" });
-  const [excludedInduk, setExcludedInduk] = useState<Set<number>>(new Set());
-  const [excludedAddendum, setExcludedAddendum] = useState<Set<number>>(new Set());
+  const [induk, setInduk] = useState<EditRow[] | null>(null);
+  const [addendum, setAddendum] = useState<EditRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resultMsg, setResultMsg] = useState("");
@@ -19,17 +46,19 @@ export default function DockingImportPanel({ token, onImported }: Props) {
     setLoading(true);
     setError("");
     setResultMsg("");
-    setPreview(null);
+    setInduk(null);
+    setAddendum(null);
     try {
       const p = await api.dockingPreview(token, file);
-      setPreview(p);
+      setSheetName(p.sheet_name);
+      setWarnings(p.warnings);
       setHeader({
         nama_perusahaan: p.detected_nama_perusahaan,
         nama_kapal: p.detected_nama_kapal,
         tahun: p.detected_tahun,
       });
-      setExcludedInduk(new Set());
-      setExcludedAddendum(new Set());
+      setInduk(fromParsed(p.induk));
+      setAddendum(fromParsed(p.addendum));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal membaca file");
     } finally {
@@ -37,47 +66,69 @@ export default function DockingImportPanel({ token, onImported }: Props) {
     }
   }
 
-  function toggleExclude(set: Set<number>, setFn: (s: Set<number>) => void, row: number) {
-    const next = new Set(set);
-    if (next.has(row)) next.delete(row);
-    else next.add(row);
-    setFn(next);
+  function updateRow(list: "induk" | "addendum", key: string, field: keyof EditRow, value: string | number) {
+    const setter = list === "induk" ? setInduk : setAddendum;
+    setter((prev) => (prev ? prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)) : prev));
+  }
+
+  function deleteRow(list: "induk" | "addendum", key: string) {
+    const setter = list === "induk" ? setInduk : setAddendum;
+    setter((prev) => (prev ? prev.filter((r) => r.key !== key) : prev));
+  }
+
+  function addRow(list: "induk" | "addendum") {
+    const setter = list === "induk" ? setInduk : setAddendum;
+    setter((prev) => [...(prev ?? []), emptyRow()]);
+  }
+
+  function moveRow(from: "induk" | "addendum", key: string) {
+    const to = from === "induk" ? "addendum" : "induk";
+    const fromSetter = from === "induk" ? setInduk : setAddendum;
+    const toSetter = to === "induk" ? setInduk : setAddendum;
+    let moved: EditRow | undefined;
+    fromSetter((prev) => {
+      if (!prev) return prev;
+      moved = prev.find((r) => r.key === key);
+      return prev.filter((r) => r.key !== key);
+    });
+    if (moved) {
+      const m = moved;
+      toSetter((prev) => [...(prev ?? []), m]);
+    }
   }
 
   async function commit() {
-    if (!preview) return;
+    if (!induk || !addendum) return;
     if (!header.nama_kapal.trim() || !header.tahun.trim()) {
       setError("Nama Kapal dan Tahun wajib diisi sebelum simpan");
+      return;
+    }
+    const invalidInduk = induk.some((r) => !r.uraian.trim() || !(r.harga > 0));
+    const invalidAddendum = addendum.some((r) => !r.uraian.trim() || !(r.harga > 0));
+    if (invalidInduk || invalidAddendum) {
+      setError("Masih ada baris dengan Uraian kosong atau Harga 0 - benerin dulu di tabel di bawah sebelum konfirmasi.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const induk_items = preview.induk
-        .filter((it) => !excludedInduk.has(it.row))
-        .map((it) => ({
-          kategori_pekerjaan: it.kategori || "-",
-          uraian_pekerjaan: it.uraian,
-          volume_satuan: it.volume_satuan,
-          harga_satuan: it.harga,
-        }));
-      const addendum_items = preview.addendum
-        .filter((it) => !excludedAddendum.has(it.row))
-        .map((it) => ({
-          kategori_pekerjaan: it.kategori || "-",
-          uraian_pekerjaan: it.uraian,
-          volume_satuan: it.volume_satuan,
-          harga_satuan: it.harga,
+      const toItems = (rows: EditRow[]) =>
+        rows.map((r) => ({
+          kategori_pekerjaan: r.kategori || "-",
+          uraian_pekerjaan: r.uraian,
+          volume_satuan: r.volume_satuan,
+          harga_satuan: r.harga,
         }));
       const res = await api.dockingCommit(token, {
         nama_perusahaan: header.nama_perusahaan,
         nama_kapal: header.nama_kapal,
         tahun: header.tahun,
-        induk_items,
-        addendum_items,
+        induk_items: toItems(induk),
+        addendum_items: toItems(addendum),
       });
-      setResultMsg(`Berhasil simpan ${res.saved} baris (${induk_items.length} Induk, ${addendum_items.length} Addendum).`);
-      setPreview(null);
+      setResultMsg(`Berhasil simpan ${res.saved} baris (${induk.length} Induk, ${addendum.length} Addendum).`);
+      setInduk(null);
+      setAddendum(null);
       onImported();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal menyimpan");
@@ -85,6 +136,8 @@ export default function DockingImportPanel({ token, onImported }: Props) {
       setLoading(false);
     }
   }
+
+  const showPreview = induk !== null && addendum !== null;
 
   return (
     <div>
@@ -98,12 +151,12 @@ export default function DockingImportPanel({ token, onImported }: Props) {
         }}
       />
       {loading && <p className="mt-3 text-sm text-slate-500">Memproses...</p>}
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm font-medium text-red-600">{error}</p>}
       {resultMsg && <p className="mt-3 text-sm text-green-700">{resultMsg}</p>}
 
-      {preview && (
+      {showPreview && (
         <div className="mt-5">
-          <p className="mb-2 text-xs text-slate-500">Sheet terbaca: {preview.sheet_name}</p>
+          <p className="mb-2 text-xs text-slate-500">Sheet terbaca: {sheetName}</p>
 
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="block text-xs font-medium text-slate-600">
@@ -131,36 +184,45 @@ export default function DockingImportPanel({ token, onImported }: Props) {
               />
             </label>
           </div>
-          <p className="mb-4 text-xs text-slate-500">
-            Nama kapal/perusahaan/tahun ini dideteksi otomatis dari blok "DATA-DATA KAPAL" - cek dulu sebelum simpan.
-          </p>
 
-          {preview.warnings.length > 0 && (
+          {warnings.length > 0 && (
             <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
               <p className="mb-1 text-xs font-bold text-amber-800">
-                {preview.warnings.length} hal perlu dicek manual:
+                {warnings.length} hal yang di-flag parser waktu baca file (nomor baris merujuk ke file Excel asli):
               </p>
               <ul className="max-h-32 list-disc overflow-auto pl-5 text-xs text-amber-800">
-                {preview.warnings.map((w, i) => (
+                {warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          <ItemTable
-            title={`Induk (${preview.induk.length - excludedInduk.size}/${preview.induk.length} dipilih)`}
-            items={preview.induk}
-            excluded={excludedInduk}
-            onToggle={(row) => toggleExclude(excludedInduk, setExcludedInduk, row)}
+          <p className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-slate-700">
+            Cek tabel di bawah dulu. Kalau ada yang salah (harga, kategori, salah masuk Induk/Addendum, dll), edit
+            langsung di sini - hapus baris, pindahin ke tabel sebelah, atau tambah baris manual. Baru klik{" "}
+            <strong>Konfirmasi & Simpan</strong> kalau semuanya udah bener.
+          </p>
+
+          <EditTable
+            title="Induk"
+            rows={induk}
+            onUpdate={(key, field, val) => updateRow("induk", key, field, val)}
+            onDelete={(key) => deleteRow("induk", key)}
+            onMove={(key) => moveRow("induk", key)}
+            onAdd={() => addRow("induk")}
+            moveLabel="Pindah ke Addendum"
             color="border-blue-200"
           />
-          <div className="mt-4" />
-          <ItemTable
-            title={`Addendum (${preview.addendum.length - excludedAddendum.size}/${preview.addendum.length} dipilih)`}
-            items={preview.addendum}
-            excluded={excludedAddendum}
-            onToggle={(row) => toggleExclude(excludedAddendum, setExcludedAddendum, row)}
+          <div className="mt-5" />
+          <EditTable
+            title="Addendum"
+            rows={addendum}
+            onUpdate={(key, field, val) => updateRow("addendum", key, field, val)}
+            onDelete={(key) => deleteRow("addendum", key)}
+            onMove={(key) => moveRow("addendum", key)}
+            onAdd={() => addRow("addendum")}
+            moveLabel="Pindah ke Induk"
             color="border-purple-200"
           />
 
@@ -168,9 +230,9 @@ export default function DockingImportPanel({ token, onImported }: Props) {
             type="button"
             disabled={loading}
             onClick={commit}
-            className="mt-4 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-50"
+            className="mt-5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-50"
           >
-            Simpan yang Dipilih
+            Konfirmasi & Simpan ({induk.length + addendum.length} baris)
           </button>
         </div>
       )}
@@ -178,60 +240,89 @@ export default function DockingImportPanel({ token, onImported }: Props) {
   );
 }
 
-function ItemTable({
+function EditTable({
   title,
-  items,
-  excluded,
-  onToggle,
+  rows,
+  onUpdate,
+  onDelete,
+  onMove,
+  onAdd,
+  moveLabel,
   color,
 }: {
   title: string;
-  items: DockingParsedItem[];
-  excluded: Set<number>;
-  onToggle: (row: number) => void;
+  rows: EditRow[];
+  onUpdate: (key: string, field: keyof EditRow, value: string | number) => void;
+  onDelete: (key: string) => void;
+  onMove: (key: string) => void;
+  onAdd: () => void;
+  moveLabel: string;
   color: string;
 }) {
-  if (items.length === 0) {
-    return (
-      <div>
-        <p className="mb-1 text-sm font-bold text-slate-800">{title}</p>
-        <p className="text-xs text-slate-400">Tidak ada baris terdeteksi.</p>
-      </div>
-    );
-  }
   return (
     <div>
-      <p className="mb-1 text-sm font-bold text-slate-800">{title}</p>
-      <div className={`max-h-72 overflow-auto rounded-lg border ${color} bg-white`}>
-        <table className="min-w-full text-left text-xs">
-          <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
-            <tr>
-              <th className="px-2 py-2"></th>
-              <th className="px-2 py-2">Baris</th>
-              <th className="px-2 py-2">Kategori</th>
-              <th className="px-2 py-2">Uraian</th>
-              <th className="px-2 py-2">Volume</th>
-              <th className="px-2 py-2 text-right">Harga</th>
-              <th className="px-2 py-2">Keterangan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.row} className={`border-t border-slate-100 ${excluded.has(it.row) ? "opacity-40" : ""}`}>
-                <td className="px-2 py-1">
-                  <input type="checkbox" checked={!excluded.has(it.row)} onChange={() => onToggle(it.row)} />
-                </td>
-                <td className="px-2 py-1">{it.row}</td>
-                <td className="px-2 py-1">{it.kategori || "-"}</td>
-                <td className="px-2 py-1">{it.uraian}</td>
-                <td className="px-2 py-1">{it.volume_satuan}</td>
-                <td className="px-2 py-1 text-right">{formatRp(it.harga)}</td>
-                <td className="px-2 py-1">{it.keterangan}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-sm font-bold text-slate-800">
+          {title} ({rows.length} baris)
+        </p>
+        <button type="button" onClick={onAdd} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">
+          + Tambah Baris Manual
+        </button>
       </div>
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400">
+          Tidak ada baris.
+        </p>
+      ) : (
+        <div className={`max-h-80 overflow-auto rounded-lg border ${color} bg-white`}>
+          <table className="min-w-full text-left text-xs">
+            <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
+              <tr>
+                <th className="px-2 py-2">Kategori</th>
+                <th className="px-2 py-2">Uraian</th>
+                <th className="px-2 py-2">Volume</th>
+                <th className="px-2 py-2 text-right">Harga</th>
+                <th className="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key} className="border-t border-slate-100">
+                  <td className="px-1 py-1">
+                    <input className="cell-input" value={r.kategori} onChange={(e) => onUpdate(r.key, "kategori", e.target.value)} />
+                  </td>
+                  <td className="px-1 py-1">
+                    <input className="cell-input" value={r.uraian} onChange={(e) => onUpdate(r.key, "uraian", e.target.value)} />
+                  </td>
+                  <td className="px-1 py-1">
+                    <input className="cell-input" value={r.volume_satuan} onChange={(e) => onUpdate(r.key, "volume_satuan", e.target.value)} />
+                  </td>
+                  <td className="px-1 py-1">
+                    <input
+                      type="number"
+                      className="cell-input text-right"
+                      value={r.harga}
+                      onChange={(e) => onUpdate(r.key, "harga", Number(e.target.value) || 0)}
+                    />
+                    {r.harga <= 0 && <span className="block text-[10px] text-red-500">harga wajib &gt; 0</span>}
+                  </td>
+                  <td className="whitespace-nowrap px-1 py-1">
+                    <button type="button" onClick={() => onMove(r.key)} className="mr-1 rounded border border-slate-300 px-1.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-100">
+                      {moveLabel}
+                    </button>
+                    <button type="button" onClick={() => onDelete(r.key)} className="rounded border border-red-300 px-1.5 py-1 text-[10px] font-semibold text-red-600 hover:bg-red-50">
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="border-t border-slate-100 px-2 py-2 text-right text-xs font-semibold text-slate-600">
+            Total: {formatRp(rows.reduce((s, r) => s + (r.harga || 0), 0))}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

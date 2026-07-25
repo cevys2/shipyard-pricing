@@ -67,11 +67,19 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
   const [error, setError] = useState("");
 
   const [showAdd, setShowAdd] = useState(false);
-  const [addTab, setAddTab] = useState<"form" | "paste">("form");
+  const [addTab, setAddTab] = useState<"form" | "pasteUraian" | "pasteFull">("pasteUraian");
   const [addDraft, setAddDraft] = useState<CatalogRowInput>(emptyDraft);
   const [pasteText, setPasteText] = useState("");
   const [pastePreview, setPastePreview] = useState<CatalogRowInput[]>([]);
   const [pasteWarnings, setPasteWarnings] = useState<string[]>([]);
+
+  function switchAddTab(tab: "form" | "pasteUraian" | "pasteFull") {
+    setAddTab(tab);
+    setPasteText("");
+    setPastePreview([]);
+    setPasteWarnings([]);
+    setError("");
+  }
 
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkEditRows, setBulkEditRows] = useState<{ id: string; data: CatalogRowInput }[]>([]);
@@ -157,8 +165,8 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
     }
   }
 
-  // ---- paste-from-Excel bulk add ----
-  function parsePaste() {
+  // ---- paste-from-Excel bulk add: full 8 kolom ----
+  function parsePasteFull() {
     setError("");
     const parsedRows = parseTsv(pasteText);
     const warnings: string[] = [];
@@ -173,6 +181,26 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
     });
     setPastePreview(drafts);
     setPasteWarnings(warnings);
+  }
+
+  // ---- paste hanya kolom Uraian (drag-fill Excel), header/default dari addDraft ----
+  function parsePasteUraian() {
+    setError("");
+    if (!addDraft.nama_kapal.trim() || !addDraft.tahun.trim()) {
+      setError("Isi dulu Kapal dan Tahun di atas sebelum paste kolom Uraian");
+      return;
+    }
+    const lines = pasteText
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "");
+    const drafts: CatalogRowInput[] = lines.map((line) => ({
+      ...addDraft,
+      uraian_pekerjaan: line,
+    }));
+    setPastePreview(drafts);
+    setPasteWarnings([]);
   }
 
   function removePasteRow(idx: number) {
@@ -330,59 +358,70 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
 
       {editMode && showAdd && (
         <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <div className="mb-3 flex gap-2">
+          <p className="mb-2 text-xs font-bold text-slate-700">Kapal & default (dipakai di semua mode di bawah)</p>
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <LabeledInput label="Perusahaan" value={addDraft.nama_perusahaan} onChange={(v) => setAddDraft((d) => ({ ...d, nama_perusahaan: v }))} />
+            <LabeledInput label="Kapal *" value={addDraft.nama_kapal} onChange={(v) => setAddDraft((d) => ({ ...d, nama_kapal: v }))} />
+            <LabeledInput label="Tahun *" value={addDraft.tahun} onChange={(v) => setAddDraft((d) => ({ ...d, tahun: v }))} />
+            <label className="block text-xs font-medium text-slate-600">
+              Tipe
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                value={addDraft.tipe_perjanjian}
+                onChange={(e) => setAddDraft((d) => ({ ...d, tipe_perjanjian: e.target.value as "Induk" | "Addendum" }))}
+              >
+                <option value="Induk">Induk</option>
+                <option value="Addendum">Addendum</option>
+              </select>
+            </label>
+            <LabeledInput label="Kategori default" value={addDraft.kategori_pekerjaan} onChange={(v) => setAddDraft((d) => ({ ...d, kategori_pekerjaan: v }))} />
+            <LabeledInput label="Satuan default" value={addDraft.volume_satuan} onChange={(v) => setAddDraft((d) => ({ ...d, volume_satuan: v }))} />
+            <LabeledInput
+              label="Harga default"
+              type="number"
+              value={String(addDraft.harga_satuan)}
+              onChange={(v) => setAddDraft((d) => ({ ...d, harga_satuan: Number(v) || 0 }))}
+            />
+          </div>
+          <p className="mb-3 text-xs text-slate-500">
+            Kategori/Satuan/Harga default ini dipakai buat semua baris hasil paste kolom Uraian - kalau ada yang beda-beda,
+            perbaiki belakangan lewat Mode Edit / Edit Massal setelah disimpan.
+          </p>
+
+          <div className="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setAddTab("form")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "form" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+              onClick={() => switchAddTab("pasteUraian")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "pasteUraian" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
             >
-              Form (1 baris)
+              Tempel Kolom Uraian (drag-fill Excel)
             </button>
             <button
               type="button"
-              onClick={() => setAddTab("paste")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "paste" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+              onClick={() => switchAddTab("form")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "form" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
             >
-              Tempel dari Excel (banyak baris)
+              1 Baris Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => switchAddTab("pasteFull")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "pasteFull" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+            >
+              Tempel Lengkap (8 kolom)
             </button>
           </div>
 
           {addTab === "form" && (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <LabeledInput label="Perusahaan" value={addDraft.nama_perusahaan} onChange={(v) => setAddDraft((d) => ({ ...d, nama_perusahaan: v }))} />
-                <LabeledInput label="Kapal *" value={addDraft.nama_kapal} onChange={(v) => setAddDraft((d) => ({ ...d, nama_kapal: v }))} />
-                <LabeledInput label="Tahun *" value={addDraft.tahun} onChange={(v) => setAddDraft((d) => ({ ...d, tahun: v }))} />
-                <label className="block text-xs font-medium text-slate-600">
-                  Tipe
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
-                    value={addDraft.tipe_perjanjian}
-                    onChange={(e) => setAddDraft((d) => ({ ...d, tipe_perjanjian: e.target.value as "Induk" | "Addendum" }))}
-                  >
-                    <option value="Induk">Induk</option>
-                    <option value="Addendum">Addendum</option>
-                  </select>
-                </label>
-                <LabeledInput label="Kategori" value={addDraft.kategori_pekerjaan} onChange={(v) => setAddDraft((d) => ({ ...d, kategori_pekerjaan: v }))} />
-                <LabeledInput label="Satuan" value={addDraft.volume_satuan} onChange={(v) => setAddDraft((d) => ({ ...d, volume_satuan: v }))} />
-                <LabeledInput
-                  label="Harga"
-                  type="number"
-                  value={String(addDraft.harga_satuan)}
-                  onChange={(v) => setAddDraft((d) => ({ ...d, harga_satuan: Number(v) || 0 }))}
+              <label className="block text-xs font-medium text-slate-600">
+                Uraian Pekerjaan *
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                  value={addDraft.uraian_pekerjaan}
+                  onChange={(e) => setAddDraft((d) => ({ ...d, uraian_pekerjaan: e.target.value }))}
                 />
-                <div className="col-span-2 md:col-span-4">
-                  <label className="block text-xs font-medium text-slate-600">
-                    Uraian Pekerjaan *
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-                      value={addDraft.uraian_pekerjaan}
-                      onChange={(e) => setAddDraft((d) => ({ ...d, uraian_pekerjaan: e.target.value }))}
-                    />
-                  </label>
-                </div>
-              </div>
+              </label>
               <div className="mt-3 flex gap-2">
                 <button type="button" disabled={busy} onClick={submitAdd} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50">
                   Simpan Baris
@@ -401,11 +440,33 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
             </>
           )}
 
-          {addTab === "paste" && (
+          {addTab === "pasteUraian" && (
+            <>
+              <p className="mb-2 text-xs text-slate-600">
+                Di Excel, drag-fill/tarik ke bawah kolom <strong>Uraian Pekerjaan</strong> aja (satu uraian per baris),
+                select, Ctrl+C, paste di kotak bawah. Kategori/Satuan/Harga dari default di atas akan dipakai buat semua baris -
+                edit satu-satu belakangan kalau perlu.
+              </p>
+              <textarea
+                className="h-32 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs"
+                placeholder={"Pelayanan mooring boat\nPembersihan lambung kapal\nPengecatan anti fouling\n..."}
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+              />
+              <div className="mt-2 flex gap-2">
+                <button type="button" onClick={parsePasteUraian} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                  Preview
+                </button>
+              </div>
+            </>
+          )}
+
+          {addTab === "pasteFull" && (
             <>
               <p className="mb-2 text-xs text-slate-600">
                 Di Excel, urutkan kolom: <strong>Perusahaan | Kapal | Tipe | Tahun | Kategori | Uraian | Satuan | Harga</strong> (Perusahaan/Kategori/Satuan boleh
-                kosong). Select semua sel yang mau ditambah, Ctrl+C, lalu paste di kotak bawah ini.
+                kosong). Select semua sel yang mau ditambah, Ctrl+C, lalu paste di kotak bawah ini. Pakai mode ini kalau tiap baris
+                punya kategori/satuan/harga yang beda-beda.
               </p>
               <textarea
                 className="h-32 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs"
@@ -414,11 +475,15 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 onChange={(e) => setPasteText(e.target.value)}
               />
               <div className="mt-2 flex gap-2">
-                <button type="button" onClick={parsePaste} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={parsePasteFull} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
                   Preview
                 </button>
               </div>
+            </>
+          )}
 
+          {(addTab === "pasteUraian" || addTab === "pasteFull") && (
+            <>
               {pasteWarnings.length > 0 && (
                 <ul className="mt-2 list-disc pl-5 text-xs text-amber-700">
                   {pasteWarnings.map((w, i) => (

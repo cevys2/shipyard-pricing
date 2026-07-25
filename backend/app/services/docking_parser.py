@@ -183,10 +183,12 @@ def parse_sheet(values, sheet_name):
     keterangan_col = find_group_start(group_labels, ['keterangan'])
 
     harga_utama_start = find_harga_group_start(group_labels, ['harga'], must_not_have=['batal', 'tambahan', 'realisasi'], after=volume_col or uraian_col)
-    harga_utama_range = group_range(group_labels, harga_utama_start)
-
     tambahan_start = find_harga_group_start(group_labels, ['tambahan'])
-    harga_tambahan_range = group_range(group_labels, tambahan_start)
+
+    harga_utama_satuan_col = col_for_sub(group_labels, sub_labels, harga_utama_start, 'satuan')
+    harga_utama_jumlah_col = col_for_sub(group_labels, sub_labels, harga_utama_start, 'jumlah')
+    harga_tambahan_satuan_col = col_for_sub(group_labels, sub_labels, tambahan_start, 'satuan')
+    harga_tambahan_jumlah_col = col_for_sub(group_labels, sub_labels, tambahan_start, 'jumlah')
 
     if volume_col is not None and group_labels.get(volume_col, '').strip().lower() == 'qty':
         qty_col = volume_col
@@ -234,13 +236,34 @@ def parse_sheet(values, sheet_name):
         if not uraian_text:
             continue
 
-        harga_utama_val = max_num_in_range(row, *harga_utama_range) if harga_utama_range[0] is not None else None
-        harga_tambahan_val = max_num_in_range(row, *harga_tambahan_range) if harga_tambahan_range[0] is not None else None
-        qty_val = row[qty_col] if qty_col is not None and qty_col < len(row) else None
-        if isinstance(qty_val, float) and qty_val.is_integer():
-            qty_val = int(qty_val)
+        def get_num(ci):
+            if ci is None or ci >= len(row):
+                return None
+            v = row[ci]
+            if v is None or (isinstance(v, str) and v.strip() in ('', '-')):
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        qty_numeric = get_num(qty_col)
+
+        def unit_price(satuan_col, jumlah_col):
+            sat = get_num(satuan_col)
+            if sat and sat > 0:
+                return sat
+            jml = get_num(jumlah_col)
+            if jml and jml > 0:
+                if qty_numeric and qty_numeric > 0:
+                    return jml / qty_numeric
+                return jml
+            return None
+
+        harga_utama_val = unit_price(harga_utama_satuan_col, harga_utama_jumlah_col)
+        harga_tambahan_val = unit_price(harga_tambahan_satuan_col, harga_tambahan_jumlah_col)
         sat_val = row[sat_col] if sat_col is not None and sat_col < len(row) else None
-        volume_satuan = f"{qty_val} {sat_val}".strip() if (qty_val or sat_val) else "-"
+        volume_satuan = str(sat_val).strip() if sat_val is not None and str(sat_val).strip() else "-"
 
         keterangan_val = ""
         if keterangan_col is not None and keterangan_col < len(row) and row[keterangan_col]:
@@ -290,13 +313,13 @@ def _load_values(file_bytes: bytes, filename: str):
         wb = xlrd.open_workbook(file_contents=file_bytes)
         sheetname = wb.sheet_names()[-1]
         sheet = wb.sheet_by_name(sheetname)
-        values = [sheet.row_values(r) for r in range(min(sheet.nrows, 400))]
+        values = [sheet.row_values(r) for r in range(min(sheet.nrows, 5000))]
         values = [[(c if c != '' else None) for c in row] for row in values]
         return values, sheetname
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     sheetname = wb.sheetnames[-1]
     ws = wb[sheetname]
-    values = list(ws.iter_rows(min_row=1, max_row=400, max_col=32, values_only=True))
+    values = list(ws.iter_rows(min_row=1, max_row=5000, max_col=40, values_only=True))
     return values, sheetname
 
 
