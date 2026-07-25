@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LayoutGrid, LogOut, Search, ShieldCheck, Upload } from "lucide-react";
 import {
   api,
   type AuthUser,
@@ -8,10 +9,11 @@ import {
 } from "../lib/api";
 import EditableCatalogTable from "../components/EditableCatalogTable";
 import DockingImportPanel from "../components/DockingImportPanel";
+import UsersPanel from "../components/UsersPanel";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
-type Tab = "view" | "import";
+type Tab = "view" | "import" | "users";
 
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
@@ -31,6 +33,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [importMsg, setImportMsg] = useState("");
   const [importMode, setImportMode] = useState<"docking" | "flat">("docking");
+  const isAdmin = auth.role === "admin";
 
   const queryParams = useMemo(
     () => ({
@@ -82,37 +85,40 @@ export default function DashboardPage({ auth, onLogout }: Props) {
     }
   }
 
+  const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
+    { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
+    { key: "import", label: "Import Excel", icon: Upload },
+    ...(isAdmin ? [{ key: "users" as Tab, label: "Kelola Akses", icon: ShieldCheck }] : []),
+  ];
+
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-64 flex-col bg-[#1e3a8a] text-white">
-        <div className="border-b border-blue-800 px-5 py-6">
-          <p className="text-lg font-bold">DUKUH RAYA</p>
-          <p className="text-xs text-blue-200">Maintenance Catalog</p>
+      <aside className="flex w-64 flex-col text-white" style={{ background: "var(--ink)" }}>
+        <div className="border-b border-white/10 px-5 py-6">
+          <p className="font-display text-lg font-bold tracking-tight">DUKUH RAYA</p>
+          <p className="text-xs text-slate-400">Maintenance Pricing Catalog</p>
         </div>
         <nav className="flex-1 space-y-1 p-3 text-sm">
-          <button
-            type="button"
-            onClick={() => setTab("view")}
-            className={`w-full rounded-lg px-3 py-2 text-left ${tab === "view" ? "bg-blue-600 font-semibold" : "hover:bg-blue-800"}`}
-          >
-            Dashboard & Data
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("import")}
-            className={`w-full rounded-lg px-3 py-2 text-left ${tab === "import" ? "bg-blue-600 font-semibold" : "hover:bg-blue-800"}`}
-          >
-            Import Excel
-          </button>
+          {navItems.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                tab === key ? "font-semibold text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
+              }`}
+              style={tab === key ? { background: "var(--marine)" } : undefined}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
         </nav>
-        <div className="border-t border-blue-800 p-4 text-xs text-blue-100">
-          <p className="font-semibold">{auth.username.toUpperCase()}</p>
-          <p className="opacity-80">{auth.role}</p>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="mt-3 w-full rounded-lg bg-red-600 py-2 text-xs font-bold hover:bg-red-500"
-          >
+        <div className="border-t border-white/10 p-4 text-xs text-slate-300">
+          <p className="font-semibold text-white">{auth.username.toUpperCase()}</p>
+          <p className="opacity-70">{auth.role}</p>
+          <button type="button" onClick={onLogout} className="btn btn-danger-solid btn-sm mt-3 w-full justify-center">
+            <LogOut size={13} />
             Logout
           </button>
         </div>
@@ -120,19 +126,22 @@ export default function DashboardPage({ auth, onLogout }: Props) {
 
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-          <h2 className="text-xl font-bold text-slate-900">Overview Dashboard</h2>
-          <input
-            placeholder="Cari uraian pekerjaan..."
-            className="w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={filters.search}
-            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-          />
+          <h2 className="font-display text-xl font-bold text-slate-900">Overview Dashboard</h2>
+          <div className="relative w-72">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              placeholder="Cari uraian pekerjaan..."
+              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-blue-100"
+              value={filters.search}
+              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+            />
+          </div>
         </header>
 
         <main className="flex-1 p-6">
           {stats && (
             <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard title="Total Item" value={String(stats.total_item)} accent="bg-blue-600 text-white" />
+              <KpiCard title="Total Item" value={String(stats.total_item)} accent />
               <KpiCard title="Total Klien" value={String(stats.total_klien)} />
               <KpiCard title="Kapal" value={String(stats.total_kapal)} />
               <KpiCard title="Tahun Referensi" value={String(stats.total_tahun)} />
@@ -190,14 +199,14 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                 <button
                   type="button"
                   onClick={() => setImportMode("docking")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${importMode === "docking" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-700"}`}
+                  className={`btn btn-sm ${importMode === "docking" ? "btn-primary" : "btn-secondary"}`}
                 >
                   Laporan Docking (otomatis Induk/Addendum)
                 </button>
                 <button
                   type="button"
                   onClick={() => setImportMode("flat")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${importMode === "flat" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-700"}`}
+                  className={`btn btn-sm ${importMode === "flat" ? "btn-primary" : "btn-secondary"}`}
                 >
                   Format Rapi (kolom sudah bersih)
                 </button>
@@ -205,11 +214,13 @@ export default function DashboardPage({ auth, onLogout }: Props) {
 
               {importMode === "docking" ? (
                 <>
-                  <h3 className="text-lg font-bold">Import file laporan "REALISASI BIAYA DOCKING"</h3>
+                  <h3 className="font-display text-lg font-bold text-slate-900">
+                    Import file laporan "REALISASI BIAYA DOCKING"
+                  </h3>
                   <p className="mt-2 text-sm text-slate-600">
                     Otomatis pisah baris ke <strong>Induk</strong> vs <strong>Addendum</strong> berdasarkan kata
                     "tambahan" di kolom Keterangan. Preview dulu sebelum simpan - baris yang meragukan ditandai
-                    dan bisa di-uncheck manual.
+                    dan bisa diedit manual.
                   </p>
                   <div className="mt-6">
                     <DockingImportPanel token={auth.token} onImported={refresh} />
@@ -217,7 +228,9 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                 </>
               ) : (
                 <>
-                  <h3 className="text-lg font-bold">Import otomatis dari Excel / CSV (kolom rapi)</h3>
+                  <h3 className="font-display text-lg font-bold text-slate-900">
+                    Import otomatis dari Excel / CSV (kolom rapi)
+                  </h3>
                   <p className="mt-2 text-sm text-slate-600">
                     Kolom wajib: <strong>Uraian Pekerjaan</strong>, plus <strong>Nama Kapal</strong> dan{" "}
                     <strong>Tahun</strong> (boleh diisi sama di setiap baris).
@@ -236,28 +249,24 @@ export default function DashboardPage({ auth, onLogout }: Props) {
               )}
             </div>
           )}
+
+          {tab === "users" && isAdmin && <UsersPanel auth={auth} />}
         </main>
       </div>
     </div>
   );
 }
 
-function KpiCard({
-  title,
-  value,
-  accent,
-}: {
-  title: string;
-  value: string;
-  accent?: string;
-}) {
-  const highlighted = accent ?? "bg-white";
+function KpiCard({ title, value, accent }: { title: string; value: string; accent?: boolean }) {
   return (
-    <div className={`rounded-xl border border-slate-200 p-5 shadow-sm ${highlighted}`}>
+    <div
+      className="rounded-xl border border-slate-200 p-5 shadow-sm"
+      style={accent ? { background: "var(--marine)" } : { background: "white" }}
+    >
       <p className={`text-xs font-semibold uppercase tracking-wide ${accent ? "text-blue-100" : "text-slate-500"}`}>
         {title}
       </p>
-      <p className={`mt-2 text-3xl font-extrabold ${accent ? "text-white" : "text-slate-900"}`}>{value}</p>
+      <p className={`mt-2 font-display text-3xl font-bold ${accent ? "text-white" : "text-slate-900"}`}>{value}</p>
     </div>
   );
 }
@@ -277,7 +286,7 @@ function FilterSelect({
     <label className="block text-xs font-medium text-slate-600">
       {label}
       <select
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-blue-100"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >

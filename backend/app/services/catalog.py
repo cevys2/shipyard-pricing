@@ -18,20 +18,42 @@ from app.schemas.catalog import (
 
 TABLE = settings.catalog_table
 
+_COLUMNS = (
+    "id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun, "
+    "kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan"
+)
 
-def _load_all_rows() -> list[dict[str, Any]]:
-    query = f"""
-    SELECT id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
-           kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan
-    FROM {TABLE}
-    ORDER BY nama_kapal, id
-    """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn)
-    for col in ["nama_perusahaan", "nama_kapal", "tipe_perjanjian", "tahun", "kategori_pekerjaan"]:
-        df[col] = df[col].fillna("-").astype(str)
-    df["uraian_pekerjaan"] = df["uraian_pekerjaan"].fillna("-").astype(str)
-    return df.to_dict(orient="records")
+_FILTER_COLS = {
+    "perusahaan": "nama_perusahaan",
+    "kapal": "nama_kapal",
+    "kategori": "kategori_pekerjaan",
+    "tahun": "tahun",
+    "tipe": "tipe_perjanjian",
+}
+
+
+def _build_where(
+    *,
+    perusahaan: str | None = None,
+    kapal: str | None = None,
+    kategori: str | None = None,
+    tahun: str | None = None,
+    tipe: str | None = None,
+    search: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    clauses = []
+    params: dict[str, Any] = {}
+    filters = {"perusahaan": perusahaan, "kapal": kapal, "kategori": kategori, "tahun": tahun, "tipe": tipe}
+    for key, val in filters.items():
+        if val and val != "Semua":
+            col = _FILTER_COLS[key]
+            clauses.append(f"{col} = :{key}")
+            params[key] = val
+    if search:
+        clauses.append("uraian_pekerjaan ILIKE :search")
+        params["search"] = f"%{search}%"
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params
 
 
 def list_catalog(
@@ -43,82 +65,84 @@ def list_catalog(
     tipe: str | None = None,
     search: str | None = None,
 ) -> list[CatalogRowOut]:
-    rows = _load_all_rows()
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return []
-
-    def eq(col: str, val: str | None):
-        nonlocal df
-        if val and val != "Semua":
-            df = df[df[col] == val]
-
-    eq("nama_perusahaan", perusahaan)
-    eq("nama_kapal", kapal)
-    eq("kategori_pekerjaan", kategori)
-    eq("tahun", tahun)
-    eq("tipe_perjanjian", tipe)
-    if search:
-        df = df[df["uraian_pekerjaan"].str.contains(search, case=False, na=False)]
-
-    return [CatalogRowOut(**r) for r in df.to_dict(orient="records")]
-
-
-def catalog_stats(**filters) -> CatalogStats:
-    rows = list_catalog(**filters)
-    if not rows:
-        return CatalogStats(total_item=0, total_klien=0, total_kapal=0, total_tahun=0)
-    df = pd.DataFrame([r.model_dump() for r in rows])
-    return CatalogStats(
-        total_item=len(df),
-        total_klien=df["nama_perusahaan"].nunique(),
-        total_kapal=df["nama_kapal"].nunique(),
-        total_tahun=df["tahun"].nunique(),
+    where, params = _build_where(
+        perusahaan=perusahaan, kapal=kapal, kategori=kategori, tahun=tahun, tipe=tipe, search=search
     )
+    query = text(f"SELECT {_COLUMNS} FROM {TABLE} {where} ORDER BY nama_kapal, id")
+    with engine.connect() as conn:
+        rows = conn.execute(query, params).mappings().all()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for col in ("nama_perusahaan", "nama_kapal", "tipe_perjanjian", "tahun", "kategori_pekerjaan", "uraian_pekerjaan"):
+            if d.get(col) is None:
+                d[col] = "-"
+        out.append(CatalogRowOut(**d))
+    return out
+
+
+def catalog_stats(
+    *,
+    perusahaan: str | None = None,
+    kapal: str | None = None,
+    kategori: str | None = None,
+    tahun: str | None = None,
+    tipe: str | None = None,
+    search: str | None = None,
+) -> CatalogStats:
+    where, params = _build_where(
+        perusahaan=perusahaan, kapal=kapal, kategori=kategori, tahun=tahun, tipe=tipe, search=search
+    )
+    query = text(
+        f"""
+        SELECT COUNT(*) AS total_item,
+               COUNT(DISTINCT nama_perusahaan) AS total_klien,
+               COUNT(DISTINCT nama_kapal) AS total_kapal,
+               COUNT(DISTINCT tahun) AS total_tahun
+        FROM {TABLE} {where}
+        """
+    )
+    with engine.connect() as conn:
+        row = conn.execute(query, params).mappings().first()
+    if not row:
+        return CatalogStats(total_item=0, total_klien=0, total_kapal=0, total_tahun=0)
+    return CatalogStats(**dict(row))
 
 
 def filter_options() -> dict[str, list[str]]:
-    rows = _load_all_rows()
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return {
-            "perusahaan": ["Semua"],
-            "kapal": ["Semua"],
-            "kategori": ["Semua"],
-            "tahun": ["Semua"],
-            "tipe": ["Semua"],
-        }
-
-    def opts(col: str) -> list[str]:
-        return ["Semua"] + sorted(df[col].dropna().unique().tolist())
-
-    return {
-        "perusahaan": opts("nama_perusahaan"),
-        "kapal": opts("nama_kapal"),
-        "kategori": opts("kategori_pekerjaan"),
-        "tahun": opts("tahun"),
-        "tipe": opts("tipe_perjanjian"),
-    }
+    result: dict[str, list[str]] = {}
+    with engine.connect() as conn:
+        for key, col in _FILTER_COLS.items():
+            rows = conn.execute(
+                text(f"SELECT DISTINCT {col} FROM {TABLE} WHERE {col} IS NOT NULL ORDER BY {col}")
+            ).all()
+            result[key] = ["Semua"] + [r[0] for r in rows if r[0]]
+    return result
 
 
-def _next_ids(prefix: str, count: int, all_rows: list[dict]) -> list[str]:
-    df_cek = [r for r in all_rows if str(r["id"]).startswith(prefix)]
-    try:
-        last_num = max(int(str(r["id"]).split("-")[-1]) for r in df_cek) if df_cek else 0
-    except ValueError:
-        last_num = len(df_cek)
+def _next_ids(prefix: str, count: int) -> list[str]:
+    with engine.connect() as conn:
+        existing = conn.execute(
+            text(f"SELECT id FROM {TABLE} WHERE id LIKE :prefix"), {"prefix": f"{prefix}%"}
+        ).all()
+    last_num = 0
+    for (id_,) in existing:
+        try:
+            n = int(str(id_).split("-")[-1])
+            last_num = max(last_num, n)
+        except ValueError:
+            continue
     ids = []
-    for i in range(count):
+    for _ in range(count):
         last_num += 1
         ids.append(f"{prefix}{last_num:03d}")
     return ids
 
 
 def bulk_create(payload: BulkCatalogCreate) -> int:
-    all_rows = _load_all_rows()
     slug = payload.nama_kapal.strip().replace(" ", "_").upper()
     prefix = f"{slug}-{payload.tahun.strip()}-"
-    ids = _next_ids(prefix, len(payload.items), all_rows)
+    ids = _next_ids(prefix, len(payload.items))
 
     insert_sql = text(
         f"""

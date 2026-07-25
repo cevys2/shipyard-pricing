@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CheckCircle2, Plus, Repeat, Trash2 } from "lucide-react";
 import { api, formatRp, type DockingImportPreview } from "../lib/api";
 
 type Props = {
@@ -230,8 +231,9 @@ export default function DockingImportPanel({ token, onImported }: Props) {
             type="button"
             disabled={loading}
             onClick={commit}
-            className="mt-5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-50"
+            className="btn btn-primary btn-md mt-5"
           >
+            <CheckCircle2 size={15} />
             Konfirmasi & Simpan ({induk.length + addendum.length} baris)
           </button>
         </div>
@@ -265,8 +267,9 @@ function EditTable({
         <p className="text-sm font-bold text-slate-800">
           {title} ({rows.length} baris)
         </p>
-        <button type="button" onClick={onAdd} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">
-          + Tambah Baris Manual
+        <button type="button" onClick={onAdd} className="btn btn-secondary btn-sm">
+          <Plus size={13} />
+          Tambah Baris Manual
         </button>
       </div>
       {rows.length === 0 ? (
@@ -307,10 +310,12 @@ function EditTable({
                     {r.harga <= 0 && <span className="block text-[10px] text-red-500">harga wajib &gt; 0</span>}
                   </td>
                   <td className="whitespace-nowrap px-1 py-1">
-                    <button type="button" onClick={() => onMove(r.key)} className="mr-1 rounded border border-slate-300 px-1.5 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-100">
+                    <button type="button" onClick={() => onMove(r.key)} className="btn btn-secondary mr-1 px-1.5 py-1 text-[10px]">
+                      <Repeat size={11} />
                       {moveLabel}
                     </button>
-                    <button type="button" onClick={() => onDelete(r.key)} className="rounded border border-red-300 px-1.5 py-1 text-[10px] font-semibold text-red-600 hover:bg-red-50">
+                    <button type="button" onClick={() => onDelete(r.key)} className="btn btn-danger px-1.5 py-1 text-[10px]">
+                      <Trash2 size={11} />
                       Hapus
                     </button>
                   </td>

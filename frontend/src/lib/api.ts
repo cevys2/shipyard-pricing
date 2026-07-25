@@ -1,10 +1,18 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit
 
 export type AuthUser = { username: string; role: string; token: string };
 
 export function getStoredAuth(): AuthUser | null {
   const raw = localStorage.getItem("dr_auth");
+  const lastSeenRaw = localStorage.getItem("dr_auth_last_seen");
   if (!raw) return null;
+  const lastSeen = lastSeenRaw ? Number(lastSeenRaw) : 0;
+  if (!lastSeen || Date.now() - lastSeen > SESSION_TIMEOUT_MS) {
+    localStorage.removeItem("dr_auth");
+    localStorage.removeItem("dr_auth_last_seen");
+    return null;
+  }
   try {
     return JSON.parse(raw) as AuthUser;
   } catch {
@@ -13,8 +21,20 @@ export function getStoredAuth(): AuthUser | null {
 }
 
 export function setStoredAuth(user: AuthUser | null) {
-  if (!user) localStorage.removeItem("dr_auth");
-  else localStorage.setItem("dr_auth", JSON.stringify(user));
+  if (!user) {
+    localStorage.removeItem("dr_auth");
+    localStorage.removeItem("dr_auth_last_seen");
+  } else {
+    localStorage.setItem("dr_auth", JSON.stringify(user));
+    localStorage.setItem("dr_auth_last_seen", String(Date.now()));
+  }
+}
+
+/** Panggil berkala selama app aktif supaya sesi tidak dianggap "ditinggal lama" (lihat SESSION_TIMEOUT_MS). */
+export function touchSession() {
+  if (localStorage.getItem("dr_auth")) {
+    localStorage.setItem("dr_auth_last_seen", String(Date.now()));
+  }
 }
 
 async function request<T>(
@@ -108,6 +128,28 @@ export const api = {
       token,
     );
   },
+  listUsers(token: string) {
+    return request<UserOut[]>("/users", {}, token);
+  },
+  createUser(token: string, body: { username: string; password: string; role: "user" | "admin" }) {
+    return request<UserOut>("/users", { method: "POST", body: JSON.stringify(body) }, token);
+  },
+  deleteUser(token: string, username: string) {
+    return request<{ ok: boolean }>(`/users/${encodeURIComponent(username)}`, { method: "DELETE" }, token);
+  },
+  changePassword(token: string, username: string, new_password: string) {
+    return request<{ ok: boolean }>(
+      "/users/password",
+      { method: "POST", body: JSON.stringify({ username, new_password }) },
+      token,
+    );
+  },
+};
+
+export type UserOut = {
+  id: number;
+  username: string;
+  role: string;
 };
 
 export type CatalogHeader = {

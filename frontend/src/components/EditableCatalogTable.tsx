@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, ClipboardPaste, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import {
   api,
   formatRp,
@@ -7,6 +8,8 @@ import {
   type FilterOptions,
 } from "../lib/api";
 import { parseTsv } from "../lib/tsv";
+
+const PAGE_SIZE = 50;
 
 type Props = {
   token: string;
@@ -83,6 +86,22 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
 
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkEditRows, setBulkEditRows] = useState<{ id: string; data: CatalogRowInput }[]>([]);
+
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pagedRows = useMemo(
+    () => rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE),
+    [rows, currentPage],
+  );
+  const pageIds = useMemo(() => pagedRows.map((r) => r.id), [pagedRows]);
+  const allIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const allFilteredSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+  const somePageSelected = pageIds.length > 0 && pageIds.some((id) => selected.has(id));
+
+  function toggleSelectAllFiltered() {
+    setSelected(allFilteredSelected ? new Set() : new Set(allIds));
+  }
 
   function startEdit(row: CatalogRow) {
     setEditingId(row.id);
@@ -316,10 +335,9 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
             setBulkEditOpen(false);
             setError("");
           }}
-          className={`rounded-lg px-3 py-2 text-xs font-bold ${
-            editMode ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-700 hover:bg-slate-50"
-          }`}
+          className={`btn btn-md ${editMode ? "btn-primary" : "btn-secondary"}`}
         >
+          <Pencil size={14} />
           {editMode ? "Selesai Edit" : "Mode Edit"}
         </button>
         {editMode && (
@@ -330,24 +348,27 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 setShowAdd((s) => !s);
                 setBulkEditOpen(false);
               }}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-500"
+              className="btn btn-primary btn-md"
             >
-              + Tambah Baris
+              <Plus size={14} />
+              Tambah Baris
             </button>
             <button
               type="button"
               disabled={selected.size === 0 || busy}
               onClick={openBulkEdit}
-              className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-400 disabled:opacity-40"
+              className="btn btn-accent btn-md"
             >
+              <ClipboardPaste size={14} />
               Edit Massal ({selected.size})
             </button>
             <button
               type="button"
               disabled={selected.size === 0 || busy}
               onClick={deleteSelected}
-              className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-40"
+              className="btn btn-danger-solid btn-md"
             >
+              <Trash2 size={14} />
               Hapus Terpilih ({selected.size})
             </button>
           </>
@@ -392,21 +413,21 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
             <button
               type="button"
               onClick={() => switchAddTab("pasteUraian")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "pasteUraian" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+              className={`btn btn-sm ${addTab === "pasteUraian" ? "btn-primary" : "btn-secondary"}`}
             >
               Tempel Kolom Uraian (drag-fill Excel)
             </button>
             <button
               type="button"
               onClick={() => switchAddTab("form")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "form" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+              className={`btn btn-sm ${addTab === "form" ? "btn-primary" : "btn-secondary"}`}
             >
               1 Baris Manual
             </button>
             <button
               type="button"
               onClick={() => switchAddTab("pasteFull")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${addTab === "pasteFull" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+              className={`btn btn-sm ${addTab === "pasteFull" ? "btn-primary" : "btn-secondary"}`}
             >
               Tempel Lengkap (8 kolom)
             </button>
@@ -423,7 +444,8 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 />
               </label>
               <div className="mt-3 flex gap-2">
-                <button type="button" disabled={busy} onClick={submitAdd} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={submitAdd} className="btn btn-primary btn-md">
+                  <Save size={13} />
                   Simpan Baris
                 </button>
                 <button
@@ -432,7 +454,7 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                     setShowAdd(false);
                     setAddDraft(emptyDraft);
                   }}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-white"
+                  className="btn btn-secondary btn-md"
                 >
                   Batal
                 </button>
@@ -454,7 +476,7 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 onChange={(e) => setPasteText(e.target.value)}
               />
               <div className="mt-2 flex gap-2">
-                <button type="button" onClick={parsePasteUraian} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={parsePasteUraian} className="btn btn-secondary btn-sm">
                   Preview
                 </button>
               </div>
@@ -475,7 +497,7 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 onChange={(e) => setPasteText(e.target.value)}
               />
               <div className="mt-2 flex gap-2">
-                <button type="button" onClick={parsePasteFull} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={parsePasteFull} className="btn btn-secondary btn-sm">
                   Preview
                 </button>
               </div>
@@ -510,7 +532,7 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                             <td key={j} className="px-2 py-1">{v}</td>
                           ))}
                           <td className="px-2 py-1">
-                            <button type="button" onClick={() => removePasteRow(i)} className="text-red-600 hover:underline">
+                            <button type="button" onClick={() => removePasteRow(i)} className="text-xs font-semibold text-red-600 hover:underline">
                               hapus
                             </button>
                           </td>
@@ -524,8 +546,9 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                       type="button"
                       disabled={busy}
                       onClick={submitPasteAdd}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50"
+                      className="btn btn-primary btn-md"
                     >
+                      <Save size={13} />
                       Simpan {pastePreview.length} Baris
                     </button>
                   </div>
@@ -541,10 +564,12 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-bold text-slate-800">Edit massal ({bulkEditRows.length} baris)</p>
             <div className="flex gap-2">
-              <button type="button" onClick={copyBulkEditToClipboard} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={copyBulkEditToClipboard} className="btn btn-secondary btn-sm">
+                <ClipboardPaste size={13} />
                 Salin ke Excel
               </button>
-              <button type="button" onClick={() => setBulkEditOpen(false)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={() => setBulkEditOpen(false)} className="btn btn-secondary btn-sm">
+                <X size={13} />
                 Tutup
               </button>
             </div>
@@ -605,8 +630,9 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
               type="button"
               disabled={busy}
               onClick={submitBulkEdit}
-              className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-white hover:bg-amber-400 disabled:opacity-50"
+              className="btn btn-accent btn-md"
             >
+              <Save size={14} />
               Simpan Semua Perubahan
             </button>
           </div>
@@ -616,12 +642,26 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <p className="p-8 text-center text-slate-500">Memuat data...</p>
+        ) : rows.length === 0 ? (
+          <p className="p-8 text-center text-sm text-slate-400">Tidak ada data yang cocok dengan filter ini.</p>
         ) : (
           <div className="max-h-[560px] overflow-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  {editMode && <th className="px-3 py-3"></th>}
+                  {editMode && (
+                    <th className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !allFilteredSelected && somePageSelected;
+                        }}
+                        onChange={toggleSelectAllFiltered}
+                        title="Pilih semua hasil filter ini"
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3">Perusahaan</th>
                   <th className="px-4 py-3">Kapal</th>
                   <th className="px-4 py-3">Tipe</th>
@@ -634,7 +674,7 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {pagedRows.map((r) => {
                   const isEditing = editingId === r.id;
                   return (
                     <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
@@ -661,10 +701,12 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                             <input type="number" className="cell-input text-right" value={draft.harga_satuan} onChange={(e) => setDraft((d) => ({ ...d, harga_satuan: Number(e.target.value) || 0 }))} />
                           </Cell>
                           <td className="whitespace-nowrap px-4 py-2">
-                            <button type="button" disabled={busy} onClick={saveEdit} className="mr-2 rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50">
+                            <button type="button" disabled={busy} onClick={saveEdit} className="btn btn-primary btn-sm mr-1.5">
+                              <Save size={12} />
                               Simpan
                             </button>
-                            <button type="button" onClick={cancelEdit} className="rounded border border-slate-300 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-white">
+                            <button type="button" onClick={cancelEdit} className="btn btn-secondary btn-sm">
+                              <X size={12} />
                               Batal
                             </button>
                           </td>
@@ -673,7 +715,15 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                         <>
                           <td className="px-4 py-2">{r.nama_perusahaan}</td>
                           <td className="px-4 py-2">{r.nama_kapal}</td>
-                          <td className="px-4 py-2">{r.tipe_perjanjian}</td>
+                          <td className="px-4 py-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                r.tipe_perjanjian === "Addendum" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                              }`}
+                            >
+                              {r.tipe_perjanjian}
+                            </span>
+                          </td>
                           <td className="px-4 py-2">{r.tahun}</td>
                           <td className="px-4 py-2">{r.kategori_pekerjaan}</td>
                           <td className="px-4 py-2">{r.uraian_pekerjaan}</td>
@@ -681,7 +731,8 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                           <td className="px-4 py-2 text-right font-medium">{formatRp(r.harga_satuan)}</td>
                           {editMode && (
                             <td className="px-4 py-2">
-                              <button type="button" onClick={() => startEdit(r)} className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                              <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary btn-sm">
+                                <Pencil size={12} />
                                 Edit
                               </button>
                             </td>
@@ -693,6 +744,37 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {rows.length > 0 && (
+          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+            <span>
+              Menampilkan {currentPage * PAGE_SIZE + 1}-{Math.min(rows.length, (currentPage + 1) * PAGE_SIZE)} dari{" "}
+              {rows.length} baris
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={currentPage === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="btn btn-secondary btn-sm"
+              >
+                <ChevronLeft size={13} />
+                Sebelumnya
+              </button>
+              <span className="font-medium text-slate-600">
+                Halaman {currentPage + 1} / {pageCount}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage >= pageCount - 1}
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                className="btn btn-secondary btn-sm"
+              >
+                Selanjutnya
+                <ChevronRight size={13} />
+              </button>
+            </div>
           </div>
         )}
       </div>
