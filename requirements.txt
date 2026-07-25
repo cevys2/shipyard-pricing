@@ -1,7 +1,0 @@
-streamlit
-pandas
-SQLAlchemy
-python-dotenv
-Werkzeug
-streamlit-antd-components
-pg8000
