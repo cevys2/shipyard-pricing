@@ -67,15 +67,18 @@ export default function DashboardPage({ auth, onLogout }: Props) {
       .then((opts) => {
         setFilterOpts(opts);
         // kalau value yang lagi dipilih sekarang nggak ada lagi di opsi baru (karena filter lain
-        // udah mempersempit), reset ke "Semua" biar nggak nyangkut di pilihan yang udah invalid
+        // udah mempersempit), reset ke "Semua" - tapi cuma setState kalau BENERAN ada yang berubah,
+        // supaya nggak bikin infinite loop (objek baru tiap render -> effect jalan lagi -> ...)
         setFilters((prev) => {
+          let changed = false;
           const next = { ...prev };
           (Object.keys(opts) as (keyof FilterOptions)[]).forEach((key) => {
             if (prev[key] !== "Semua" && !opts[key].includes(prev[key])) {
               next[key] = "Semua";
+              changed = true;
             }
           });
-          return next;
+          return changed ? next : prev;
         });
       })
       .catch(console.error);

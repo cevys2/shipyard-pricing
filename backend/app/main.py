@@ -21,16 +21,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-origins = [
-    "http://localhost:5173",
-    "https://frontend-dr-shipyard-pricing.up.railway.app" 
-]
-
-# Masukkan domain frontend-mu ke sini
-origins = [
-    "http://localhost:5173", 
-    "https://frontend-dr-shipyard-pricing.up.railway.app" 
-]
 
 app.add_middleware(
     CORSMiddleware,
