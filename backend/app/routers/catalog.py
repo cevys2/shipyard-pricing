@@ -59,8 +59,23 @@ def get_stats(
 
 
 @router.get("/filters")
-def get_filters(_: Annotated[dict, Depends(get_current_user)]):
-    return catalog_service.filter_options()
+def get_filters(
+    _: Annotated[dict, Depends(get_current_user)],
+    perusahaan: str | None = None,
+    kapal: str | None = None,
+    kategori: str | None = None,
+    tahun: str | None = None,
+    tipe: str | None = None,
+    search: str | None = None,
+):
+    return catalog_service.filter_options(
+        perusahaan=perusahaan,
+        kapal=kapal,
+        kategori=kategori,
+        tahun=tahun,
+        tipe=tipe,
+        search=search,
+    )
 
 
 @router.post("/bulk")

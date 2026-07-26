@@ -79,8 +79,13 @@ export const api = {
     const qs = q.toString();
     return request<CatalogStats>(`/catalog/stats${qs ? `?${qs}` : ""}`, {}, token);
   },
-  filters(token: string) {
-    return request<FilterOptions>("/catalog/filters", {}, token);
+  filters(token: string, params: Record<string, string | undefined> = {}) {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v && v !== "Semua") q.set(k, v);
+    });
+    const qs = q.toString();
+    return request<FilterOptions>(`/catalog/filters${qs ? `?${qs}` : ""}`, {}, token);
   },
   importFile(token: string, file: File, dryRun = false) {
     const fd = new FormData();

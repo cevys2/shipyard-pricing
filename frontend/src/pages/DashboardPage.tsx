@@ -62,8 +62,25 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   }, [auth.token, queryParams]);
 
   useEffect(() => {
-    api.filters(auth.token).then(setFilterOpts).catch(console.error);
-  }, [auth.token]);
+    api
+      .filters(auth.token, queryParams)
+      .then((opts) => {
+        setFilterOpts(opts);
+        // kalau value yang lagi dipilih sekarang nggak ada lagi di opsi baru (karena filter lain
+        // udah mempersempit), reset ke "Semua" biar nggak nyangkut di pilihan yang udah invalid
+        setFilters((prev) => {
+          const next = { ...prev };
+          (Object.keys(opts) as (keyof FilterOptions)[]).forEach((key) => {
+            if (prev[key] !== "Semua" && !opts[key].includes(prev[key])) {
+              next[key] = "Semua";
+            }
+          });
+          return next;
+        });
+      })
+      .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.token, queryParams]);
 
   useEffect(() => {
     refresh();

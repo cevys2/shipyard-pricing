@@ -109,12 +109,23 @@ def catalog_stats(
     return CatalogStats(**dict(row))
 
 
-def filter_options() -> dict[str, list[str]]:
+def filter_options(
+    *,
+    perusahaan: str | None = None,
+    kapal: str | None = None,
+    kategori: str | None = None,
+    tahun: str | None = None,
+    tipe: str | None = None,
+    search: str | None = None,
+) -> dict[str, list[str]]:
+    active = {"perusahaan": perusahaan, "kapal": kapal, "kategori": kategori, "tahun": tahun, "tipe": tipe}
     result: dict[str, list[str]] = {}
     with engine.connect() as conn:
         for key, col in _FILTER_COLS.items():
+            others = {k: v for k, v in active.items() if k != key}
+            where, params = _build_where(**others, search=search)
             rows = conn.execute(
-                text(f"SELECT DISTINCT {col} FROM {TABLE} WHERE {col} IS NOT NULL ORDER BY {col}")
+                text(f"SELECT DISTINCT {col} FROM {TABLE} {where} ORDER BY {col}"), params
             ).all()
             result[key] = ["Semua"] + [r[0] for r in rows if r[0]]
     return result
