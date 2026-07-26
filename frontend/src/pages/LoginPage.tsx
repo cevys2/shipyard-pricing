@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Anchor, LogIn } from "lucide-react";
+import { LogIn } from "lucide-react";
 import { api, type AuthUser } from "../lib/api";
+import logoFull from "../assets/logo-full.png";
 
 type Props = { onLogin: (user: AuthUser) => void };
 
@@ -32,14 +33,8 @@ export default function LoginPage({ onLogin }: Props) {
     <div className="flex min-h-screen items-center justify-center px-4" style={{ background: "var(--surface)" }}>
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-10 shadow-xl">
         <div className="mb-8 text-center">
-          <div
-            className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl text-white"
-            style={{ background: "var(--marine)" }}
-          >
-            <Anchor size={22} />
-          </div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">DUKUH RAYA</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500">Shipyard Maintenance Pricing Catalog</p>
+          <img src={logoFull} alt="PT Dukuh Raya Shipyard" className="mx-auto mb-4 h-14 w-auto" />
+          <p className="text-sm font-medium text-slate-500">Shipyard Maintenance Pricing Catalog</p>
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>

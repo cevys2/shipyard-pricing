@@ -10,6 +10,8 @@ import {
 import EditableCatalogTable from "../components/EditableCatalogTable";
 import DockingImportPanel from "../components/DockingImportPanel";
 import UsersPanel from "../components/UsersPanel";
+import logoFull from "../assets/logo-full.png";
+import logoIcon from "../assets/logo-icon.png";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
@@ -115,8 +117,15 @@ export default function DashboardPage({ auth, onLogout }: Props) {
     <div className="flex min-h-screen">
       <aside className="flex w-64 flex-col text-white" style={{ background: "var(--ink)" }}>
         <div className="border-b border-white/10 px-5 py-6">
-          <p className="font-display text-lg font-bold tracking-tight">DUKUH RAYA</p>
-          <p className="text-xs text-slate-400">Maintenance Pricing Catalog</p>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white p-1.5">
+              <img src={logoIcon} alt="" className="h-full w-full object-contain" />
+            </div>
+            <div>
+              <p className="font-display text-lg font-bold tracking-tight">DUKUH RAYA</p>
+              <p className="text-xs text-slate-400">Maintenance Pricing Catalog</p>
+            </div>
+          </div>
         </div>
         <nav className="flex-1 space-y-1 p-3 text-sm">
           {navItems.map(({ key, label, icon: Icon }) => (
@@ -146,7 +155,11 @@ export default function DashboardPage({ auth, onLogout }: Props) {
 
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-          <h2 className="font-display text-xl font-bold text-slate-900">Overview Dashboard</h2>
+          <div className="flex items-center gap-3">
+            <img src={logoFull} alt="PT Dukuh Raya Shipyard" className="h-9 w-auto" />
+            <span className="h-8 w-px bg-slate-200" />
+            <h2 className="font-display text-lg font-bold text-slate-900">Overview Dashboard</h2>
+          </div>
           <div className="relative w-72">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
