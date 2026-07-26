@@ -123,7 +123,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
             </div>
             <div>
               <p className="font-display text-lg font-bold tracking-tight">DUKUH RAYA</p>
-              <p className="text-xs text-slate-400">Maintenance Pricing Catalog</p>
+              <p className="text-xs text-slate-400">Docking Repair Pricing</p>
             </div>
           </div>
         </div>
@@ -176,7 +176,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
             <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard title="Total Item" value={String(stats.total_item)} accent />
               <KpiCard title="Total Klien" value={String(stats.total_klien)} />
-              <KpiCard title="Kapal" value={String(stats.total_kapal)} />
+              <KpiCard title="Total Kapal" value={String(stats.total_kapal)} />
               <KpiCard title="Tahun Referensi" value={String(stats.total_tahun)} />
             </div>
           )}

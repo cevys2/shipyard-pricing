@@ -34,7 +34,7 @@ export default function LoginPage({ onLogin }: Props) {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-10 shadow-xl">
         <div className="mb-8 text-center">
           <img src={logoFull} alt="PT Dukuh Raya Shipyard" className="mx-auto mb-4 h-14 w-auto" />
-          <p className="text-sm font-medium text-slate-500">Shipyard Maintenance Pricing Catalog</p>
+          <p className="text-sm font-medium text-slate-500">Docking Repair Maintenance Pricing</p>
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>
