@@ -4,15 +4,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import ensure_users_table
+from app.database import ensure_material_tables, ensure_users_table
 from app.routers.auth import router as auth_router
 from app.routers.auth import users_router
 from app.routers.catalog import router as catalog_router
+from app.routers.material import router as material_router
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_users_table()
+    ensure_material_tables()
     yield
 
 
@@ -33,6 +35,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(catalog_router)
+app.include_router(material_router)
 
 
 @app.get("/health")

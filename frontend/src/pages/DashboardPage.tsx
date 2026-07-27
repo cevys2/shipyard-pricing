@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LayoutGrid, LogOut, Search, ShieldCheck, Upload } from "lucide-react";
+import { LayoutGrid, LogOut, Package, Search, ShieldCheck, Upload } from "lucide-react";
 import {
   api,
   type AuthUser,
@@ -10,12 +10,13 @@ import {
 import EditableCatalogTable from "../components/EditableCatalogTable";
 import DockingImportPanel from "../components/DockingImportPanel";
 import UsersPanel from "../components/UsersPanel";
+import MaterialCatalogPanel from "../components/MaterialCatalogPanel";
 import logoFull from "../assets/logo-full.png";
 import logoIcon from "../assets/logo-icon.png";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
-type Tab = "view" | "import" | "users";
+type Tab = "view" | "material" | "import" | "users";
 
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
@@ -109,6 +110,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
 
   const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
+    { key: "material", label: "Katalog Material", icon: Package },
     { key: "import", label: "Import Excel", icon: Upload },
     ...(isAdmin ? [{ key: "users" as Tab, label: "Kelola Akses", icon: ShieldCheck }] : []),
   ];
@@ -172,7 +174,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
         </header>
 
         <main className="flex-1 p-6">
-          {stats && (
+          {stats && tab === "view" && (
             <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard title="Total Item" value={String(stats.total_item)} accent />
               <KpiCard title="Total Klien" value={String(stats.total_klien)} />
@@ -225,6 +227,8 @@ export default function DashboardPage({ auth, onLogout }: Props) {
               />
             </>
           )}
+
+          {tab === "material" && <MaterialCatalogPanel auth={auth} />}
 
           {tab === "import" && (
             <div className="max-w-3xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
