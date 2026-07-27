@@ -19,9 +19,9 @@ def normalize_db_url(db_url: str) -> str:
 
 
 def get_engine() -> Engine:
-    db_url = os.environ.get("SUPABASE_URL") or settings.supabase_url
+    db_url = os.environ.get("DATABASE_URL") or settings.database_url
     if not db_url:
-        raise RuntimeError("SUPABASE_URL is not set")
+        raise RuntimeError("DATABASE_URL is not set")
     return create_engine(
         normalize_db_url(db_url),
         pool_size=10,
