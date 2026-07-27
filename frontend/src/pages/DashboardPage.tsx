@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LayoutGrid, LogOut, Search, Upload } from "lucide-react";
+import { ArrowLeft, LayoutGrid, LogOut, Search, Upload } from "lucide-react";
 import {
   api,
+  PORTAL_URL,
   type AuthUser,
   type CatalogRow,
   type CatalogStats,
@@ -143,7 +144,18 @@ export default function DashboardPage({ auth, onLogout }: Props) {
         <div className="border-t border-white/10 p-4 text-xs text-slate-300">
           <p className="font-semibold text-white">{auth.username.toUpperCase()}</p>
           <p className="opacity-70">{auth.role}</p>
-          <button type="button" onClick={onLogout} className="btn btn-danger-solid btn-sm mt-3 w-full justify-center">
+          {/* Pindah app tanpa mengakhiri sesi - beda dari Logout di bawahnya. */}
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = PORTAL_URL;
+            }}
+            className="btn btn-sm mt-3 w-full justify-center text-slate-300 hover:bg-white/5 hover:text-white"
+          >
+            <ArrowLeft size={13} />
+            Kembali ke Portal
+          </button>
+          <button type="button" onClick={onLogout} className="btn btn-danger-solid btn-sm mt-1.5 w-full justify-center">
             <LogOut size={13} />
             Logout
           </button>
