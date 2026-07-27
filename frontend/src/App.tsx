@@ -1,11 +1,32 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getStoredAuth, setStoredAuth, touchSession, type AuthUser } from "./lib/api";
-import LoginPage from "./pages/LoginPage";
+import { PORTAL_URL, decodeAuthFromToken, getStoredAuth, setStoredAuth, touchSession, type AuthUser } from "./lib/api";
 import DashboardPage from "./pages/DashboardPage";
 
+function redirectToPortalLogin() {
+  const here = window.location.href.split("#")[0];
+  window.location.href = `${PORTAL_URL}/login?redirect=${encodeURIComponent(here)}`;
+}
+
+/** Kalau baru saja di-bounce balik dari Portal, tokennya ada di URL fragment. */
+function consumeTokenFromUrl(): AuthUser | null {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#token=")) return null;
+  const auth = decodeAuthFromToken(decodeURIComponent(hash.slice("#token=".length)));
+  if (auth) history.replaceState(null, "", window.location.pathname + window.location.search);
+  return auth;
+}
+
 export default function App() {
-  const [auth, setAuth] = useState<AuthUser | null>(() => getStoredAuth());
+  const [auth, setAuth] = useState<AuthUser | null>(() => consumeTokenFromUrl() ?? getStoredAuth());
+
+  useEffect(() => {
+    if (auth) {
+      setStoredAuth(auth);
+      return;
+    }
+    redirectToPortalLogin();
+  }, [auth]);
 
   useEffect(() => {
     if (!auth) return;
@@ -21,18 +42,14 @@ export default function App() {
     };
   }, [auth]);
 
-  function onLogin(user: AuthUser) {
-    setStoredAuth(user);
-    setAuth(user);
-  }
-
   function onLogout() {
     setStoredAuth(null);
     setAuth(null);
+    window.location.href = PORTAL_URL;
   }
 
   if (!auth) {
-    return <LoginPage onLogin={onLogin} />;
+    return null;
   }
 
   return (

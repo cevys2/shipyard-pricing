@@ -1,7 +1,20 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+export const PORTAL_URL = import.meta.env.VITE_PORTAL_URL ?? "http://localhost:5174";
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit
 
 export type AuthUser = { username: string; role: string; token: string };
+
+/** Baca klaim `sub`/`role` dari JWT yang diterbitkan Portal, tanpa verifikasi
+ * signature (itu tugas backend di setiap request) - cuma untuk tampilan. */
+export function decodeAuthFromToken(token: string): AuthUser | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (!payload.sub) return null;
+    return { token, username: payload.sub, role: payload.role ?? "user" };
+  } catch {
+    return null;
+  }
+}
 
 export function getStoredAuth(): AuthUser | null {
   const raw = localStorage.getItem("dr_auth");
@@ -57,12 +70,6 @@ async function request<T>(
 }
 
 export const api = {
-  login(username: string, password: string) {
-    return request<{ access_token: string; username: string; role: string }>(
-      "/auth/login",
-      { method: "POST", body: JSON.stringify({ username, password }) },
-    );
-  },
   catalog(token: string, params: Record<string, string | undefined>) {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -133,28 +140,6 @@ export const api = {
       token,
     );
   },
-  listUsers(token: string) {
-    return request<UserOut[]>("/users", {}, token);
-  },
-  createUser(token: string, body: { username: string; password: string; role: "user" | "admin" }) {
-    return request<UserOut>("/users", { method: "POST", body: JSON.stringify(body) }, token);
-  },
-  deleteUser(token: string, username: string) {
-    return request<{ ok: boolean }>(`/users/${encodeURIComponent(username)}`, { method: "DELETE" }, token);
-  },
-  changePassword(token: string, username: string, new_password: string) {
-    return request<{ ok: boolean }>(
-      "/users/password",
-      { method: "POST", body: JSON.stringify({ username, new_password }) },
-      token,
-    );
-  },
-};
-
-export type UserOut = {
-  id: number;
-  username: string;
-  role: string;
 };
 
 export type CatalogHeader = {

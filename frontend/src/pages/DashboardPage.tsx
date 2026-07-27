@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LayoutGrid, LogOut, Search, ShieldCheck, Upload } from "lucide-react";
+import { LayoutGrid, LogOut, Search, Upload } from "lucide-react";
 import {
   api,
   type AuthUser,
@@ -9,13 +9,12 @@ import {
 } from "../lib/api";
 import EditableCatalogTable from "../components/EditableCatalogTable";
 import DockingImportPanel from "../components/DockingImportPanel";
-import UsersPanel from "../components/UsersPanel";
 import logoFull from "../assets/logo-full.png";
 import logoIcon from "../assets/logo-icon.png";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
-type Tab = "view" | "import" | "users";
+type Tab = "view" | "import";
 
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
@@ -35,7 +34,6 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [importMsg, setImportMsg] = useState("");
   const [importMode, setImportMode] = useState<"docking" | "flat">("docking");
-  const isAdmin = auth.role === "admin";
 
   const queryParams = useMemo(
     () => ({
@@ -110,7 +108,6 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
     { key: "import", label: "Import Excel", icon: Upload },
-    ...(isAdmin ? [{ key: "users" as Tab, label: "Kelola Akses", icon: ShieldCheck }] : []),
   ];
 
   return (
@@ -282,8 +279,6 @@ export default function DashboardPage({ auth, onLogout }: Props) {
               )}
             </div>
           )}
-
-          {tab === "users" && isAdmin && <UsersPanel auth={auth} />}
         </main>
       </div>
     </div>

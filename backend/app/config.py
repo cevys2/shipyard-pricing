@@ -5,9 +5,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = ""
+    # MUST match Portal backend's JWT_SECRET exactly - Portal issues the
+    # token at login, shipyard-pricing only verifies it.
     jwt_secret: str
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 8
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     catalog_table: str = "tabel_katalog_harga"

@@ -10,4 +10,3 @@ python-multipart
 pandas
 openpyxl
 xlrd
-werkzeug
