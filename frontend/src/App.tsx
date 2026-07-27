@@ -5,7 +5,10 @@ import DashboardPage from "./pages/DashboardPage";
 
 function redirectToPortalLogin() {
   const here = window.location.href.split("#")[0];
-  window.location.href = `${PORTAL_URL}/login?redirect=${encodeURIComponent(here)}`;
+  // Sengaja ke root, bukan /login: Portal tidak pakai router - dia menampilkan
+  // form login di path apapun selama belum ada sesi. Root selalu ada, jadi ini
+  // nggak bergantung pada SPA-fallback si static host.
+  window.location.href = `${PORTAL_URL}/?redirect=${encodeURIComponent(here)}`;
 }
 
 /** Kalau baru saja di-bounce balik dari Portal, tokennya ada di URL fragment. */
