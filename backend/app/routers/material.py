@@ -19,9 +19,13 @@ def get_material(
     _: Annotated[dict, Depends(get_current_user)],
     supplier: str | None = None,
     satuan: str | None = None,
+    kapal: str | None = None,
+    tahun: str | None = None,
     search: str | None = None,
 ):
-    return material_service.list_material(supplier=supplier, satuan=satuan, search=search)
+    return material_service.list_material(
+        supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+    )
 
 
 @router.get("/stats", response_model=MaterialStats)
@@ -29,9 +33,13 @@ def get_stats(
     _: Annotated[dict, Depends(get_current_user)],
     supplier: str | None = None,
     satuan: str | None = None,
+    kapal: str | None = None,
+    tahun: str | None = None,
     search: str | None = None,
 ):
-    return material_service.material_stats(supplier=supplier, satuan=satuan, search=search)
+    return material_service.material_stats(
+        supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+    )
 
 
 @router.get("/filters")
@@ -39,9 +47,13 @@ def get_filters(
     _: Annotated[dict, Depends(get_current_user)],
     supplier: str | None = None,
     satuan: str | None = None,
+    kapal: str | None = None,
+    tahun: str | None = None,
     search: str | None = None,
 ):
-    return material_service.filter_options(supplier=supplier, satuan=satuan, search=search)
+    return material_service.filter_options(
+        supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+    )
 
 
 @router.post("/bulk")

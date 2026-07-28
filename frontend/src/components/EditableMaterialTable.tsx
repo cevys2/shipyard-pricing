@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ClipboardPaste, Pencil, Plus, Save, Trash2, X } from "lucide-react";
-import { api, formatRp, type MaterialItemInput, type MaterialRow } from "../lib/api";
+import { api, formatMoney, type Currency, type MaterialItemInput, type MaterialRow } from "../lib/api";
 import { parseTsv } from "../lib/tsv";
 
 const PAGE_SIZE = 50;
@@ -12,40 +12,90 @@ type Props = {
   onChanged: () => void; // call after any successful save/delete/add to refresh parent data
 };
 
+const CURRENCIES: Currency[] = ["IDR", "EUR", "USD"];
+const CURRENT_YEAR = new Date().getFullYear();
+
 const COLUMN_ORDER: (keyof MaterialItemInput)[] = [
-  "kode",
   "nama",
   "spesifikasi",
   "satuan",
   "harga_satuan",
+  "mata_uang",
+  "tahun_pembelian",
   "supplier_nama",
+  "nama_kapal",
   "berlaku_dari",
 ];
-const COLUMN_LABELS = ["Kode", "Nama", "Spesifikasi", "Satuan", "Harga", "Supplier", "Berlaku Dari"];
+const COLUMN_LABELS = [
+  "Nama",
+  "Spesifikasi",
+  "Satuan",
+  "Harga",
+  "Mata Uang",
+  "Tahun Pembelian",
+  "Supplier",
+  "Kapal",
+  "Berlaku Dari",
+];
 
 const emptyDraft: MaterialItemInput = {
-  kode: "",
   nama: "",
   spesifikasi: "",
   satuan: "",
   harga_satuan: 0,
+  mata_uang: "IDR",
+  tahun_pembelian: CURRENT_YEAR,
   supplier_nama: "",
+  nama_kapal: "",
   berlaku_dari: "",
   sumber: "",
   no_dokumen: "",
   catatan: "",
 };
 
+function normalizeCurrency(raw: string): Currency {
+  const upper = raw.trim().toUpperCase();
+  return (CURRENCIES as string[]).includes(upper) ? (upper as Currency) : "IDR";
+}
+
+// Kalau orang natural nulis harga "EUR 45.10" dalam SATU sel (bukan misahin Harga |
+// Mata Uang ke 2 kolom kayak yang kita minta), kolom-kolom sesudahnya bakal geser semua
+// kalau dipaksa parse 9-kolom kaku. Deteksi pola ini dan toleransi -- anggap Mata Uang
+// udah ke-cover di sel yang sama, jadi sisa kolom dihitung sebagai 8-kolom.
+const INLINE_CURRENCY_RE = /^(IDR|EUR|USD)\s*([\d.,]+)$/i;
+
 function cellsToDraft(cells: string[]): MaterialItemInput {
   const get = (i: number) => (cells[i] ?? "").trim();
+  const hargaCell = get(3);
+  const inlineMatch = hargaCell.match(INLINE_CURRENCY_RE);
+
+  let harga_satuan: number;
+  let mata_uang: Currency;
+  let restStart: number;
+  if (inlineMatch) {
+    mata_uang = normalizeCurrency(inlineMatch[1]);
+    harga_satuan = Number(inlineMatch[2].replace(/[^\d.-]/g, "")) || 0;
+    restStart = 4; // Tahun Pembelian langsung di kolom berikutnya, Mata Uang nggak makan kolom sendiri
+  } else {
+    harga_satuan = Number(hargaCell.replace(/[^\d.-]/g, "")) || 0;
+    mata_uang = normalizeCurrency(get(4));
+    restStart = 5;
+  }
+
   return {
-    kode: get(0) || null,
-    nama: get(1),
-    spesifikasi: get(2),
-    satuan: get(3),
-    harga_satuan: Number(get(4).replace(/[^\d.-]/g, "")) || 0,
-    supplier_nama: get(5),
-    berlaku_dari: get(6) || null,
+    nama: get(0),
+    spesifikasi: get(1),
+    satuan: get(2),
+    harga_satuan,
+    mata_uang,
+    // Sengaja TIDAK di-default diam-diam ke tahun sekarang kalau kosong/invalid --
+    // itu masalah yang sama kayak dibuat_pada yang mau dihindari (data lama/backfill
+    // kepaksa dapet tahun yang salah tanpa ketauan). Baris nol/invalid ditolak &
+    // di-warning di parsePasteFull.
+    tahun_pembelian: Number(get(restStart).replace(/[^\d]/g, "")) || 0,
+    supplier_nama: get(restStart + 1),
+    nama_kapal: get(restStart + 2),
+    berlaku_dari: get(restStart + 3) || null,
     sumber: "",
     no_dokumen: "",
     catatan: "",
@@ -91,12 +141,14 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
   function startEdit(row: MaterialRow) {
     setEditingId(row.id);
     setDraft({
-      kode: row.kode,
       nama: row.nama,
       spesifikasi: row.spesifikasi,
       satuan: row.satuan,
       harga_satuan: row.harga_satuan ?? 0,
+      mata_uang: normalizeCurrency(row.mata_uang ?? "IDR"),
+      tahun_pembelian: row.tahun_pembelian ?? CURRENT_YEAR,
       supplier_nama: row.supplier_nama ?? "",
+      nama_kapal: row.nama_kapal ?? "",
       berlaku_dari: row.berlaku_dari,
       sumber: "",
       no_dokumen: "",
@@ -150,7 +202,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
     }
   }
 
-  // ---- paste-from-Excel bulk add: 7 kolom ----
+  // ---- paste-from-Excel bulk add: 9 kolom (Harga & Mata Uang boleh digabung 1 sel, mis. "EUR 45.10") ----
   function parsePasteFull() {
     setError("");
     const parsedRows = parseTsv(pasteText);
@@ -160,6 +212,13 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       const d = cellsToDraft(cells);
       if (!d.nama || !d.satuan || d.harga_satuan <= 0) {
         warnings.push(`Baris ${i + 1}: Nama/Satuan/Harga wajib diisi (harga > 0), dilewati`);
+        return;
+      }
+      if (d.tahun_pembelian < 1990 || d.tahun_pembelian > 2100) {
+        warnings.push(
+          `Baris ${i + 1}: Tahun Pembelian tidak valid, dilewati -- cek urutan kolomnya (Harga dan Mata Uang ` +
+            `boleh digabung 1 sel spt "EUR 45.10", tapi kalau dipisah harus tetap 2 kolom terpisah)`,
+        );
         return;
       }
       drafts.push(d);
@@ -199,6 +258,10 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       setError("Nama, Satuan, dan Harga (> 0) wajib diisi");
       return;
     }
+    if (addDraft.tahun_pembelian < 1990 || addDraft.tahun_pembelian > 2100) {
+      setError("Tahun Pembelian tidak valid");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -220,12 +283,14 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       chosen.map((r) => ({
         id: r.id,
         data: {
-          kode: r.kode,
           nama: r.nama,
           spesifikasi: r.spesifikasi,
           satuan: r.satuan,
           harga_satuan: r.harga_satuan ?? 0,
+          mata_uang: normalizeCurrency(r.mata_uang ?? "IDR"),
+          tahun_pembelian: r.tahun_pembelian ?? CURRENT_YEAR,
           supplier_nama: r.supplier_nama ?? "",
+          nama_kapal: r.nama_kapal ?? "",
           berlaku_dari: r.berlaku_dari,
           sumber: "",
           no_dokumen: "",
@@ -324,7 +389,6 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
         <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
           <p className="mb-3 text-xs font-bold text-slate-700">1 Baris Manual</p>
           <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <LabeledInput label="Kode" value={addDraft.kode ?? ""} onChange={(v) => setAddDraft((d) => ({ ...d, kode: v }))} />
             <LabeledInput label="Nama *" value={addDraft.nama} onChange={(v) => setAddDraft((d) => ({ ...d, nama: v }))} />
             <LabeledInput label="Spesifikasi" value={addDraft.spesifikasi} onChange={(v) => setAddDraft((d) => ({ ...d, spesifikasi: v }))} />
             <LabeledInput label="Satuan *" value={addDraft.satuan} onChange={(v) => setAddDraft((d) => ({ ...d, satuan: v }))} />
@@ -334,7 +398,28 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
               value={String(addDraft.harga_satuan)}
               onChange={(v) => setAddDraft((d) => ({ ...d, harga_satuan: Number(v) || 0 }))}
             />
+            <label className="block text-xs font-medium text-slate-600">
+              Mata Uang
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                value={addDraft.mata_uang}
+                onChange={(e) => setAddDraft((d) => ({ ...d, mata_uang: e.target.value as Currency }))}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <LabeledInput
+              label="Tahun Pembelian *"
+              type="number"
+              value={String(addDraft.tahun_pembelian)}
+              onChange={(v) => setAddDraft((d) => ({ ...d, tahun_pembelian: Number(v) || 0 }))}
+            />
             <LabeledInput label="Supplier" value={addDraft.supplier_nama} onChange={(v) => setAddDraft((d) => ({ ...d, supplier_nama: v }))} />
+            <LabeledInput label="Kapal" value={addDraft.nama_kapal} onChange={(v) => setAddDraft((d) => ({ ...d, nama_kapal: v }))} />
             <LabeledInput
               label="Berlaku Dari"
               type="date"
@@ -363,8 +448,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
 
           <p className="mb-2 text-xs font-bold text-slate-700">Tempel dari Excel (banyak baris sekaligus)</p>
           <p className="mb-2 text-xs text-slate-600">
-            Urutkan kolom di Excel: <strong>Kode | Nama | Spesifikasi | Satuan | Harga | Supplier | Berlaku Dari</strong>{" "}
-            (Kode/Spesifikasi/Supplier/Berlaku Dari boleh kosong). Select semua sel, Ctrl+C, lalu paste di kotak bawah.
+            Urutkan kolom di Excel: <strong>Nama | Spesifikasi | Satuan | Harga | Mata Uang | Tahun Pembelian | Supplier | Kapal | Berlaku Dari</strong>{" "}
+            (Spesifikasi/Mata Uang/Supplier/Kapal/Berlaku Dari boleh kosong -- Mata Uang kosong/tidak dikenali otomatis
+            jadi IDR. Boleh juga gabung Harga+Mata Uang dalam 1 sel, mis. <strong>"EUR 45.10"</strong> -- kolom Mata
+            Uang terpisah nggak usah diisi kalau begini. Tahun Pembelian WAJIB diisi angka tahun yang valid -- ini
+            acuan analitik, jadi sengaja nggak di-tebak otomatis kayak dibuat_pada). Select semua sel, Ctrl+C, lalu
+            paste di kotak bawah.
           </p>
           <textarea
             className="h-32 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs"
@@ -462,18 +551,46 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
               <tbody>
                 {bulkEditRows.map((r, i) => (
                   <tr key={r.id} className="border-t border-slate-100">
-                    {COLUMN_ORDER.map((field) => (
-                      <td key={field} className="px-1 py-1">
-                        <input
-                          className="cell-input"
-                          type={field === "harga_satuan" ? "number" : field === "berlaku_dari" ? "date" : "text"}
-                          value={r.data[field] ?? ""}
-                          onChange={(e) =>
-                            updateBulkEditCell(i, field, field === "harga_satuan" ? Number(e.target.value) || 0 : e.target.value)
-                          }
-                        />
-                      </td>
-                    ))}
+                    {COLUMN_ORDER.map((field) =>
+                      field === "mata_uang" ? (
+                        <td key={field} className="px-1 py-1">
+                          <select
+                            className="cell-input"
+                            value={r.data.mata_uang}
+                            onChange={(e) => updateBulkEditCell(i, "mata_uang", e.target.value)}
+                          >
+                            {CURRENCIES.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      ) : (
+                        <td key={field} className="px-1 py-1">
+                          <input
+                            className="cell-input"
+                            type={
+                              field === "harga_satuan" || field === "tahun_pembelian"
+                                ? "number"
+                                : field === "berlaku_dari"
+                                  ? "date"
+                                  : "text"
+                            }
+                            value={r.data[field] ?? ""}
+                            onChange={(e) =>
+                              updateBulkEditCell(
+                                i,
+                                field,
+                                field === "harga_satuan" || field === "tahun_pembelian"
+                                  ? Number(e.target.value) || 0
+                                  : e.target.value,
+                              )
+                            }
+                          />
+                        </td>
+                      ),
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -511,12 +628,13 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                       />
                     </th>
                   )}
-                  <th className="px-4 py-3">Kode</th>
                   <th className="px-4 py-3">Nama</th>
                   <th className="px-4 py-3">Spesifikasi</th>
                   <th className="px-4 py-3">Satuan</th>
                   <th className="px-4 py-3 text-right">Harga Terkini</th>
+                  <th className="px-4 py-3">Tahun Pembelian</th>
                   <th className="px-4 py-3">Supplier</th>
+                  <th className="px-4 py-3">Kapal</th>
                   <th className="px-4 py-3">Berlaku Dari</th>
                   {editMode && <th className="px-4 py-3"></th>}
                 </tr>
@@ -533,14 +651,35 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                       )}
                       {isEditing ? (
                         <>
-                          <Cell><input className="cell-input" value={draft.kode ?? ""} onChange={(e) => setDraft((d) => ({ ...d, kode: e.target.value }))} /></Cell>
                           <Cell><input className="cell-input" value={draft.nama} onChange={(e) => setDraft((d) => ({ ...d, nama: e.target.value }))} /></Cell>
                           <Cell><input className="cell-input" value={draft.spesifikasi} onChange={(e) => setDraft((d) => ({ ...d, spesifikasi: e.target.value }))} /></Cell>
                           <Cell><input className="cell-input" value={draft.satuan} onChange={(e) => setDraft((d) => ({ ...d, satuan: e.target.value }))} /></Cell>
                           <Cell align="right">
-                            <input type="number" className="cell-input text-right" value={draft.harga_satuan} onChange={(e) => setDraft((d) => ({ ...d, harga_satuan: Number(e.target.value) || 0 }))} />
+                            <div className="flex items-center gap-1">
+                              <input type="number" className="cell-input text-right" value={draft.harga_satuan} onChange={(e) => setDraft((d) => ({ ...d, harga_satuan: Number(e.target.value) || 0 }))} />
+                              <select
+                                className="cell-input"
+                                value={draft.mata_uang}
+                                onChange={(e) => setDraft((d) => ({ ...d, mata_uang: e.target.value as Currency }))}
+                              >
+                                {CURRENCIES.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </Cell>
+                          <Cell>
+                            <input
+                              type="number"
+                              className="cell-input"
+                              value={draft.tahun_pembelian}
+                              onChange={(e) => setDraft((d) => ({ ...d, tahun_pembelian: Number(e.target.value) || 0 }))}
+                            />
                           </Cell>
                           <Cell><input className="cell-input" value={draft.supplier_nama} onChange={(e) => setDraft((d) => ({ ...d, supplier_nama: e.target.value }))} /></Cell>
+                          <Cell><input className="cell-input" value={draft.nama_kapal} onChange={(e) => setDraft((d) => ({ ...d, nama_kapal: e.target.value }))} /></Cell>
                           <Cell><input type="date" className="cell-input" value={draft.berlaku_dari ?? ""} onChange={(e) => setDraft((d) => ({ ...d, berlaku_dari: e.target.value || null }))} /></Cell>
                           <td className="whitespace-nowrap px-4 py-2">
                             <button type="button" disabled={busy} onClick={saveEdit} className="btn btn-primary btn-sm mr-1.5">
@@ -555,12 +694,15 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                         </>
                       ) : (
                         <>
-                          <td className="px-4 py-2">{r.kode ?? "-"}</td>
                           <td className="px-4 py-2">{r.nama}</td>
                           <td className="px-4 py-2">{r.spesifikasi || "-"}</td>
                           <td className="px-4 py-2">{r.satuan}</td>
-                          <td className="px-4 py-2 text-right font-medium">{r.harga_satuan != null ? formatRp(r.harga_satuan) : "-"}</td>
+                          <td className="px-4 py-2 text-right font-medium">
+                            {r.harga_satuan != null ? formatMoney(r.harga_satuan, r.mata_uang ?? "IDR") : "-"}
+                          </td>
+                          <td className="px-4 py-2">{r.tahun_pembelian ?? "-"}</td>
                           <td className="px-4 py-2">{r.supplier_nama ?? "-"}</td>
+                          <td className="px-4 py-2">{r.nama_kapal ?? "-"}</td>
                           <td className="px-4 py-2">{r.berlaku_dari ?? "-"}</td>
                           {editMode && (
                             <td className="px-4 py-2">

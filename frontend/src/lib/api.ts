@@ -253,13 +253,17 @@ export type FilterOptions = {
   tipe: string[];
 };
 
+export type Currency = "IDR" | "EUR" | "USD";
+
 export type MaterialItemInput = {
-  kode: string | null;
   nama: string;
   spesifikasi: string;
   satuan: string;
   harga_satuan: number;
+  mata_uang: Currency;
+  tahun_pembelian: number;
   supplier_nama: string;
+  nama_kapal: string;
   berlaku_dari: string | null;
   sumber: string;
   no_dokumen: string;
@@ -270,24 +274,29 @@ export type MaterialRowInput = MaterialItemInput;
 
 export type MaterialRow = {
   id: number;
-  kode: string | null;
   nama: string;
   spesifikasi: string;
   satuan: string;
   harga_satuan: number | null;
+  mata_uang: string | null;
+  tahun_pembelian: number | null;
   supplier_nama: string | null;
+  nama_kapal: string | null;
   berlaku_dari: string | null;
 };
 
 export type MaterialStats = {
   total_material: number;
   total_supplier: number;
+  total_kapal: number;
   update_terakhir: string | null;
 };
 
 export type MaterialFilterOptions = {
   supplier: string[];
   satuan: string[];
+  kapal: string[];
+  tahun: string[];
 };
 
 export function formatRp(n: number) {
@@ -295,5 +304,15 @@ export function formatRp(n: number) {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
+  }).format(n);
+}
+
+/** Angka IDR dan EUR/USD TIDAK dikonversi satu sama lain - ini cuma format tampilan
+ * sesuai mata uang aslinya masing-masing baris. */
+export function formatMoney(n: number, currency: string) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: currency || "IDR",
+    maximumFractionDigits: 2,
   }).format(n);
 }

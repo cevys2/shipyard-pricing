@@ -14,6 +14,8 @@ type Props = { auth: AuthUser };
 const emptyFilters: Record<string, string> = {
   supplier: "Semua",
   satuan: "Semua",
+  kapal: "Semua",
+  tahun: "Semua",
   search: "",
 };
 
@@ -28,6 +30,8 @@ export default function MaterialCatalogPanel({ auth }: Props) {
     () => ({
       supplier: filters.supplier,
       satuan: filters.satuan,
+      kapal: filters.kapal,
+      tahun: filters.tahun,
       search: filters.search || undefined,
     }),
     [filters],
@@ -88,9 +92,10 @@ export default function MaterialCatalogPanel({ auth }: Props) {
       </div>
 
       {stats && (
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard title="Total Material" value={String(stats.total_material)} accent />
           <KpiCard title="Total Supplier" value={String(stats.total_supplier)} />
+          <KpiCard title="Total Kapal" value={String(stats.total_kapal)} />
           <KpiCard title="Update Harga Terakhir" value={stats.update_terakhir ?? "-"} />
         </div>
       )}
@@ -108,6 +113,18 @@ export default function MaterialCatalogPanel({ auth }: Props) {
             value={filters.satuan}
             options={filterOpts.satuan}
             onChange={(v) => setFilters((f) => ({ ...f, satuan: v }))}
+          />
+          <FilterSelect
+            label="Kapal"
+            value={filters.kapal}
+            options={filterOpts.kapal}
+            onChange={(v) => setFilters((f) => ({ ...f, kapal: v }))}
+          />
+          <FilterSelect
+            label="Tahun"
+            value={filters.tahun}
+            options={filterOpts.tahun}
+            onChange={(v) => setFilters((f) => ({ ...f, tahun: v }))}
           />
         </div>
       )}
