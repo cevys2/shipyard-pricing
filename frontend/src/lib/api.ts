@@ -140,6 +140,47 @@ export const api = {
       token,
     );
   },
+  material(token: string, params: Record<string, string | undefined> = {}) {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v && v !== "Semua") q.set(k, v);
+    });
+    const qs = q.toString();
+    return request<MaterialRow[]>(`/material${qs ? `?${qs}` : ""}`, {}, token);
+  },
+  materialStats(token: string, params: Record<string, string | undefined> = {}) {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v && v !== "Semua") q.set(k, v);
+    });
+    const qs = q.toString();
+    return request<MaterialStats>(`/material/stats${qs ? `?${qs}` : ""}`, {}, token);
+  },
+  materialFilters(token: string, params: Record<string, string | undefined> = {}) {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v && v !== "Semua") q.set(k, v);
+    });
+    const qs = q.toString();
+    return request<MaterialFilterOptions>(`/material/filters${qs ? `?${qs}` : ""}`, {}, token);
+  },
+  materialBulkCreate(token: string, items: MaterialItemInput[]) {
+    return request<{ saved: number }>(
+      "/material/bulk",
+      { method: "POST", body: JSON.stringify({ items }) },
+      token,
+    );
+  },
+  materialPatch(
+    token: string,
+    body: { updates?: { id: number; data: MaterialRowInput }[]; delete_ids?: number[] },
+  ) {
+    return request<{ deleted: number; updated: number }>(
+      "/material",
+      { method: "PATCH", body: JSON.stringify(body) },
+      token,
+    );
+  },
 };
 
 export type CatalogHeader = {
@@ -210,6 +251,43 @@ export type FilterOptions = {
   kategori: string[];
   tahun: string[];
   tipe: string[];
+};
+
+export type MaterialItemInput = {
+  kode: string | null;
+  nama: string;
+  spesifikasi: string;
+  satuan: string;
+  harga_satuan: number;
+  supplier_nama: string;
+  berlaku_dari: string | null;
+  sumber: string;
+  no_dokumen: string;
+  catatan: string;
+};
+
+export type MaterialRowInput = MaterialItemInput;
+
+export type MaterialRow = {
+  id: number;
+  kode: string | null;
+  nama: string;
+  spesifikasi: string;
+  satuan: string;
+  harga_satuan: number | null;
+  supplier_nama: string | null;
+  berlaku_dari: string | null;
+};
+
+export type MaterialStats = {
+  total_material: number;
+  total_supplier: number;
+  update_terakhir: string | null;
+};
+
+export type MaterialFilterOptions = {
+  supplier: string[];
+  satuan: string[];
 };
 
 export function formatRp(n: number) {
