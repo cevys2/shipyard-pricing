@@ -19,8 +19,13 @@ def tren_jasa(
 
 
 @router.get("/tren-jasa/kategori")
-def tren_jasa_kategori(_: Annotated[dict, Depends(get_current_user)]):
-    return analitik_service.kategori_options()
+def tren_jasa_kategori(
+    _: Annotated[dict, Depends(get_current_user)],
+    min_sampel: int = 3,
+):
+    # min_sampel harus sama dengan yang dipakai /tren-jasa, kalau tidak daftar opsinya
+    # bisa memuat kategori yang grafiknya kosong.
+    return analitik_service.kategori_options(min_sampel=max(1, min_sampel))
 
 
 @router.get("/tren-material")

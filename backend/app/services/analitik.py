@@ -101,18 +101,31 @@ def tren_harga_jasa(*, kategori: str | None = None, min_sampel: int = 3) -> dict
     }
 
 
-def kategori_options() -> list[str]:
+def kategori_options(*, min_sampel: int = 3) -> list[str]:
+    """Kategori yang benar-benar punya data lolos `min_sampel`.
+
+    Saringan HAVING-nya harus sama persis dengan `tren_harga_jasa()`. Kalau daftar opsi
+    dibuat dari DISTINCT biasa, ada kategori yang bisa dipilih tapi grafiknya kosong --
+    tiap tahunnya kurang dari `min_sampel` baris sehingga tersaring habis di sisi data.
+    """
     with engine.connect() as conn:
         rows = conn.execute(
             text(
                 f"""
-                SELECT DISTINCT {_KATEGORI_NORM} AS kategori
-                FROM   {TABLE}
-                WHERE  kategori_pekerjaan IS NOT NULL
-                  AND  trim(kategori_pekerjaan) NOT IN ('', '-')
-                ORDER  BY 1
+                SELECT kategori FROM (
+                    SELECT {_KATEGORI_NORM} AS kategori, tahun
+                    FROM   {TABLE}
+                    WHERE  harga_satuan > 0
+                      AND  kategori_pekerjaan IS NOT NULL
+                      AND  trim(kategori_pekerjaan) NOT IN ('', '-')
+                    GROUP  BY 1, 2
+                    HAVING COUNT(*) >= :min_sampel
+                ) t
+                GROUP  BY kategori
+                ORDER  BY kategori
                 """
-            )
+            ),
+            {"min_sampel": min_sampel},
         ).scalars().all()
     return ["Semua"] + [r for r in rows if r]
 
