@@ -63,8 +63,7 @@ def create_bulk(
     body: BulkMaterialCreate,
     user: Annotated[dict, Depends(get_current_user)],
 ):
-    count = material_service.bulk_create(body, aktor=user["username"])
-    return {"saved": count}
+    return material_service.bulk_create(body, aktor=user["username"])
 
 
 @router.patch("")

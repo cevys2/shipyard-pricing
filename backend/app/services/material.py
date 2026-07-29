@@ -250,12 +250,26 @@ def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> l
     return [existing[k] for k in keys]
 
 
-def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> int:
+def _tanda_harga(row: dict[str, Any]) -> tuple:
+    """Sidik jari satu titik harga. Dua baris dengan sidik jari sama = kejadian harga
+    yang sama ke-input dua kali, bukan perubahan harga."""
+    return (
+        row["sumber_daya_id"],
+        float(row["harga_satuan"]),
+        row["mata_uang"],
+        row["supplier_id"],
+        row["berlaku_dari"],
+        row["tahun_pembelian"],
+        row["nama_kapal"] or "",
+    )
+
+
+def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> dict[str, int]:
     with engine.begin() as conn:
         supplier_map = _resolve_suppliers(conn, [item.supplier_nama for item in payload.items])
         sd_ids = _resolve_sumber_daya(conn, payload.items)
 
-        harga_rows = [
+        semua_rows = [
             {
                 "sumber_daya_id": sd_id,
                 "supplier_id": supplier_map.get(item.supplier_nama.strip()) if item.supplier_nama.strip() else None,
@@ -270,6 +284,46 @@ def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> int:
             }
             for sd_id, item in zip(sd_ids, payload.items, strict=True)
         ]
+
+        # Paste file yang sama dua kali itu kejadian biasa. Sejak material dipakai ulang
+        # (bukan bikin master baru), tanpa saringan ini titik harga identik akan menumpuk
+        # dan muncul sebagai titik palsu di grafik tren. Jalur edit sudah dijaga oleh
+        # `_harga_berubah`; ini padanannya untuk jalur tambah.
+        sudah_ada = set()
+        if sd_ids:
+            existing = conn.execute(
+                text(
+                    """
+                    SELECT sumber_daya_id, harga_satuan, mata_uang, supplier_id,
+                           berlaku_dari, tahun_pembelian, nama_kapal
+                    FROM   sumber_daya_harga
+                    WHERE  sumber_daya_id = ANY(:ids)
+                    """
+                ),
+                {"ids": list(set(sd_ids))},
+            ).mappings().all()
+            sudah_ada = {_tanda_harga(dict(r)) for r in existing}
+
+        harga_rows = []
+        for row in semua_rows:
+            tanda = _tanda_harga(row)
+            if tanda in sudah_ada:
+                continue
+            sudah_ada.add(tanda)  # cegah duplikat di dalam satu batch juga
+            harga_rows.append(row)
+
+        dilewati = len(semua_rows) - len(harga_rows)
+        if not harga_rows:
+            audit.catat(
+                conn,
+                aktor=aktor,
+                aksi="create",
+                entitas="material",
+                jumlah=0,
+                detail={"dilewati_duplikat": dilewati},
+            )
+            return {"saved": 0, "titik_harga_baru": 0, "dilewati": dilewati}
+
         harga_values_sql, harga_params = _multi_values(
             [
                 "sumber_daya_id",
@@ -299,10 +353,10 @@ def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> int:
             aktor=aktor,
             aksi="create",
             entitas="material",
-            jumlah=len(payload.items),
-            detail={"nama": [i.nama for i in payload.items[:20]]},
+            jumlah=len(harga_rows),
+            detail={"nama": [i.nama for i in payload.items[:20]], "dilewati_duplikat": dilewati},
         )
-    return len(payload.items)
+    return {"saved": len(harga_rows), "titik_harga_baru": len(harga_rows), "dilewati": dilewati}
 
 
 def _harga_berubah(conn: Connection, sumber_daya_id: int, item: PriceCreate, supplier_id: int | None) -> bool:

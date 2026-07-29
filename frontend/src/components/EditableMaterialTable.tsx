@@ -246,7 +246,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       setPasteWarnings([]);
       setShowAdd(false);
       onChanged();
-      alert(`Berhasil menambah ${res.saved} material.`);
+      alert(
+        res.dilewati > 0
+          ? `Tersimpan ${res.saved} titik harga. ${res.dilewati} baris dilewati karena ` +
+            `harganya sudah persis sama dengan yang tercatat (bukan perubahan harga).`
+          : `Berhasil menambah ${res.saved} titik harga.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal menyimpan material hasil paste");
     } finally {

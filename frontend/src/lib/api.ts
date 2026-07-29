@@ -165,7 +165,7 @@ export const api = {
     return request<MaterialFilterOptions>(`/material/filters${qs ? `?${qs}` : ""}`, {}, token);
   },
   materialBulkCreate(token: string, items: MaterialItemInput[]) {
-    return request<{ saved: number }>(
+    return request<{ saved: number; titik_harga_baru: number; dilewati: number }>(
       "/material/bulk",
       { method: "POST", body: JSON.stringify({ items }) },
       token,
