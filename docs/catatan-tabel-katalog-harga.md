@@ -4,6 +4,8 @@
 
 Dokumen ini sengaja dibuat supaya klaim di atas bisa diverifikasi, bukan cuma dipercaya.
 
+*Status: sudah di-merge ke `main` sebagai `78fc310` (29 Juli 2026) dan ter-deploy.*
+
 ---
 
 ## 1. Yang TIDAK dilakukan
@@ -50,7 +52,33 @@ Yang berubah di kode jalur tulis lama ([`services/catalog.py`](../backend/app/se
 `audit.catat()`. **Perintah SQL ke `tabel_katalog_harga` sendiri tidak diubah satu karakter pun** —
 INSERT/UPDATE/DELETE-nya sama persis seperti sebelumnya.
 
-## 4. Cara memverifikasi sendiri
+## 4. Temuan tentang isi tabel — semuanya dibiarkan apa adanya
+
+Pemeriksaan data memunculkan empat hal. Tidak ada satu pun yang diperbaiki; semuanya dicatat
+di sini supaya jadi bahan keputusan nanti, bukan diam-diam diubah.
+
+**212 grup baris identik, total 302 baris berlebih** — sama persis di kapal, tahun, tipe,
+kategori, uraian, satuan, dan harga. Contohnya `Elbow sch40 3"` seharga 1.050.000 muncul
+delapan kali di KMP. MARINA SEGUNDA 2024.
+
+Ini sengaja **tidak** di-dedup. Tabel ini tidak punya kolom kuantitas, jadi delapan baris
+seperti itu kemungkinan besar memang delapan item nyata di laporan aslinya — pengulangan
+barisnya justru cara laporan mencatat jumlah. Menghapusnya berarti membuang data yang sah.
+Kolom `id` juga nol duplikat, jadi tidak ada tanda impor ganda. Ini berbeda dari kasus
+`sumber_daya` di bagian bawah dokumen, di mana duplikasinya terbukti kecelakaan impor dan
+merusak fitur.
+
+**Kerusakan encoding di data lama**, mis. `elbow sch40 ?3"` yang aslinya kemungkinan `Ø3"`.
+
+**Jumlah kapal per tahun timpang** — 2024 dua kapal, 2025 delapan, 2026 dua puluh. Naik-turun
+garis pada grafik bisa sekadar efek berubahnya campuran kapal, bukan bukti harga naik. Karena
+itu halaman analitik menampilkan peringatan berisi angka ini, bukan menyembunyikannya.
+
+**Tren per pekerjaan praktis tidak mungkin.** Dari 3.463 uraian unik, hanya 86 yang muncul di
+lebih dari satu tahun, karena `uraian_pekerjaan` teks bebas. Yang bisa jadi tren cuma agregat
+per kategori — dan dari 77 kategori, 18 punya data di dua tahun atau lebih.
+
+## 5. Cara memverifikasi sendiri
 
 ```bash
 # tidak boleh ada hasil selain di services/catalog.py (jalur tulis lama, tidak diubah)
@@ -110,3 +138,20 @@ jadi campuran antara perubahan harga asli dan jejak penyuntingan.
 Sekarang baris harga baru hanya disisipkan kalau ada yang benar-benar berubah (harga, mata uang,
 supplier, tanggal berlaku, tahun pembelian, atau kapal). Respons `PATCH /material` menambah field
 `titik_harga_baru` supaya jelas berapa yang benar-benar tercatat sebagai perubahan harga.
+
+## Perbaikan perilaku: paste berulang tidak lagi menumpuk titik harga identik
+
+Setelah `bulk_create()` memakai ulang material yang sudah ada, paste file yang sama dua kali
+memang tidak lagi membuat material kembar — tapi masih menambah titik harga yang identik, yaitu
+titik palsu yang sama seperti kasus di atas. Sekarang baris harga dilewati kalau sidik jarinya
+(material, harga, mata uang, supplier, tanggal berlaku, tahun, kapal) sudah ada, termasuk
+duplikat di dalam satu batch. Respons `POST /material/bulk` mengembalikan `saved`,
+`titik_harga_baru`, dan `dilewati` supaya UI bisa menyebutkan berapa baris yang dilewati.
+
+## Perbaikan: opsi filter kategori selaras dengan datanya
+
+Daftar kategori di tab Analitik dibuat dari `DISTINCT` biasa, sementara datanya disaring
+`HAVING COUNT(*) >= min_sampel`. Akibatnya 13 dari 77 opsi bisa dipilih tapi grafiknya kosong.
+`kategori_options()` sekarang memakai saringan yang sama. Diverifikasi pada `min_sampel`
+1/3/5/10: jumlah opsi selalu sama persis dengan jumlah kategori yang punya data
+(77/64/58/46), tanpa opsi kosong dan tanpa kategori yang hilang dari daftar.
