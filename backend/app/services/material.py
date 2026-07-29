@@ -4,14 +4,17 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import engine
+from app.database import engine, sd_identitas_sql
 from app.schemas.material import (
     BulkMaterialCreate,
     BulkPatchMaterialRequest,
     MaterialItemCreate,
     MaterialRowOut,
     MaterialStats,
+    PriceHistoryRow,
+    PriceCreate,
 )
+from app.services import audit
 
 _LIST_QUERY = """
     SELECT sd.id, sd.nama, sd.spesifikasi, sd.satuan,
@@ -171,7 +174,7 @@ def _resolve_suppliers(conn: Connection, raw_names: list[str]) -> dict[str, int]
     return {nama: id_ for id_, nama in rows}
 
 
-def _insert_harga(conn: Connection, sumber_daya_id: int, item: MaterialItemCreate, supplier_id: int | None) -> None:
+def _insert_harga(conn: Connection, sumber_daya_id: int, item: PriceCreate, supplier_id: int | None) -> None:
     conn.execute(
         text(
             """
@@ -196,27 +199,77 @@ def _insert_harga(conn: Connection, sumber_daya_id: int, item: MaterialItemCreat
     )
 
 
-def bulk_create(payload: BulkMaterialCreate) -> int:
+def _identitas_key(nama: str, spesifikasi: str | None, satuan: str) -> tuple[str, str, str]:
+    """Versi Python dari `sd_identitas_sql()` -- harus menormalisasi dengan cara yang sama
+    (lowercase, spasi beruntun jadi satu) supaya lookup di sini sepakat dengan unique index
+    `uq_sd_identitas` di DB."""
+    norm = lambda s: " ".join((s or "").split()).lower()  # noqa: E731
+    return norm(nama), norm(spesifikasi), norm(satuan)
+
+
+def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> list[int]:
+    """Cari-atau-buat master material, kembalikan id sejajar dengan `items`.
+
+    Dulu fungsi ini selalu INSERT, jadi paste batch yang sama dua kali bikin material
+    kembar dan riwayat harganya terbelah. Sekarang material yang sudah ada dipakai ulang,
+    sehingga harga baru menempel jadi TITIK RIWAYAT di material yang sama -- inilah yang
+    bikin tren harga bisa terbentuk sama sekali.
+    """
+    keys = [_identitas_key(i.nama, i.spesifikasi, i.satuan) for i in items]
+    existing: dict[tuple[str, str, str], int] = {}
+
+    rows = conn.execute(
+        text(f"SELECT id, {sd_identitas_sql()} FROM sumber_daya WHERE jenis = 'BAHAN'")
+    ).all()
+    for id_, n, s, sat, _jenis in rows:
+        existing[(n, s, sat)] = id_
+
+    # Batch yang sama bisa memuat material yang sama dua kali; yang kedua harus memakai
+    # id hasil insert yang pertama, bukan bikin baris baru lagi.
+    baru = []
+    for key, item in zip(keys, items, strict=True):
+        if key not in existing:
+            existing[key] = -1
+            baru.append(item)
+
+    if baru:
+        values_sql, params = _multi_values(
+            ["nama", "spesifikasi", "satuan"],
+            [{"nama": i.nama, "spesifikasi": i.spesifikasi or None, "satuan": i.satuan} for i in baru],
+        )
+        inserted = conn.execute(
+            text(
+                f"INSERT INTO sumber_daya (nama, spesifikasi, satuan) VALUES {values_sql} "
+                "RETURNING id, nama, spesifikasi, satuan"
+            ),
+            params,
+        ).all()
+        for id_, nama, spek, satuan in inserted:
+            existing[_identitas_key(nama, spek, satuan)] = id_
+
+    return [existing[k] for k in keys]
+
+
+def _tanda_harga(row: dict[str, Any]) -> tuple:
+    """Sidik jari satu titik harga. Dua baris dengan sidik jari sama = kejadian harga
+    yang sama ke-input dua kali, bukan perubahan harga."""
+    return (
+        row["sumber_daya_id"],
+        float(row["harga_satuan"]),
+        row["mata_uang"],
+        row["supplier_id"],
+        row["berlaku_dari"],
+        row["tahun_pembelian"],
+        row["nama_kapal"] or "",
+    )
+
+
+def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> dict[str, int]:
     with engine.begin() as conn:
         supplier_map = _resolve_suppliers(conn, [item.supplier_nama for item in payload.items])
+        sd_ids = _resolve_sumber_daya(conn, payload.items)
 
-        sd_values_sql, sd_params = _multi_values(
-            ["nama", "spesifikasi", "satuan"],
-            [
-                {
-                    "nama": item.nama,
-                    "spesifikasi": item.spesifikasi or None,
-                    "satuan": item.satuan,
-                }
-                for item in payload.items
-            ],
-        )
-        sd_ids = conn.execute(
-            text(f"INSERT INTO sumber_daya (nama, spesifikasi, satuan) VALUES {sd_values_sql} RETURNING id"),
-            sd_params,
-        ).scalars().all()
-
-        harga_rows = [
+        semua_rows = [
             {
                 "sumber_daya_id": sd_id,
                 "supplier_id": supplier_map.get(item.supplier_nama.strip()) if item.supplier_nama.strip() else None,
@@ -231,6 +284,46 @@ def bulk_create(payload: BulkMaterialCreate) -> int:
             }
             for sd_id, item in zip(sd_ids, payload.items, strict=True)
         ]
+
+        # Paste file yang sama dua kali itu kejadian biasa. Sejak material dipakai ulang
+        # (bukan bikin master baru), tanpa saringan ini titik harga identik akan menumpuk
+        # dan muncul sebagai titik palsu di grafik tren. Jalur edit sudah dijaga oleh
+        # `_harga_berubah`; ini padanannya untuk jalur tambah.
+        sudah_ada = set()
+        if sd_ids:
+            existing = conn.execute(
+                text(
+                    """
+                    SELECT sumber_daya_id, harga_satuan, mata_uang, supplier_id,
+                           berlaku_dari, tahun_pembelian, nama_kapal
+                    FROM   sumber_daya_harga
+                    WHERE  sumber_daya_id = ANY(:ids)
+                    """
+                ),
+                {"ids": list(set(sd_ids))},
+            ).mappings().all()
+            sudah_ada = {_tanda_harga(dict(r)) for r in existing}
+
+        harga_rows = []
+        for row in semua_rows:
+            tanda = _tanda_harga(row)
+            if tanda in sudah_ada:
+                continue
+            sudah_ada.add(tanda)  # cegah duplikat di dalam satu batch juga
+            harga_rows.append(row)
+
+        dilewati = len(semua_rows) - len(harga_rows)
+        if not harga_rows:
+            audit.catat(
+                conn,
+                aktor=aktor,
+                aksi="create",
+                entitas="material",
+                jumlah=0,
+                detail={"dilewati_duplikat": dilewati},
+            )
+            return {"saved": 0, "titik_harga_baru": 0, "dilewati": dilewati}
+
         harga_values_sql, harga_params = _multi_values(
             [
                 "sumber_daya_id",
@@ -255,18 +348,70 @@ def bulk_create(payload: BulkMaterialCreate) -> int:
             ),
             harga_params,
         )
-    return len(payload.items)
+        audit.catat(
+            conn,
+            aktor=aktor,
+            aksi="create",
+            entitas="material",
+            jumlah=len(harga_rows),
+            detail={"nama": [i.nama for i in payload.items[:20]], "dilewati_duplikat": dilewati},
+        )
+    return {"saved": len(harga_rows), "titik_harga_baru": len(harga_rows), "dilewati": dilewati}
 
 
-def bulk_patch(body: BulkPatchMaterialRequest) -> dict[str, int]:
+def _harga_berubah(conn: Connection, sumber_daya_id: int, item: PriceCreate, supplier_id: int | None) -> bool:
+    """True kalau harga yang dikirim beda dari titik harga terakhir material ini.
+
+    Tanpa cek ini, `bulk_patch` menyisipkan baris harga baru SETIAP kali material di-edit
+    -- benerin typo di kolom nama pun bikin satu "titik harga" palsu. Untuk katalog biasa
+    itu tak kelihatan, tapi buat grafik tren itu racun: riwayatnya jadi campuran antara
+    perubahan harga asli dan jejak penyuntingan.
+    """
+    row = conn.execute(
+        text(
+            """
+            SELECT harga_satuan, mata_uang, supplier_id, berlaku_dari, tahun_pembelian, nama_kapal
+            FROM   sumber_daya_harga
+            WHERE  sumber_daya_id = :id
+            ORDER  BY berlaku_dari DESC, id DESC
+            LIMIT  1
+            """
+        ),
+        {"id": sumber_daya_id},
+    ).mappings().first()
+    if row is None:
+        return True
+    return (
+        float(row["harga_satuan"]) != float(item.harga_satuan)
+        or row["mata_uang"] != item.mata_uang
+        or row["supplier_id"] != supplier_id
+        or row["berlaku_dari"] != (item.berlaku_dari or date.today())
+        or row["tahun_pembelian"] != item.tahun_pembelian
+        or (row["nama_kapal"] or "") != (item.nama_kapal or "")
+    )
+
+
+def bulk_patch(body: BulkPatchMaterialRequest, *, aktor: str) -> dict[str, int]:
     deleted = 0
     updated = 0
+    harga_baru = 0
     with engine.begin() as conn:
         if body.delete_ids:
+            nama_dihapus = conn.execute(
+                text("SELECT nama FROM sumber_daya WHERE id = ANY(:ids)"), {"ids": body.delete_ids}
+            ).scalars().all()
             conn.execute(
                 text("DELETE FROM sumber_daya WHERE id = ANY(:ids)"), {"ids": body.delete_ids}
             )
             deleted = len(body.delete_ids)
+            audit.catat(
+                conn,
+                aktor=aktor,
+                aksi="delete",
+                entitas="material",
+                jumlah=deleted,
+                detail={"ids": body.delete_ids, "nama": list(nama_dihapus)[:20]},
+            )
 
         if body.updates:
             supplier_map = _resolve_suppliers(conn, [u.data.supplier_nama for u in body.updates])
@@ -289,6 +434,106 @@ def bulk_patch(body: BulkPatchMaterialRequest) -> dict[str, int]:
                     },
                 )
                 supplier_id = supplier_map.get(d.supplier_nama.strip()) if d.supplier_nama.strip() else None
-                _insert_harga(conn, u.id, d, supplier_id)
+                if _harga_berubah(conn, u.id, d, supplier_id):
+                    _insert_harga(conn, u.id, d, supplier_id)
+                    harga_baru += 1
             updated = len(body.updates)
-    return {"deleted": deleted, "updated": updated}
+            audit.catat(
+                conn,
+                aktor=aktor,
+                aksi="update",
+                entitas="material",
+                jumlah=updated,
+                detail={
+                    "ids": [u.id for u in body.updates][:20],
+                    "titik_harga_baru": harga_baru,
+                },
+            )
+    return {"deleted": deleted, "updated": updated, "titik_harga_baru": harga_baru}
+
+
+# ---------- Riwayat harga per material ----------
+
+
+def price_history(sumber_daya_id: int) -> list[PriceHistoryRow]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT h.id, h.harga_satuan, h.mata_uang, h.berlaku_dari, h.tahun_pembelian,
+                       h.nama_kapal, h.sumber, h.no_dokumen, h.catatan, h.dibuat_pada,
+                       sup.nama AS supplier_nama
+                FROM   sumber_daya_harga h
+                LEFT   JOIN supplier sup ON sup.id = h.supplier_id
+                WHERE  h.sumber_daya_id = :id
+                ORDER  BY h.berlaku_dari ASC, h.id ASC
+                """
+            ),
+            {"id": sumber_daya_id},
+        ).mappings().all()
+    return [PriceHistoryRow(**dict(r)) for r in rows]
+
+
+def add_price(sumber_daya_id: int, item: PriceCreate, *, aktor: str) -> int:
+    with engine.begin() as conn:
+        ada = conn.execute(
+            text("SELECT nama FROM sumber_daya WHERE id = :id"), {"id": sumber_daya_id}
+        ).scalar()
+        if ada is None:
+            raise ValueError("Material tidak ditemukan")
+        supplier_map = _resolve_suppliers(conn, [item.supplier_nama])
+        supplier_id = supplier_map.get(item.supplier_nama.strip()) if item.supplier_nama.strip() else None
+        _insert_harga(conn, sumber_daya_id, item, supplier_id)
+        new_id = conn.execute(
+            text("SELECT id FROM sumber_daya_harga WHERE sumber_daya_id = :id ORDER BY id DESC LIMIT 1"),
+            {"id": sumber_daya_id},
+        ).scalar()
+        audit.catat(
+            conn,
+            aktor=aktor,
+            aksi="create",
+            entitas="material_harga",
+            detail={
+                "sumber_daya_id": sumber_daya_id,
+                "nama": ada,
+                "harga_satuan": float(item.harga_satuan),
+                "mata_uang": item.mata_uang,
+                "berlaku_dari": item.berlaku_dari or date.today(),
+            },
+        )
+    return int(new_id)
+
+
+def delete_price(harga_id: int, *, aktor: str) -> None:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT sumber_daya_id, harga_satuan, berlaku_dari FROM sumber_daya_harga WHERE id = :id"),
+            {"id": harga_id},
+        ).mappings().first()
+        if row is None:
+            raise ValueError("Titik harga tidak ditemukan")
+        sisa = conn.execute(
+            text("SELECT COUNT(*) FROM sumber_daya_harga WHERE sumber_daya_id = :id"),
+            {"id": row["sumber_daya_id"]},
+        ).scalar()
+        # Material tanpa harga sama sekali bakal hilang dari daftar katalog (view
+        # v_harga_terkini kosong -> kolom harga null), jadi tolak di sini biar tidak
+        # ada material "hantu" yang cuma bisa dibetulkan lewat SQL manual.
+        if sisa is not None and int(sisa) <= 1:
+            raise ValueError(
+                "Ini satu-satunya titik harga material tersebut. "
+                "Tambahkan harga baru dulu, atau hapus materialnya dari tabel katalog."
+            )
+        conn.execute(text("DELETE FROM sumber_daya_harga WHERE id = :id"), {"id": harga_id})
+        audit.catat(
+            conn,
+            aktor=aktor,
+            aksi="delete",
+            entitas="material_harga",
+            detail={
+                "harga_id": harga_id,
+                "sumber_daya_id": row["sumber_daya_id"],
+                "harga_satuan": float(row["harga_satuan"]),
+                "berlaku_dari": row["berlaku_dari"],
+            },
+        )

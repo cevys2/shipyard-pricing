@@ -1,7 +1,10 @@
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, ClipboardPaste, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { lazy, Suspense, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, ClipboardPaste, LineChart, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { api, formatMoney, type Currency, type MaterialItemInput, type MaterialRow } from "../lib/api";
 import { parseTsv } from "../lib/tsv";
+// Ikut di-lazy bareng tab Analitik -- drawer ini juga pakai recharts dan cuma tampil
+// setelah user klik "Riwayat".
+const PriceHistoryDrawer = lazy(() => import("./PriceHistoryDrawer"));
 
 const PAGE_SIZE = 50;
 
@@ -107,6 +110,7 @@ function draftToRow(d: MaterialItemInput): string[] {
 }
 
 export default function EditableMaterialTable({ token, rows, loading, onChanged }: Props) {
+  const [historyFor, setHistoryFor] = useState<MaterialRow | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<MaterialItemInput>(emptyDraft);
@@ -242,7 +246,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       setPasteWarnings([]);
       setShowAdd(false);
       onChanged();
-      alert(`Berhasil menambah ${res.saved} material.`);
+      alert(
+        res.dilewati > 0
+          ? `Tersimpan ${res.saved} titik harga. ${res.dilewati} baris dilewati karena ` +
+            `harganya sudah persis sama dengan yang tercatat (bukan perubahan harga).`
+          : `Berhasil menambah ${res.saved} titik harga.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal menyimpan material hasil paste");
     } finally {
@@ -636,6 +645,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                   <th className="px-4 py-3">Supplier</th>
                   <th className="px-4 py-3">Kapal</th>
                   <th className="px-4 py-3">Berlaku Dari</th>
+                  <th className="px-4 py-3"></th>
                   {editMode && <th className="px-4 py-3"></th>}
                 </tr>
               </thead>
@@ -681,6 +691,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                           <Cell><input className="cell-input" value={draft.supplier_nama} onChange={(e) => setDraft((d) => ({ ...d, supplier_nama: e.target.value }))} /></Cell>
                           <Cell><input className="cell-input" value={draft.nama_kapal} onChange={(e) => setDraft((d) => ({ ...d, nama_kapal: e.target.value }))} /></Cell>
                           <Cell><input type="date" className="cell-input" value={draft.berlaku_dari ?? ""} onChange={(e) => setDraft((d) => ({ ...d, berlaku_dari: e.target.value || null }))} /></Cell>
+                          <td className="px-4 py-2"></td>
                           <td className="whitespace-nowrap px-4 py-2">
                             <button type="button" disabled={busy} onClick={saveEdit} className="btn btn-primary btn-sm mr-1.5">
                               <Save size={12} />
@@ -704,6 +715,17 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                           <td className="px-4 py-2">{r.supplier_nama ?? "-"}</td>
                           <td className="px-4 py-2">{r.nama_kapal ?? "-"}</td>
                           <td className="px-4 py-2">{r.berlaku_dari ?? "-"}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              type="button"
+                              onClick={() => setHistoryFor(r)}
+                              className="btn btn-secondary btn-sm"
+                              title="Lihat & tambah riwayat harga"
+                            >
+                              <LineChart size={12} />
+                              Riwayat
+                            </button>
+                          </td>
                           {editMode && (
                             <td className="px-4 py-2">
                               <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary btn-sm">
@@ -753,6 +775,17 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
           </div>
         )}
       </div>
+
+      {historyFor && (
+        <Suspense fallback={null}>
+          <PriceHistoryDrawer
+            token={token}
+            material={historyFor}
+            onClose={() => setHistoryFor(null)}
+            onChanged={onChanged}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

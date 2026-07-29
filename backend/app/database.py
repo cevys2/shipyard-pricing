@@ -146,3 +146,123 @@ def ensure_material_tables() -> None:
                 """
             )
         )
+        _dedup_sumber_daya(conn)
+
+
+# Identitas material = nama + spesifikasi + satuan, dinormalisasi (case & spasi
+# berlebih diabaikan). Dipakai bareng oleh migrasi dedup dan lookup di bulk_create,
+# jadi definisinya HARUS satu tempat -- kalau beda, unique index bakal nolak baris
+# yang menurut aplikasi belum ada.
+def sd_identitas_sql(alias: str = "") -> str:
+    p = f"{alias}." if alias else ""
+    return (
+        f"lower(regexp_replace(trim({p}nama), '\\s+', ' ', 'g')), "
+        f"lower(regexp_replace(trim(coalesce({p}spesifikasi, '')), '\\s+', ' ', 'g')), "
+        f"lower(trim({p}satuan)), "
+        f"{p}jenis"
+    )
+
+
+def _dedup_sumber_daya(conn) -> None:
+    """Gabungkan material kembar jadi satu master, lalu kunci pakai unique index.
+
+    Kenapa perlu: `bulk_create` dulu selalu INSERT master baru, jadi paste batch yang
+    sama dua kali bikin material yang identik jadi 2 baris `sumber_daya` terpisah --
+    masing-masing dengan riwayat harganya sendiri. Akibatnya riwayat harga satu barang
+    terpecah dan tren harganya tidak akan pernah terbentuk. Di data produksi ini
+    kejadian: 11 item ke-input 3x jadi 33 baris.
+
+    Idempoten, dan di-skip total setelah unique index terpasang (index-nya sendiri yang
+    menjamin duplikat nggak bisa muncul lagi) supaya nggak full-scan tiap app start.
+    """
+    already_locked = conn.execute(
+        text("SELECT 1 FROM pg_indexes WHERE indexname = 'uq_sd_identitas'")
+    ).first()
+    if already_locked:
+        return
+
+    identitas = sd_identitas_sql()
+
+    # 1. Alihkan semua riwayat harga ke master dengan id terkecil di tiap grup kembar.
+    conn.execute(
+        text(
+            f"""
+            WITH grup AS (
+                SELECT id, MIN(id) OVER (PARTITION BY {identitas}) AS induk
+                FROM   sumber_daya
+            )
+            UPDATE sumber_daya_harga h
+            SET    sumber_daya_id = g.induk
+            FROM   grup g
+            WHERE  h.sumber_daya_id = g.id AND g.induk <> g.id
+            """
+        )
+    )
+
+    # 2. Hapus master kembar yang riwayat harganya sudah dipindah di langkah 1.
+    conn.execute(
+        text(
+            f"""
+            DELETE FROM sumber_daya
+            WHERE  id NOT IN (SELECT MIN(id) FROM sumber_daya GROUP BY {identitas})
+            """
+        )
+    )
+
+    # 3. Langkah 1 bikin baris harga yang persis sama menumpuk di master yang sama.
+    #    Baris identik = satu kejadian harga yang ke-input berulang, BUKAN perubahan
+    #    harga -- kalau dibiarkan, chart tren nampilin titik palsu. Sisakan satu.
+    conn.execute(
+        text(
+            """
+            DELETE FROM sumber_daya_harga a
+            USING  sumber_daya_harga b
+            WHERE  a.id > b.id
+              AND  a.sumber_daya_id = b.sumber_daya_id
+              AND  a.harga_satuan   = b.harga_satuan
+              AND  a.mata_uang      = b.mata_uang
+              AND  a.berlaku_dari   = b.berlaku_dari
+              AND  a.tahun_pembelian = b.tahun_pembelian
+              AND  a.supplier_id IS NOT DISTINCT FROM b.supplier_id
+              AND  a.nama_kapal  IS NOT DISTINCT FROM b.nama_kapal
+            """
+        )
+    )
+
+    conn.execute(
+        text(f"CREATE UNIQUE INDEX IF NOT EXISTS uq_sd_identitas ON sumber_daya ({identitas})")
+    )
+
+
+def ensure_audit_table() -> None:
+    """Jejak siapa mengubah apa, buat katalog material DAN tabel_katalog_harga.
+
+    Sengaja tabel terpisah & append-only, bukan kolom `diubah_oleh` di tabel aslinya:
+    (a) tabel_katalog_harga tidak boleh diubah strukturnya, (b) yang menarik justru
+    riwayat perubahannya, bukan cuma penyunting terakhir.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id          BIGSERIAL PRIMARY KEY,
+                    aktor       TEXT NOT NULL,
+                    aksi        TEXT NOT NULL,
+                    entitas     TEXT NOT NULL,
+                    jumlah      INT  NOT NULL DEFAULT 1,
+                    detail      JSONB,
+                    dibuat_pada TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_audit_waktu ON audit_log(dibuat_pada DESC)")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_audit_entitas "
+                "ON audit_log(entitas, dibuat_pada DESC)"
+            )
+        )
