@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, LayoutGrid, LogOut, Package, Search, Upload } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, LayoutGrid, LogOut, Package, Search, TrendingUp, Upload } from "lucide-react";
 import {
   api,
   PORTAL_URL,
@@ -11,12 +11,15 @@ import {
 import EditableCatalogTable from "../components/EditableCatalogTable";
 import DockingImportPanel from "../components/DockingImportPanel";
 import MaterialCatalogPanel from "../components/MaterialCatalogPanel";
+// recharts itu dependensi terbesar di app ini (~100 kB gzip). Tab Analitik bukan
+// tampilan awal, jadi di-lazy supaya recharts tidak ikut di bundle pertama.
+const AnalitikPanel = lazy(() => import("../components/AnalitikPanel"));
 import logoFull from "../assets/logo-full.png";
 import logoIcon from "../assets/logo-icon.png";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
-type Tab = "view" | "material" | "import";
+type Tab = "view" | "material" | "analitik" | "import";
 
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
@@ -110,6 +113,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
     { key: "material", label: "Katalog Material", icon: Package },
+    { key: "analitik", label: "Analitik", icon: TrendingUp },
     { key: "import", label: "Import Excel", icon: Upload },
   ];
 
@@ -238,6 +242,12 @@ export default function DashboardPage({ auth, onLogout }: Props) {
           )}
 
           {tab === "material" && <MaterialCatalogPanel auth={auth} />}
+
+          {tab === "analitik" && (
+            <Suspense fallback={<p className="p-8 text-center text-slate-500">Memuat analitik...</p>}>
+              <AnalitikPanel auth={auth} />
+            </Suspense>
+          )}
 
           {tab === "import" && (
             <div className="max-w-3xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">

@@ -15,6 +15,7 @@ from app.schemas.catalog import (
     CatalogStats,
     TipePerjanjian,
 )
+from app.services import audit
 
 TABLE = settings.catalog_table
 
@@ -150,7 +151,7 @@ def _next_ids(prefix: str, count: int) -> list[str]:
     return ids
 
 
-def bulk_create(payload: BulkCatalogCreate) -> int:
+def bulk_create(payload: BulkCatalogCreate, *, aktor: str, sumber: str = "form") -> int:
     slug = payload.nama_kapal.strip().replace(" ", "_").upper()
     prefix = f"{slug}-{payload.tahun.strip()}-"
     ids = _next_ids(prefix, len(payload.items))
@@ -184,10 +185,24 @@ def bulk_create(payload: BulkCatalogCreate) -> int:
                     "hrg": float(item.harga_satuan),
                 },
             )
+        audit.catat(
+            conn,
+            aktor=aktor,
+            aksi="create",
+            entitas="katalog_harga",
+            jumlah=len(payload.items),
+            detail={
+                "nama_kapal": kpl,
+                "tahun": payload.tahun,
+                "tipe_perjanjian": tipe,
+                "sumber": sumber,
+                "id_range": [ids[0], ids[-1]] if ids else [],
+            },
+        )
     return len(payload.items)
 
 
-def bulk_patch(body: BulkPatchRequest) -> dict[str, int]:
+def bulk_patch(body: BulkPatchRequest, *, aktor: str) -> dict[str, int]:
     deleted = 0
     updated = 0
     with engine.begin() as conn:
@@ -196,6 +211,14 @@ def bulk_patch(body: BulkPatchRequest) -> dict[str, int]:
             for del_id in body.delete_ids:
                 conn.execute(del_q, {"id": del_id})
             deleted = len(body.delete_ids)
+            audit.catat(
+                conn,
+                aktor=aktor,
+                aksi="delete",
+                entitas="katalog_harga",
+                jumlah=deleted,
+                detail={"ids": body.delete_ids[:50]},
+            )
 
         if body.updates:
             upd_q = text(
@@ -224,6 +247,14 @@ def bulk_patch(body: BulkPatchRequest) -> dict[str, int]:
                     },
                 )
             updated = len(body.updates)
+            audit.catat(
+                conn,
+                aktor=aktor,
+                aksi="update",
+                entitas="katalog_harga",
+                jumlah=updated,
+                detail={"ids": [u.id for u in body.updates][:50]},
+            )
     return {"deleted": deleted, "updated": updated}
 
 

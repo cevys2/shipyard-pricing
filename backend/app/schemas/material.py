@@ -23,12 +23,13 @@ _DATE_FORMATS = (
 _ORDINAL_SUFFIX_RE = re.compile(r"(\d{1,2})(st|nd|rd|th)\b", re.IGNORECASE)
 
 
-class MaterialItemCreate(BaseModel):
-    """Satu baris material -- master (sumber_daya) + harga awal (sumber_daya_harga)."""
+class PriceCreate(BaseModel):
+    """Satu titik harga di `sumber_daya_harga`, tanpa field master material.
 
-    nama: Annotated[str, Field(min_length=1, max_length=500)]
-    spesifikasi: str = Field(default="", max_length=1000)
-    satuan: Annotated[str, Field(min_length=1, max_length=50)]
+    Dipakai sendiri oleh endpoint "tambah harga baru" (POST /material/{id}/harga) dan
+    diwarisi `MaterialItemCreate` supaya aturan validasi tanggal/angka cuma ada satu.
+    """
+
     harga_satuan: float = Field(gt=0, description="Harus lebih dari 0")
     mata_uang: Literal["IDR", "EUR", "USD"] = "IDR"
     tahun_pembelian: int = Field(
@@ -40,11 +41,6 @@ class MaterialItemCreate(BaseModel):
     sumber: str = Field(default="", max_length=100)
     no_dokumen: str = Field(default="", max_length=200)
     catatan: str = Field(default="", max_length=1000)
-
-    @field_validator("nama", "satuan", mode="before")
-    @classmethod
-    def strip_required(cls, v):
-        return str(v).strip() if v is not None else v
 
     @field_validator("berlaku_dari", mode="before")
     @classmethod
@@ -65,14 +61,30 @@ class MaterialItemCreate(BaseModel):
             "DD/MM/YYYY, atau DD-Mon-YYYY (mis. 01-Jan-2026)."
         )
 
-    @field_validator(
-        "spesifikasi", "supplier_nama", "nama_kapal", "sumber", "no_dokumen", "catatan", mode="before"
-    )
+    @field_validator("supplier_nama", "nama_kapal", "sumber", "no_dokumen", "catatan", mode="before")
     @classmethod
     def strip_optional(cls, v):
         if v is None:
             return v
         return str(v).strip()
+
+
+class MaterialItemCreate(PriceCreate):
+    """Satu baris material -- master (sumber_daya) + harga awal (sumber_daya_harga)."""
+
+    nama: Annotated[str, Field(min_length=1, max_length=500)]
+    spesifikasi: str = Field(default="", max_length=1000)
+    satuan: Annotated[str, Field(min_length=1, max_length=50)]
+
+    @field_validator("nama", "satuan", mode="before")
+    @classmethod
+    def strip_required(cls, v):
+        return str(v).strip() if v is not None else v
+
+    @field_validator("spesifikasi", mode="before")
+    @classmethod
+    def strip_spesifikasi(cls, v):
+        return str(v).strip() if v is not None else v
 
 
 class BulkMaterialCreate(BaseModel):
@@ -115,3 +127,27 @@ class BulkUpdateMaterialItem(BaseModel):
 class BulkPatchMaterialRequest(BaseModel):
     updates: list[BulkUpdateMaterialItem] = Field(default_factory=list)
     delete_ids: list[int] = Field(default_factory=list)
+
+
+class PriceHistoryRow(BaseModel):
+    id: int
+    harga_satuan: float
+    mata_uang: str
+    berlaku_dari: date
+    tahun_pembelian: int
+    nama_kapal: str | None = None
+    supplier_nama: str | None = None
+    sumber: str | None = None
+    no_dokumen: str | None = None
+    catatan: str | None = None
+    dibuat_pada: datetime
+
+
+class AuditRow(BaseModel):
+    id: int
+    aktor: str
+    aksi: str
+    entitas: str
+    jumlah: int
+    detail: dict | None = None
+    dibuat_pada: datetime

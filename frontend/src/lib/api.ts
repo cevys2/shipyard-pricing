@@ -175,12 +175,111 @@ export const api = {
     token: string,
     body: { updates?: { id: number; data: MaterialRowInput }[]; delete_ids?: number[] },
   ) {
-    return request<{ deleted: number; updated: number }>(
+    return request<{ deleted: number; updated: number; titik_harga_baru: number }>(
       "/material",
       { method: "PATCH", body: JSON.stringify(body) },
       token,
     );
   },
+  priceHistory(token: string, sumberDayaId: number) {
+    return request<PriceHistoryRow[]>(`/material/${sumberDayaId}/harga`, {}, token);
+  },
+  addPrice(token: string, sumberDayaId: number, body: PriceInput) {
+    return request<{ id: number }>(
+      `/material/${sumberDayaId}/harga`,
+      { method: "POST", body: JSON.stringify(body) },
+      token,
+    );
+  },
+  deletePrice(token: string, hargaId: number) {
+    return request<{ deleted: number }>(`/material/harga/${hargaId}`, { method: "DELETE" }, token);
+  },
+  trenJasa(token: string, params: { kategori?: string; min_sampel?: number } = {}) {
+    const q = new URLSearchParams();
+    if (params.kategori && params.kategori !== "Semua") q.set("kategori", params.kategori);
+    if (params.min_sampel != null) q.set("min_sampel", String(params.min_sampel));
+    const qs = q.toString();
+    return request<TrenJasa>(`/analitik/tren-jasa${qs ? `?${qs}` : ""}`, {}, token);
+  },
+  trenJasaKategori(token: string) {
+    return request<string[]>("/analitik/tren-jasa/kategori", {}, token);
+  },
+  trenMaterial(token: string) {
+    return request<TrenMaterial>("/analitik/tren-material", {}, token);
+  },
+  auditLog(token: string, params: { entitas?: string; limit?: number } = {}) {
+    const q = new URLSearchParams();
+    if (params.entitas && params.entitas !== "Semua") q.set("entitas", params.entitas);
+    if (params.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AuditRow[]>(`/analitik/log${qs ? `?${qs}` : ""}`, {}, token);
+  },
+};
+
+export type PriceInput = {
+  harga_satuan: number;
+  mata_uang: Currency;
+  tahun_pembelian: number;
+  supplier_nama: string;
+  nama_kapal: string;
+  berlaku_dari: string | null;
+  sumber: string;
+  no_dokumen: string;
+  catatan: string;
+};
+
+export type PriceHistoryRow = {
+  id: number;
+  harga_satuan: number;
+  mata_uang: string;
+  berlaku_dari: string;
+  tahun_pembelian: number;
+  nama_kapal: string | null;
+  supplier_nama: string | null;
+  sumber: string | null;
+  no_dokumen: string | null;
+  catatan: string | null;
+  dibuat_pada: string;
+};
+
+export type TrenJasaPoint = {
+  kategori: string;
+  tahun: string;
+  n_baris: number;
+  n_kapal: number;
+  median: number;
+  minimum: number;
+  maksimum: number;
+};
+
+export type TrenJasa = {
+  seri: TrenJasaPoint[];
+  per_tahun: { tahun: string; n_baris: number; n_kapal: number }[];
+  cakupan: { total_baris: number; total_kategori: number; total_tahun: number };
+};
+
+export type TrenMaterial = {
+  ringkas: { total_material: number; siap_tren: number; total_titik_harga: number };
+  kandidat: {
+    id: number;
+    nama: string;
+    spesifikasi: string | null;
+    satuan: string;
+    n_harga: number;
+    dari: string;
+    sampai: string;
+    n_mata_uang: number;
+  }[];
+};
+
+export type AuditRow = {
+  id: number;
+  aktor: string;
+  aksi: string;
+  entitas: string;
+  jumlah: number;
+  detail: Record<string, unknown> | null;
+  dibuat_pada: string;
 };
 
 export type CatalogHeader = {

@@ -81,15 +81,15 @@ def get_filters(
 @router.post("/bulk")
 def create_bulk(
     body: BulkCatalogCreate,
-    _: Annotated[dict, Depends(get_current_user)],
+    user: Annotated[dict, Depends(get_current_user)],
 ):
-    count = catalog_service.bulk_create(body)
+    count = catalog_service.bulk_create(body, aktor=user["username"])
     return {"saved": count}
 
 
 @router.post("/import")
 async def import_file(
-    _: Annotated[dict, Depends(get_current_user)],
+    user: Annotated[dict, Depends(get_current_user)],
     file: UploadFile = File(...),
     dry_run: bool = Query(False, description="True = hanya validasi, tidak simpan"),
 ):
@@ -109,7 +109,7 @@ async def import_file(
             },
             "warnings": errors,
         }
-    saved = catalog_service.bulk_create(bulk)
+    saved = catalog_service.bulk_create(bulk, aktor=user["username"], sumber="import-excel")
     return {"saved": saved, "warnings": errors}
 
 
@@ -129,7 +129,7 @@ async def import_docking_preview(
 @router.post("/import/docking-commit")
 def import_docking_commit(
     body: DockingImportCommit,
-    _: Annotated[dict, Depends(get_current_user)],
+    user: Annotated[dict, Depends(get_current_user)],
 ):
     if not body.induk_items and not body.addendum_items:
         raise HTTPException(status_code=400, detail="Tidak ada baris untuk disimpan")
@@ -142,7 +142,9 @@ def import_docking_commit(
                 tahun=body.tahun,
                 tipe_perjanjian=TipePerjanjian.induk,
                 items=body.induk_items,
-            )
+            ),
+            aktor=user["username"],
+            sumber="import-docking",
         )
     if body.addendum_items:
         saved += catalog_service.bulk_create(
@@ -152,7 +154,9 @@ def import_docking_commit(
                 tahun=body.tahun,
                 tipe_perjanjian=TipePerjanjian.addendum,
                 items=body.addendum_items,
-            )
+            ),
+            aktor=user["username"],
+            sumber="import-docking",
         )
     return {"saved": saved}
 
@@ -160,8 +164,8 @@ def import_docking_commit(
 @router.patch("")
 def patch_catalog(
     body: BulkPatchRequest,
-    _: Annotated[dict, Depends(get_current_user)],
+    user: Annotated[dict, Depends(get_current_user)],
 ):
     if not body.updates and not body.delete_ids:
         raise HTTPException(status_code=400, detail="Tidak ada perubahan")
-    return catalog_service.bulk_patch(body)
+    return catalog_service.bulk_patch(body, aktor=user["username"])
