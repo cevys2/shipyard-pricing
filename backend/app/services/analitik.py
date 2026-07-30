@@ -43,6 +43,9 @@ def tren_harga_jasa(*, kategori: str | None = None, min_sampel: int = 3) -> dict
         params["kategori"] = kategori
 
     with engine.connect() as conn:
+        # `kapal` ikut dikembalikan karena median tanpa tahu kapal mana yang menyusunnya
+        # tidak bisa ditindaklanjuti: angka Rp 65.000 untuk Sweepblasting jadi tidak jelas
+        # itu rata-rata dari kapal besar, kapal kecil, atau campuran keduanya.
         seri = conn.execute(
             text(
                 f"""
@@ -52,7 +55,12 @@ def tren_harga_jasa(*, kategori: str | None = None, min_sampel: int = 3) -> dict
                        COUNT(DISTINCT nama_kapal)                                  AS n_kapal,
                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY harga_satuan)   AS median,
                        MIN(harga_satuan)                                           AS minimum,
-                       MAX(harga_satuan)                                           AS maksimum
+                       MAX(harga_satuan)                                           AS maksimum,
+                       -- Agregat biasa, bukan subquery berkorelasi: grup di sini SUDAH
+                       -- (kategori, tahun), jadi array_agg atas grup tepat berisi kapal
+                       -- yang menyusun median tersebut.
+                       array_agg(DISTINCT nama_kapal ORDER BY nama_kapal)
+                           FILTER (WHERE nama_kapal IS NOT NULL)                   AS kapal
                 FROM   {TABLE}
                 WHERE  harga_satuan > 0
                   AND  kategori_pekerjaan IS NOT NULL
@@ -155,14 +163,23 @@ def tren_material() -> dict[str, Any]:
             )
         ).mappings().first()
 
+        # harga_awal/harga_akhir diambil lewat DISTINCT ON di subquery supaya perubahan
+        # persennya dihitung di DB, bukan disusun ulang di frontend dari daftar titik.
         kandidat = conn.execute(
             text(
                 """
                 SELECT sd.id, sd.nama, sd.spesifikasi, sd.satuan,
-                       COUNT(h.id)          AS n_harga,
-                       MIN(h.berlaku_dari)  AS dari,
-                       MAX(h.berlaku_dari)  AS sampai,
-                       COUNT(DISTINCT h.mata_uang) AS n_mata_uang
+                       COUNT(h.id)                 AS n_harga,
+                       MIN(h.berlaku_dari)         AS dari,
+                       MAX(h.berlaku_dari)         AS sampai,
+                       COUNT(DISTINCT h.mata_uang) AS n_mata_uang,
+                       MIN(h.mata_uang)            AS mata_uang,
+                       (SELECT a.harga_satuan FROM sumber_daya_harga a
+                        WHERE a.sumber_daya_id = sd.id
+                        ORDER BY a.berlaku_dari ASC, a.id ASC LIMIT 1)  AS harga_awal,
+                       (SELECT z.harga_satuan FROM sumber_daya_harga z
+                        WHERE z.sumber_daya_id = sd.id
+                        ORDER BY z.berlaku_dari DESC, z.id DESC LIMIT 1) AS harga_akhir
                 FROM   sumber_daya sd
                 JOIN   sumber_daya_harga h ON h.sumber_daya_id = sd.id
                 WHERE  sd.jenis = 'BAHAN' AND sd.aktif
@@ -173,7 +190,37 @@ def tren_material() -> dict[str, Any]:
             )
         ).mappings().all()
 
+        titik = []
+        if kandidat:
+            titik = conn.execute(
+                text(
+                    """
+                    SELECT h.sumber_daya_id, h.berlaku_dari, h.harga_satuan, h.mata_uang,
+                           h.nama_kapal, sup.nama AS supplier_nama
+                    FROM   sumber_daya_harga h
+                    LEFT   JOIN supplier sup ON sup.id = h.supplier_id
+                    WHERE  h.sumber_daya_id = ANY(:ids)
+                    ORDER  BY h.sumber_daya_id, h.berlaku_dari, h.id
+                    """
+                ),
+                {"ids": [k["id"] for k in kandidat]},
+            ).mappings().all()
+
+    out_kandidat = []
+    for k in kandidat:
+        d = dict(k)
+        awal, akhir = d.get("harga_awal"), d.get("harga_akhir")
+        # Perubahan persen hanya bermakna kalau mata uangnya tunggal -- 100 EUR jadi
+        # 1.700.000 IDR bukan kenaikan 1.699.900%, cuma pindah mata uang.
+        d["perubahan_persen"] = (
+            round((float(akhir) - float(awal)) / float(awal) * 100, 2)
+            if awal and akhir and float(awal) > 0 and d["n_mata_uang"] == 1
+            else None
+        )
+        out_kandidat.append(d)
+
     return {
         "ringkas": dict(ringkas) if ringkas else {},
-        "kandidat": [dict(r) for r in kandidat],
+        "kandidat": out_kandidat,
+        "titik": [dict(r) for r in titik],
     }

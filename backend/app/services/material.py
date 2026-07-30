@@ -16,15 +16,45 @@ from app.schemas.material import (
 )
 from app.services import audit
 
-_LIST_QUERY = """
+# Kapal, supplier, dan tahun itu sifat PEMBELIAN, bukan sifat materialnya -- satu material
+# bisa dibeli untuk beberapa kapal dari beberapa supplier di beberapa tahun. Dulu ketiganya
+# disaring lewat v_harga_terkini (harga TERAKHIR saja), jadi material yang pernah dibeli
+# untuk kapal A tapi harga terakhirnya dari kapal B hilang begitu difilter kapal A --
+# angkanya salah tanpa memberi tanda apa pun.
+#
+# Sekarang: penyaringan melihat SELURUH riwayat harga, dan baris harga yang ditampilkan
+# adalah yang terbaru DI ANTARA yang lolos filter. Jadi memfilter kapal A menampilkan harga
+# kapal A, bukan harga kapal B.
+#
+# CAST eksplisit dipakai karena pg8000 tidak bisa menyimpulkan tipe parameter yang hanya
+# muncul di dalam "IS NULL".
+_LATERAL_HARGA = """
+    LEFT JOIN LATERAL (
+        SELECT h.id, h.harga_satuan, h.mata_uang, h.nama_kapal, h.tahun_pembelian,
+               h.berlaku_dari, sup.nama AS supplier_nama
+        FROM   sumber_daya_harga h
+        LEFT   JOIN supplier sup ON sup.id = h.supplier_id
+        WHERE  h.sumber_daya_id = sd.id
+          AND  (CAST(:kapal    AS TEXT) IS NULL OR h.nama_kapal      = :kapal)
+          AND  (CAST(:supplier AS TEXT) IS NULL OR sup.nama          = :supplier)
+          AND  (CAST(:tahun    AS INT)  IS NULL OR h.tahun_pembelian = :tahun)
+        ORDER  BY h.berlaku_dari DESC, h.id DESC
+        LIMIT  1
+    ) h ON TRUE
+"""
+
+_LIST_QUERY = f"""
     SELECT sd.id, sd.nama, sd.spesifikasi, sd.satuan,
            h.harga_satuan, h.mata_uang, h.nama_kapal, h.tahun_pembelian, h.berlaku_dari,
-           sup.nama AS supplier_nama
+           h.supplier_nama
     FROM   sumber_daya sd
-    LEFT JOIN v_harga_terkini h ON h.sumber_daya_id = sd.id
-    LEFT JOIN supplier sup ON sup.id = h.supplier_id
+    {_LATERAL_HARGA}
     WHERE  sd.jenis = 'BAHAN' AND sd.aktif
 """
+
+
+def _norm_filter(v: str | None) -> str | None:
+    return None if not v or v == "Semua" else v
 
 
 def _build_where(
@@ -35,20 +65,24 @@ def _build_where(
     tahun: str | None = None,
     search: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
+    """Klausa tambahan + parameter. Parameter kapal/supplier/tahun SELALU ada (None kalau
+    tidak aktif) karena dipakai di dalam LATERAL, bukan cuma di WHERE."""
+    kapal_n, supplier_n = _norm_filter(kapal), _norm_filter(supplier)
+    tahun_n = _norm_filter(tahun)
+    params: dict[str, Any] = {
+        "kapal": kapal_n,
+        "supplier": supplier_n,
+        "tahun": int(tahun_n) if tahun_n else None,
+    }
+
     clauses = []
-    params: dict[str, Any] = {}
-    if supplier and supplier != "Semua":
-        clauses.append("sup.nama = :supplier")
-        params["supplier"] = supplier
+    # Filter pembelian aktif -> material yang tidak punya baris harga yang cocok harus
+    # gugur. Tanpa ini LEFT JOIN LATERAL akan tetap meloloskannya dengan kolom harga kosong.
+    if kapal_n or supplier_n or tahun_n:
+        clauses.append("h.id IS NOT NULL")
     if satuan and satuan != "Semua":
         clauses.append("sd.satuan = :satuan")
         params["satuan"] = satuan
-    if kapal and kapal != "Semua":
-        clauses.append("h.nama_kapal = :kapal")
-        params["kapal"] = kapal
-    if tahun and tahun != "Semua":
-        clauses.append("h.tahun_pembelian = :tahun")
-        params["tahun"] = int(tahun)
     if search:
         clauses.append("(sd.nama ILIKE :search OR sd.spesifikasi ILIKE :search)")
         params["search"] = f"%{search}%"
@@ -86,16 +120,22 @@ def material_stats(
     search: str | None = None,
 ) -> MaterialStats:
     where, params = _build_where(supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search)
+    # Supplier & kapal dihitung dari SELURUH riwayat material yang lolos filter, bukan dari
+    # harga terakhirnya saja -- kalau tidak, KPI "Total Kapal" ikut salah seperti filternya.
     query = text(
         f"""
-        SELECT COUNT(DISTINCT sd.id) AS total_material,
-               COUNT(DISTINCT sup.id) AS total_supplier,
-               COUNT(DISTINCT h.nama_kapal) AS total_kapal,
-               MAX(h.berlaku_dari) AS update_terakhir
-        FROM   sumber_daya sd
-        LEFT JOIN v_harga_terkini h ON h.sumber_daya_id = sd.id
-        LEFT JOIN supplier sup ON sup.id = h.supplier_id
-        WHERE  sd.jenis = 'BAHAN' AND sd.aktif {where}
+        WITH lolos AS (
+            SELECT sd.id
+            FROM   sumber_daya sd
+            {_LATERAL_HARGA}
+            WHERE  sd.jenis = 'BAHAN' AND sd.aktif {where}
+        )
+        SELECT (SELECT COUNT(*) FROM lolos) AS total_material,
+               COUNT(DISTINCT hh.supplier_id) AS total_supplier,
+               COUNT(DISTINCT hh.nama_kapal)  AS total_kapal,
+               MAX(hh.berlaku_dari)           AS update_terakhir
+        FROM   lolos
+        LEFT   JOIN sumber_daya_harga hh ON hh.sumber_daya_id = lolos.id
         """
     )
     with engine.connect() as conn:
@@ -113,24 +153,49 @@ def filter_options(
     tahun: str | None = None,
     search: str | None = None,
 ) -> dict[str, list[str]]:
-    active = {"supplier": supplier, "satuan": satuan, "kapal": kapal, "tahun": tahun}
+    """Opsi tiap filter, dihitung dari filter lain yang sedang aktif (cascading).
+
+    Aturannya: sebuah nilai hanya jadi opsi kalau memilihnya benar-benar menghasilkan baris.
+    Karena kapal/supplier/tahun itu sifat baris harga, penyaringannya dilakukan di tingkat
+    baris harga -- bukan di tingkat material. Kalau di tingkat material, memilih kapal
+    ANTAREJA akan memunculkan opsi tahun 2025 (dari riwayat kapal lain milik material yang
+    sama) padahal kombinasi ANTAREJA+2025 tidak punya satu baris pun.
+    """
+    beli = {
+        "kapal": ("hh.nama_kapal", _norm_filter(kapal)),
+        "supplier": ("sup.nama", _norm_filter(supplier)),
+        "tahun": ("hh.tahun_pembelian", _norm_filter(tahun)),
+    }
+    satuan_n = _norm_filter(satuan)
     result: dict[str, list[str]] = {}
+
     with engine.connect() as conn:
-        for key, col_expr in (
-            ("supplier", "sup.nama"),
-            ("satuan", "sd.satuan"),
-            ("kapal", "h.nama_kapal"),
-            ("tahun", "h.tahun_pembelian"),
-        ):
-            others = {k: v for k, v in active.items() if k != key}
-            where, params = _build_where(**others, search=search)
+        for key in ("supplier", "satuan", "kapal", "tahun"):
+            col_expr = "sd.satuan" if key == "satuan" else beli[key][0]
+            clauses, params = [], {}
+
+            # Filter pembelian lain (selain yang sedang dihitung) diterapkan per baris harga.
+            for other, (col, val) in beli.items():
+                if other == key or val is None:
+                    continue
+                clauses.append(f"{col} = :{other}")
+                params[other] = int(val) if other == "tahun" else val
+
+            if key != "satuan" and satuan_n:
+                clauses.append("sd.satuan = :satuan")
+                params["satuan"] = satuan_n
+            if search:
+                clauses.append("(sd.nama ILIKE :search OR sd.spesifikasi ILIKE :search)")
+                params["search"] = f"%{search}%"
+
+            where = (" AND " + " AND ".join(clauses)) if clauses else ""
             rows = conn.execute(
                 text(
                     f"""
                     SELECT DISTINCT {col_expr}
                     FROM   sumber_daya sd
-                    LEFT JOIN v_harga_terkini h ON h.sumber_daya_id = sd.id
-                    LEFT JOIN supplier sup ON sup.id = h.supplier_id
+                    JOIN   sumber_daya_harga hh ON hh.sumber_daya_id = sd.id
+                    LEFT   JOIN supplier sup ON sup.id = hh.supplier_id
                     WHERE  sd.jenis = 'BAHAN' AND sd.aktif {where}
                     ORDER  BY {col_expr}
                     """
@@ -199,12 +264,37 @@ def _insert_harga(conn: Connection, sumber_daya_id: int, item: PriceCreate, supp
     )
 
 
-def _identitas_key(nama: str, spesifikasi: str | None, satuan: str) -> tuple[str, str, str]:
-    """Versi Python dari `sd_identitas_sql()` -- harus menormalisasi dengan cara yang sama
-    (lowercase, spasi beruntun jadi satu) supaya lookup di sini sepakat dengan unique index
-    `uq_sd_identitas` di DB."""
-    norm = lambda s: " ".join((s or "").split()).lower()  # noqa: E731
-    return norm(nama), norm(spesifikasi), norm(satuan)
+def _norm_teks(s: str | None) -> str:
+    return " ".join((s or "").split()).lower()
+
+
+def _identitas_key(nama: str, spesifikasi: str | None, satuan: str) -> tuple:
+    """Kunci identitas material.
+
+    Part number (disimpan di `spesifikasi`) adalah identitas sebenarnya; nama cuma label
+    yang bisa ditulis berbeda-beda oleh orang berbeda. Jadi kalau part number ada, ITU yang
+    menentukan -- "AIR FILTER ELEMENT" dan "Air Filter Elem." dengan part number sama adalah
+    satu barang, dan harga keduanya menempel di riwayat yang sama.
+
+    Kalau part number tidak ada (cat per liter, plat per ukuran, konsumabel), identitas jatuh
+    ke nama + satuan. Karena itu part number tidak dijadikan wajib: mewajibkannya akan
+    memblokir barang-barang yang memang tidak punya nomor.
+
+    Harus sejalan dengan unique index di DB: `uq_sd_partno` untuk cabang pertama,
+    `uq_sd_identitas` untuk cabang kedua.
+    """
+    spek = _norm_teks(spesifikasi)
+    if spek:
+        return ("partno", spek)
+    return ("nama", _norm_teks(nama), _norm_teks(satuan))
+
+
+def _peta_identitas(conn: Connection) -> dict[tuple, int]:
+    """Kunci identitas -> id material, untuk seluruh BAHAN yang ada."""
+    rows = conn.execute(
+        text("SELECT id, nama, spesifikasi, satuan FROM sumber_daya WHERE jenis = 'BAHAN'")
+    ).all()
+    return {_identitas_key(nama, spek, satuan): id_ for id_, nama, spek, satuan in rows}
 
 
 def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> list[int]:
@@ -216,13 +306,7 @@ def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> l
     bikin tren harga bisa terbentuk sama sekali.
     """
     keys = [_identitas_key(i.nama, i.spesifikasi, i.satuan) for i in items]
-    existing: dict[tuple[str, str, str], int] = {}
-
-    rows = conn.execute(
-        text(f"SELECT id, {sd_identitas_sql()} FROM sumber_daya WHERE jenis = 'BAHAN'")
-    ).all()
-    for id_, n, s, sat, _jenis in rows:
-        existing[(n, s, sat)] = id_
+    existing = _peta_identitas(conn)
 
     # Batch yang sama bisa memuat material yang sama dua kali; yang kedua harus memakai
     # id hasil insert yang pertama, bukan bikin baris baru lagi.
@@ -450,6 +534,135 @@ def bulk_patch(body: BulkPatchMaterialRequest, *, aktor: str) -> dict[str, int]:
                 },
             )
     return {"deleted": deleted, "updated": updated, "titik_harga_baru": harga_baru}
+
+
+# ---------- Pratinjau paste ----------
+
+
+def preview_bulk(payload: BulkMaterialCreate) -> dict[str, Any]:
+    """Jalankan seluruh logika keputusan tanpa menulis apa pun.
+
+    Tanpa ini antarmuka diam soal apa yang akan terjadi, sehingga orang yang hati-hati
+    menyangka aplikasinya akan bikin duplikat lalu memilih memasukkan data secara manual --
+    padahal titik harga baru untuk material yang sudah ada sudah ditangani otomatis.
+    Endpoint ini memakai fungsi keputusan yang sama dengan jalur simpan, jadi hasilnya tidak
+    bisa berbeda dari yang benar-benar terjadi nanti.
+    """
+    with engine.connect() as conn:
+        peta = _peta_identitas(conn)
+        nama_master = dict(
+            conn.execute(text("SELECT id, nama FROM sumber_daya WHERE jenis = 'BAHAN'")).all()
+        )
+
+        ids = [peta.get(_identitas_key(i.nama, i.spesifikasi, i.satuan)) for i in payload.items]
+        ada_ids = [i for i in ids if i is not None]
+
+        harga_lama: dict[int, tuple[float, str]] = {}
+        tanda_ada: set[tuple] = set()
+        if ada_ids:
+            for r in conn.execute(
+                text(
+                    """
+                    SELECT sumber_daya_id, harga_satuan, mata_uang, supplier_id,
+                           berlaku_dari, tahun_pembelian, nama_kapal
+                    FROM   sumber_daya_harga
+                    WHERE  sumber_daya_id = ANY(:ids)
+                    ORDER  BY sumber_daya_id, berlaku_dari DESC, id DESC
+                    """
+                ),
+                {"ids": ada_ids},
+            ).mappings():
+                d = dict(r)
+                tanda_ada.add(_tanda_harga(d))
+                harga_lama.setdefault(d["sumber_daya_id"], (float(d["harga_satuan"]), d["mata_uang"]))
+
+        sup_map = dict(
+            conn.execute(
+                text("SELECT btrim(nama), id FROM supplier WHERE btrim(nama) = ANY(:n)"),
+                {"n": [i.supplier_nama.strip() for i in payload.items if i.supplier_nama.strip()] or [""]},
+            ).all()
+        )
+
+    baris = []
+    tanda_batch: set[tuple] = set()
+    baru_di_batch: set[tuple] = set()
+    for item, sd_id in zip(payload.items, ids, strict=True):
+        row = {
+            "nama": item.nama,
+            "spesifikasi": item.spesifikasi or "",
+            "satuan": item.satuan,
+            "harga_satuan": item.harga_satuan,
+            "mata_uang": item.mata_uang,
+            "status": "material_baru",
+            "harga_lama": None,
+            "perubahan_persen": None,
+            "peringatan": None,
+        }
+
+        if sd_id is not None:
+            tanda = _tanda_harga(
+                {
+                    "sumber_daya_id": sd_id,
+                    "harga_satuan": item.harga_satuan,
+                    "mata_uang": item.mata_uang,
+                    "supplier_id": sup_map.get(item.supplier_nama.strip())
+                    if item.supplier_nama.strip()
+                    else None,
+                    "berlaku_dari": item.berlaku_dari or date.today(),
+                    "tahun_pembelian": item.tahun_pembelian,
+                    "nama_kapal": item.nama_kapal or None,
+                }
+            )
+            if tanda in tanda_ada or tanda in tanda_batch:
+                row["status"] = "dilewati"
+            else:
+                tanda_batch.add(tanda)
+                row["status"] = "harga_baru"
+                lama = harga_lama.get(sd_id)
+                if lama and lama[1] == item.mata_uang and lama[0] > 0:
+                    row["harga_lama"] = lama[0]
+                    row["perubahan_persen"] = round(
+                        (item.harga_satuan - lama[0]) / lama[0] * 100, 2
+                    )
+
+            # Part number cocok tapi namanya beda: material lama yang dipakai, dan nama di
+            # paste diabaikan. Itu biasanya benar (nama cuma label) tapi bisa juga tanda
+            # part number salah ketik, jadi harus kelihatan sebelum disimpan.
+            tersimpan = nama_master.get(sd_id, "")
+            if item.spesifikasi.strip() and _norm_teks(tersimpan) != _norm_teks(item.nama):
+                row["peringatan"] = (
+                    f"Part number ini sudah tercatat dengan nama \"{tersimpan}\". "
+                    f"Nama itu yang dipakai, bukan \"{item.nama}\"."
+                )
+        else:
+            # Material baru yang muncul dua kali dalam satu paste: kemunculan pertama
+            # membuat masternya, sisanya menempel ke master yang sama -- jadi harus
+            # dinilai seperti material yang sudah ada, bukan "material baru" dua kali.
+            key = _identitas_key(item.nama, item.spesifikasi, item.satuan)
+            tanda = ("baru", key, item.harga_satuan, item.mata_uang,
+                     item.berlaku_dari or date.today(), item.tahun_pembelian,
+                     item.nama_kapal or "")
+            if key in baru_di_batch:
+                row["status"] = "dilewati" if tanda in tanda_batch else "harga_baru"
+            else:
+                baru_di_batch.add(key)
+            tanda_batch.add(tanda)
+
+            if not item.spesifikasi.strip():
+                row["peringatan"] = (
+                    "Tanpa part number, identitas material bertumpu pada nama + satuan — "
+                    "penulisan nama yang berbeda akan terhitung sebagai material lain."
+                )
+
+        baris.append(row)
+
+    ringkas = {
+        "material_baru": sum(1 for b in baris if b["status"] == "material_baru"),
+        "harga_baru": sum(1 for b in baris if b["status"] == "harga_baru"),
+        "dilewati": sum(1 for b in baris if b["status"] == "dilewati"),
+        "peringatan": sum(1 for b in baris if b["peringatan"]),
+    }
+    return {"ringkas": ringkas, "baris": baris}
 
 
 # ---------- Riwayat harga per material ----------

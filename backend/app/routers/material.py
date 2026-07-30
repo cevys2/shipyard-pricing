@@ -58,6 +58,15 @@ def get_filters(
     )
 
 
+@router.post("/bulk/preview")
+def preview_bulk(
+    body: BulkMaterialCreate,
+    _: Annotated[dict, Depends(get_current_user)],
+):
+    """Apa yang akan terjadi kalau paste ini disimpan -- tanpa menulis apa pun."""
+    return material_service.preview_bulk(body)
+
+
 @router.post("/bulk")
 def create_bulk(
     body: BulkMaterialCreate,

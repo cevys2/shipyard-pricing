@@ -12,10 +12,12 @@ import {
 import { AlertTriangle, Info } from "lucide-react";
 import {
   api,
+  formatMoney,
   formatRp,
   type AuthUser,
   type AuditRow,
   type TrenJasa,
+  type TrenJasaPoint,
   type TrenMaterial,
 } from "../lib/api";
 
@@ -89,6 +91,38 @@ export default function AnalitikPanel({ auth }: Props) {
     };
   }, [jasa]);
 
+  /** Satu grafik per mata uang. EUR dan IDR tidak boleh berbagi sumbu Y -- selisihnya
+   * ribuan kali dan garisnya jadi tak terbaca, selain memberi kesan angkanya sebanding. */
+  const grafikMaterial = useMemo(() => {
+    if (!material || material.kandidat.length === 0) return [];
+
+    const namaPer = new Map(material.kandidat.map((k) => [k.id, k.nama]));
+    const perMataUang = new Map<string, Map<string, Record<string, string | number>>>();
+    const seriPer = new Map<string, Set<string>>();
+
+    material.titik.forEach((t) => {
+      const nama = namaPer.get(t.sumber_daya_id);
+      if (!nama) return;
+      if (!perMataUang.has(t.mata_uang)) {
+        perMataUang.set(t.mata_uang, new Map());
+        seriPer.set(t.mata_uang, new Set());
+      }
+      const perTanggal = perMataUang.get(t.mata_uang)!;
+      const baris = perTanggal.get(t.berlaku_dari) ?? { tanggal: t.berlaku_dari };
+      baris[nama] = t.harga_satuan;
+      perTanggal.set(t.berlaku_dari, baris);
+      seriPer.get(t.mata_uang)!.add(nama);
+    });
+
+    return [...perMataUang.entries()].map(([mataUang, perTanggal]) => ({
+      mataUang,
+      seri: [...seriPer.get(mataUang)!],
+      data: [...perTanggal.values()].sort((a, b) =>
+        String(a.tanggal).localeCompare(String(b.tanggal)),
+      ),
+    }));
+  }, [material]);
+
   const kategoriTersembunyi = useMemo(() => {
     if (!jasa) return 0;
     return new Set(jasa.seri.map((s) => s.kategori)).size - seriTampil.length;
@@ -129,35 +163,105 @@ export default function AnalitikPanel({ auth }: Props) {
                 </p>
               </div>
             ) : (
-              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-4 py-2.5">Material</th>
-                      <th className="px-4 py-2.5">Spesifikasi</th>
-                      <th className="px-4 py-2.5 text-right">Titik Harga</th>
-                      <th className="px-4 py-2.5">Rentang</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {material.kandidat.map((k) => (
-                      <tr key={k.id} className="border-t border-slate-100">
-                        <td className="px-4 py-2 font-medium text-slate-800">{k.nama}</td>
-                        <td className="px-4 py-2 text-slate-500">{k.spesifikasi || "-"}</td>
-                        <td className="px-4 py-2 text-right">{k.n_harga}</td>
-                        <td className="px-4 py-2 text-slate-500">
-                          {k.dari} → {k.sampai}
-                          {k.n_mata_uang > 1 && (
-                            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                              campur mata uang
-                            </span>
-                          )}
-                        </td>
+              <>
+                {grafikMaterial.map(({ mataUang, data, seri }) => (
+                  <div key={mataUang} className="mt-4 rounded-xl border border-slate-200 p-5">
+                    <p className="mb-3 text-sm font-medium text-slate-700">
+                      Harga satuan dalam {mataUang}
+                    </p>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                        <XAxis dataKey="tanggal" tick={{ fontSize: 12, fill: "#64748b" }} tickMargin={8} />
+                        <YAxis
+                          tick={{ fontSize: 12, fill: "#64748b" }}
+                          width={64}
+                          tickFormatter={(v: number) =>
+                            new Intl.NumberFormat("id-ID", { notation: "compact" }).format(v)
+                          }
+                        />
+                        <Tooltip
+                          formatter={(v, n) => [formatMoney(Number(v), mataUang), String(n)]}
+                          contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+                        {seri.map((s, i) => (
+                          <Line
+                            key={s}
+                            type="monotone"
+                            dataKey={s}
+                            name={s}
+                            stroke={WARNA_SERI[i % WARNA_SERI.length]}
+                            strokeWidth={2}
+                            dot={{ r: 3.5, fill: WARNA_SERI[i % WARNA_SERI.length] }}
+                            activeDot={{ r: 5.5 }}
+                            connectNulls
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ))}
+
+                <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2.5">Material</th>
+                        <th className="px-4 py-2.5">Spesifikasi</th>
+                        <th className="px-4 py-2.5 text-right">Titik</th>
+                        <th className="px-4 py-2.5 text-right">Harga Awal</th>
+                        <th className="px-4 py-2.5 text-right">Harga Akhir</th>
+                        <th className="px-4 py-2.5 text-right">Perubahan</th>
+                        <th className="px-4 py-2.5">Rentang</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {material.kandidat.map((k) => (
+                        <tr key={k.id} className="border-t border-slate-100">
+                          <td className="px-4 py-2 font-medium text-slate-800">{k.nama}</td>
+                          <td className="px-4 py-2 font-mono text-xs text-slate-500">
+                            {k.spesifikasi || "-"}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums">{k.n_harga}</td>
+                          <td className="px-4 py-2 text-right tabular-nums text-slate-600">
+                            {formatMoney(k.harga_awal, k.mata_uang)}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums text-slate-800">
+                            {formatMoney(k.harga_akhir, k.mata_uang)}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums">
+                            {k.perubahan_persen == null ? (
+                              <span className="text-slate-400">-</span>
+                            ) : (
+                              <span
+                                className={
+                                  k.perubahan_persen > 0
+                                    ? "font-semibold text-red-700"
+                                    : k.perubahan_persen < 0
+                                      ? "font-semibold text-emerald-700"
+                                      : "text-slate-500"
+                                }
+                              >
+                                {k.perubahan_persen > 0 ? "+" : ""}
+                                {k.perubahan_persen.toFixed(2)}%
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-slate-500">
+                            {k.dari} → {k.sampai}
+                            {k.n_mata_uang > 1 && (
+                              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                                campur mata uang
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </>
         )}
@@ -227,10 +331,7 @@ export default function AnalitikPanel({ auth }: Props) {
                     new Intl.NumberFormat("id-ID", { notation: "compact" }).format(v)
                   }
                 />
-                <Tooltip
-                  formatter={(v) => formatRp(Number(v))}
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                />
+                <Tooltip content={<TooltipJasa seri={jasa?.seri ?? []} />} />
                 <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
                 {seriTampil.map((k, i) => (
                   <Line
@@ -271,18 +372,26 @@ export default function AnalitikPanel({ auth }: Props) {
                     <th className="px-4 py-2.5">Kategori</th>
                     <th className="px-4 py-2.5">Tahun</th>
                     <th className="px-4 py-2.5 text-right">Median</th>
+                    <th className="px-4 py-2.5 text-right">Rentang</th>
                     <th className="px-4 py-2.5 text-right">Baris</th>
-                    <th className="px-4 py-2.5 text-right">Kapal</th>
+                    <th className="px-4 py-2.5">Kapal yang menyusun median</th>
                   </tr>
                 </thead>
                 <tbody>
                   {jasa.seri.map((s) => (
-                    <tr key={`${s.kategori}-${s.tahun}`} className="border-t border-slate-100">
+                    <tr key={`${s.kategori}-${s.tahun}`} className="border-t border-slate-100 align-top">
                       <td className="px-4 py-2">{s.kategori}</td>
-                      <td className="px-4 py-2">{s.tahun}</td>
-                      <td className="px-4 py-2 text-right font-medium">{formatRp(s.median)}</td>
-                      <td className="px-4 py-2 text-right text-slate-500">{s.n_baris}</td>
-                      <td className="px-4 py-2 text-right text-slate-500">{s.n_kapal}</td>
+                      <td className="px-4 py-2 tabular-nums">{s.tahun}</td>
+                      <td className="px-4 py-2 text-right font-medium tabular-nums">
+                        {formatRp(s.median)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right text-xs tabular-nums text-slate-500">
+                        {formatRp(s.minimum)} – {formatRp(s.maksimum)}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-slate-500">{s.n_baris}</td>
+                      <td className="px-4 py-2 text-xs text-slate-600">
+                        <DaftarKapal kapal={s.kapal} n={s.n_kapal} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -355,6 +464,95 @@ function BadgeAksi({ aksi }: { aksi: string }) {
       className={`rounded px-2 py-0.5 text-xs font-semibold ${GAYA_AKSI[aksi] ?? "bg-slate-100 text-slate-700"}`}
     >
       {aksi}
+    </span>
+  );
+}
+
+/** Tooltip kustom, bukan `formatter` + `labelFormatter`: keduanya dipanggil terpisah dan
+ * urutannya tidak dijamin, jadi menitipkan tahun dari satu ke lainnya mudah rusak. Komponen
+ * ini menerima label (tahun) dan payload (nilai tiap kategori) sekaligus, sehingga jumlah
+ * baris dan kapal penyusun median bisa ikut ditampilkan dengan andal. */
+function TooltipJasa({
+  seri,
+  active,
+  label,
+  payload,
+}: {
+  seri: TrenJasaPoint[];
+  active?: boolean;
+  label?: string | number;
+  payload?: { name?: string | number; value?: string | number }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const tahun = String(label);
+
+  return (
+    <div className="max-w-xs rounded-lg border border-slate-200 bg-white p-2.5 text-xs shadow-lg">
+      <p className="mb-1.5 font-semibold text-slate-900">Tahun {tahun}</p>
+      <div className="flex flex-col gap-1.5">
+        {payload.map((p) => {
+          const nama = String(p.name);
+          const s = seri.find((x) => x.kategori === nama && x.tahun === tahun);
+          return (
+            <div key={nama}>
+              <p className="font-medium text-slate-700">{nama}</p>
+              <p className="tabular-nums text-slate-900">{formatRp(Number(p.value))}</p>
+              {s && (
+                <p className="text-slate-500">
+                  {s.n_baris} baris · {s.n_kapal} kapal
+                  {s.n_kapal === 1 && s.kapal?.[0] ? ` (${s.kapal[0]})` : ""}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Median dari 2 kapal dan median dari 20 kapal punya bobot yang sangat berbeda, tapi
+ * angkanya terlihat sama meyakinkan. Daftar kapalnya ditampilkan supaya bobot itu kelihatan
+ * tanpa harus menebak. */
+function DaftarKapal({ kapal, n }: { kapal: string[] | null; n: number }) {
+  const [buka, setBuka] = useState(false);
+  const list = kapal ?? [];
+  if (list.length === 0) return <span className="text-slate-400">tidak tercatat</span>;
+
+  const BATAS = 3;
+  const tampil = buka ? list : list.slice(0, BATAS);
+  const sisa = list.length - tampil.length;
+
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {n === 1 && (
+        <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
+          1 kapal saja
+        </span>
+      )}
+      {tampil.map((k) => (
+        <span key={k} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-700">
+          {k}
+        </span>
+      ))}
+      {sisa > 0 && (
+        <button
+          type="button"
+          onClick={() => setBuka(true)}
+          className="rounded px-1 text-slate-500 underline hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+        >
+          +{sisa} lagi
+        </button>
+      )}
+      {buka && list.length > BATAS && (
+        <button
+          type="button"
+          onClick={() => setBuka(false)}
+          className="rounded px-1 text-slate-500 underline hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+        >
+          ringkas
+        </button>
+      )}
     </span>
   );
 }
