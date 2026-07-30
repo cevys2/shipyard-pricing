@@ -148,6 +148,68 @@ titik palsu yang sama seperti kasus di atas. Sekarang baris harga dilewati kalau
 duplikat di dalam satu batch. Respons `POST /material/bulk` mengembalikan `saved`,
 `titik_harga_baru`, dan `dilewati` supaya UI bisa menyebutkan berapa baris yang dilewati.
 
+## Perbaikan: filter kapal/supplier/tahun melihat seluruh riwayat
+
+Ketiganya adalah sifat **pembelian**, bukan sifat materialnya — satu material bisa dibeli
+untuk beberapa kapal, dari beberapa supplier, di beberapa tahun. Sebelumnya penyaringan
+dilakukan lewat `v_harga_terkini`, yaitu harga terakhir saja, sehingga material yang pernah
+dibeli untuk kapal A tapi harga terakhirnya dari kapal B **hilang** saat difilter kapal A.
+
+Masalahnya baru muncul setelah kapal kedua masuk: filter ANTAREJA menampilkan 18 material,
+padahal sebenarnya 25. Angkanya salah tanpa memberi tanda apa pun.
+
+Sekarang penyaringan melihat seluruh riwayat harga, dan baris harga yang **ditampilkan**
+adalah yang terbaru di antara yang lolos filter — jadi memfilter ANTAREJA menampilkan harga
+ANTAREJA (€417,83), bukan harga PUNTADEWA (€456,18) untuk barang yang sama. KPI "Total
+Kapal" dan "Total Supplier" ikut dihitung dari seluruh riwayat.
+
+Opsi filternya juga dibuat tidak pernah menyesatkan: sebuah nilai hanya jadi pilihan kalau
+memilihnya benar-benar menghasilkan baris. Diverifikasi dengan menyapu 81 kombinasi filter
+yang bisa dipilih pengguna — nol yang berujung hasil kosong.
+
+## Perbaikan: median jasa menyebutkan kapal penyusunnya
+
+Median per kategori per tahun tidak bisa ditindaklanjuti kalau tidak jelas kapal mana yang
+menyusunnya: Rp 2.500.000 untuk "ADDITIONAL WORK 2026" ternyata berasal dari 54 baris tapi
+hanya 2 kapal, sementara angka lain berasal dari 20 kapal. Keduanya terlihat sama meyakinkan.
+
+Tabel angka sekarang memuat kolom kapal penyusun median (dengan penanda "1 kapal saja"),
+rentang minimum–maksimum, dan tooltip grafiknya menyebutkan jumlah baris serta kapal.
+Datanya diambil lewat `array_agg` atas grup yang sama dengan median — diverifikasi cocok
+dengan query langsung ke DB, dan `n_kapal` sama dengan panjang daftar kapal di semua 91 baris.
+
+## Fitur: pratinjau dampak paste
+
+`POST /material/bulk/preview` menjalankan seluruh logika keputusan tanpa menulis apa pun,
+lalu melaporkan per baris: material baru, titik harga baru (beserta harga lama dan persen
+perubahannya), atau dilewati karena harganya sudah persis sama. Endpoint ini memakai fungsi
+keputusan yang sama dengan jalur simpan, jadi hasilnya tidak bisa berbeda dari kenyataan.
+
+Alasannya: kemampuan membedakan "material baru" dan "titik harga baru" sudah ada sejak
+sebelumnya, tapi antarmuka tidak pernah mengatakannya. Orang yang teliti menyangka
+aplikasinya akan bikin material kembar, lalu memilih memasukkan data manual satu per satu.
+Itu kegagalan komunikasi, bukan kegagalan fungsi.
+
+## Perubahan: part number jadi penentu identitas material
+
+Part number (disimpan di `spesifikasi`) adalah identitas sebenarnya; nama cuma label yang
+bisa ditulis berbeda oleh orang berbeda. Jadi kalau part number ada, itu yang menentukan —
+"AIR FILTER ELEMENT" dan "Air Filter Elem." dengan part number sama adalah satu barang, dan
+harga keduanya menempel di riwayat yang sama.
+
+Part number **tidak** dijadikan wajib. Katalog ini akan memuat cat per liter, plat per
+ukuran, dan konsumabel yang memang tidak punya nomor; kunci wajib akan memblokirnya. Kalau
+part number tidak ada, identitas jatuh ke nama + satuan, dan pratinjau memberi tahu bahwa
+identitasnya bertumpu pada penulisan nama.
+
+Dijaga index `uq_sd_partno` (unik per jenis, hanya untuk baris yang punya spesifikasi).
+Index ini dipasang di transaksi terpisah dan kegagalannya tidak menjatuhkan aplikasi —
+aturan yang sama sudah berlaku di layer aplikasi, index cuma jaring pengaman di tingkat DB.
+
+Pratinjau juga memperingatkan kalau part number cocok tapi namanya berbeda: material lama
+yang dipakai dan nama di paste diabaikan. Itu biasanya benar, tapi bisa juga tanda part
+number salah ketik, jadi harus kelihatan sebelum disimpan.
+
 ## Perbaikan: opsi filter kategori selaras dengan datanya
 
 Daftar kategori di tab Analitik dibuat dari `DISTINCT` biasa, sementara datanya disaring

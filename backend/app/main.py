@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import ensure_audit_table, ensure_material_tables
+from app.database import ensure_audit_table, ensure_material_tables, ensure_partno_unique
 from app.routers.analitik import router as analitik_router
 from app.routers.catalog import router as catalog_router
 from app.routers.material import router as material_router
@@ -13,6 +13,7 @@ from app.routers.material import router as material_router
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_material_tables()
+    ensure_partno_unique()
     ensure_audit_table()
     yield
 

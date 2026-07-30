@@ -1,6 +1,14 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ClipboardPaste, LineChart, Pencil, Plus, Save, Trash2, X } from "lucide-react";
-import { api, formatMoney, type Currency, type MaterialItemInput, type MaterialRow } from "../lib/api";
+import {
+  api,
+  formatMoney,
+  type Currency,
+  type MaterialItemInput,
+  type MaterialRow,
+  type PastePreview,
+  type PastePreviewRow,
+} from "../lib/api";
 import { parseTsv } from "../lib/tsv";
 // Ikut di-lazy bareng tab Analitik -- drawer ini juga pakai recharts dan cuma tampil
 // setelah user klik "Riwayat".
@@ -122,6 +130,8 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
   const [pasteText, setPasteText] = useState("");
   const [pastePreview, setPastePreview] = useState<MaterialItemInput[]>([]);
   const [pasteWarnings, setPasteWarnings] = useState<string[]>([]);
+  const [dampak, setDampak] = useState<PastePreview | null>(null);
+  const [cekBusy, setCekBusy] = useState(false);
 
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkEditRows, setBulkEditRows] = useState<{ id: number; data: MaterialItemInput }[]>([]);
@@ -229,10 +239,40 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
     });
     setPastePreview(drafts);
     setPasteWarnings(warnings);
+    setDampak(null);
+    if (drafts.length > 0) void cekDampak(drafts);
+  }
+
+  /** Tanya backend apa yang akan terjadi sebelum apa pun disimpan.
+   *
+   * Sebelum ini antarmuka diam soal itu, sehingga orang yang teliti menyangka aplikasinya
+   * akan bikin material kembar lalu memilih memasukkan datanya manual satu per satu --
+   * padahal titik harga baru untuk part number yang sudah ada memang sudah ditangani.
+   * Endpoint pratinjaunya memakai fungsi keputusan yang sama dengan jalur simpan. */
+  async function cekDampak(drafts: MaterialItemInput[]) {
+    setCekBusy(true);
+    try {
+      setDampak(await api.materialBulkPreview(token, drafts));
+    } catch (e) {
+      // Pratinjau gagal bukan alasan memblokir penyimpanan -- yang menentukan tetap backend
+      // saat simpan. Cukup beri tahu bahwa ringkasannya tidak tersedia.
+      setDampak(null);
+      setError(
+        (e instanceof Error ? e.message : "Pratinjau gagal") +
+          " — ringkasan dampak tidak tersedia, penyimpanan tetap bisa dilanjutkan.",
+      );
+    } finally {
+      setCekBusy(false);
+    }
   }
 
   function removePasteRow(idx: number) {
-    setPastePreview((rows2) => rows2.filter((_, i) => i !== idx));
+    setPastePreview((rows2) => {
+      const next = rows2.filter((_, i) => i !== idx);
+      setDampak(null);
+      if (next.length > 0) void cekDampak(next);
+      return next;
+    });
   }
 
   async function submitPasteAdd() {
@@ -244,6 +284,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       setPasteText("");
       setPastePreview([]);
       setPasteWarnings([]);
+      setDampak(null);
       setShowAdd(false);
       onChanged();
       alert(
@@ -485,10 +526,61 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
           )}
 
           {pastePreview.length > 0 && (
-            <div className="mt-3 overflow-auto rounded-lg border border-slate-200 bg-white">
+            <>
+              {cekBusy && (
+                <p className="mt-2 text-xs text-slate-500">Memeriksa dampak paste ini...</p>
+              )}
+              {dampak && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Yang akan terjadi kalau disimpan
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded bg-emerald-50 px-2 py-1 font-medium text-emerald-800">
+                      {dampak.ringkas.material_baru} material baru
+                    </span>
+                    <span className="rounded bg-blue-50 px-2 py-1 font-medium text-blue-800">
+                      {dampak.ringkas.harga_baru} titik harga baru
+                    </span>
+                    <span className="rounded bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                      {dampak.ringkas.dilewati} dilewati
+                    </span>
+                    {dampak.ringkas.peringatan > 0 && (
+                      <span className="rounded bg-amber-100 px-2 py-1 font-medium text-amber-800">
+                        {dampak.ringkas.peringatan} perlu diperiksa
+                      </span>
+                    )}
+                  </div>
+                  {dampak.ringkas.dilewati > 0 && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Baris yang dilewati harganya sudah persis sama dengan yang tercatat — itu
+                      input berulang, bukan perubahan harga, jadi tidak dijadikan titik baru.
+                    </p>
+                  )}
+                  {dampak.baris.some((b) => b.peringatan) && (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-800">
+                      {dampak.baris
+                        .map((b, i) => ({ b, i }))
+                        .filter(({ b }) => b.peringatan)
+                        .map(({ b, i }) => (
+                          <li key={i}>
+                            <span className="font-medium">
+                              {b.nama}
+                              {b.spesifikasi ? ` (${b.spesifikasi})` : ""}
+                            </span>
+                            : {b.peringatan}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-3 overflow-auto rounded-lg border border-slate-200 bg-white">
               <table className="min-w-full text-left text-xs">
                 <thead className="bg-slate-50 uppercase text-slate-500">
                   <tr>
+                    <th className="px-2 py-2">Dampak</th>
                     {COLUMN_LABELS.map((l) => (
                       <th key={l} className="px-2 py-2">{l}</th>
                     ))}
@@ -498,6 +590,9 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                 <tbody>
                   {pastePreview.map((d, i) => (
                     <tr key={i} className="border-t border-slate-100">
+                      <td className="whitespace-nowrap px-2 py-1">
+                        <StatusDampak row={dampak?.baris[i]} />
+                      </td>
                       {draftToRow(d).map((v, j) => (
                         <td key={j} className="px-2 py-1">{v}</td>
                       ))}
@@ -512,14 +607,20 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
               </table>
               <div className="flex items-center justify-between p-2">
                 <p className="text-xs text-slate-500">
-                  {busy ? "Menyimpan, mohon tunggu..." : `${pastePreview.length} material siap disimpan`}
+                  {busy
+                    ? "Menyimpan, mohon tunggu..."
+                    : dampak
+                      ? `${pastePreview.length} baris — ${dampak.ringkas.material_baru} material baru, ` +
+                        `${dampak.ringkas.harga_baru} titik harga baru, ${dampak.ringkas.dilewati} dilewati`
+                      : `${pastePreview.length} baris siap disimpan`}
                 </p>
                 <button type="button" disabled={busy} onClick={submitPasteAdd} className="btn btn-primary btn-md">
                   <Save size={13} />
-                  {busy ? "Menyimpan..." : `Simpan ${pastePreview.length} Material`}
+                  {busy ? "Menyimpan..." : `Simpan ${pastePreview.length} Baris`}
                 </button>
               </div>
-            </div>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -810,5 +911,46 @@ function LabeledInput({
       {label}
       <input type={type} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm" value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
+  );
+}
+
+/** Label dampak per baris paste. Ditampilkan sebelum menyimpan supaya jelas mana yang
+ * membuat material baru dan mana yang cuma menambah titik harga ke material yang sudah ada
+ * -- pembedaan itu sudah dilakukan backend sejak lama, tapi dulu tidak pernah diberitahukan
+ * sehingga orang mengira harus memisahkan pastenya sendiri. */
+function StatusDampak({ row }: { row?: PastePreviewRow }) {
+  if (!row) return <span className="text-slate-400">-</span>;
+
+  const gaya = {
+    material_baru: "bg-emerald-50 text-emerald-800",
+    harga_baru: "bg-blue-50 text-blue-800",
+    dilewati: "bg-slate-100 text-slate-600",
+  }[row.status];
+
+  const label = {
+    material_baru: "Material baru",
+    harga_baru: "Titik harga baru",
+    dilewati: "Dilewati",
+  }[row.status];
+
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      <span className={`rounded px-1.5 py-0.5 font-medium ${gaya}`}>{label}</span>
+      {row.perubahan_persen != null && row.harga_lama != null && (
+        <span
+          className={`tabular-nums ${
+            row.perubahan_persen > 0
+              ? "text-red-700"
+              : row.perubahan_persen < 0
+                ? "text-emerald-700"
+                : "text-slate-500"
+          }`}
+        >
+          {row.perubahan_persen > 0 ? "+" : ""}
+          {row.perubahan_persen.toFixed(2)}% dari {formatMoney(row.harga_lama, row.mata_uang)}
+        </span>
+      )}
+      {row.peringatan && <span className="text-amber-700">perlu diperiksa</span>}
+    </span>
   );
 }

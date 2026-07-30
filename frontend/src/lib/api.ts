@@ -164,6 +164,13 @@ export const api = {
     const qs = q.toString();
     return request<MaterialFilterOptions>(`/material/filters${qs ? `?${qs}` : ""}`, {}, token);
   },
+  materialBulkPreview(token: string, items: MaterialItemInput[]) {
+    return request<PastePreview>(
+      "/material/bulk/preview",
+      { method: "POST", body: JSON.stringify({ items }) },
+      token,
+    );
+  },
   materialBulkCreate(token: string, items: MaterialItemInput[]) {
     return request<{ saved: number; titik_harga_baru: number; dilewati: number }>(
       "/material/bulk",
@@ -250,6 +257,9 @@ export type TrenJasaPoint = {
   median: number;
   minimum: number;
   maksimum: number;
+  /** Kapal yang menyusun median ini. Median tanpa ini tidak bisa ditindaklanjuti:
+   * tidak jelas angkanya dari kapal besar, kapal kecil, atau campuran. */
+  kapal: string[] | null;
 };
 
 export type TrenJasa = {
@@ -258,18 +268,52 @@ export type TrenJasa = {
   cakupan: { total_baris: number; total_kategori: number; total_tahun: number };
 };
 
+export type TrenMaterialKandidat = {
+  id: number;
+  nama: string;
+  spesifikasi: string | null;
+  satuan: string;
+  n_harga: number;
+  dari: string;
+  sampai: string;
+  n_mata_uang: number;
+  mata_uang: string;
+  harga_awal: number;
+  harga_akhir: number;
+  /** null kalau mata uangnya campur -- persentase lintas mata uang tidak bermakna. */
+  perubahan_persen: number | null;
+};
+
+export type TrenMaterialTitik = {
+  sumber_daya_id: number;
+  berlaku_dari: string;
+  harga_satuan: number;
+  mata_uang: string;
+  nama_kapal: string | null;
+  supplier_nama: string | null;
+};
+
 export type TrenMaterial = {
   ringkas: { total_material: number; siap_tren: number; total_titik_harga: number };
-  kandidat: {
-    id: number;
-    nama: string;
-    spesifikasi: string | null;
-    satuan: string;
-    n_harga: number;
-    dari: string;
-    sampai: string;
-    n_mata_uang: number;
-  }[];
+  kandidat: TrenMaterialKandidat[];
+  titik: TrenMaterialTitik[];
+};
+
+export type PastePreviewRow = {
+  nama: string;
+  spesifikasi: string;
+  satuan: string;
+  harga_satuan: number;
+  mata_uang: string;
+  status: "material_baru" | "harga_baru" | "dilewati";
+  harga_lama: number | null;
+  perubahan_persen: number | null;
+  peringatan: string | null;
+};
+
+export type PastePreview = {
+  ringkas: { material_baru: number; harga_baru: number; dilewati: number; peringatan: number };
+  baris: PastePreviewRow[];
 };
 
 export type AuditRow = {

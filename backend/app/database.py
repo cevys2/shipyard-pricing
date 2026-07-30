@@ -234,6 +234,31 @@ def _dedup_sumber_daya(conn) -> None:
     )
 
 
+def ensure_partno_unique() -> None:
+    """Part number unik per jenis -- part number adalah identitas sebenarnya sebuah material.
+
+    Dijalankan di transaksi sendiri, bukan di dalam `_dedup_sumber_daya()`, karena bisa gagal
+    pada data yang belum bersih (satu part number terpakai di dua baris material). Kalau
+    gagal, aplikasi tetap jalan: `_identitas_key()` di layer aplikasi sudah memakai aturan
+    yang sama, dan index ini cuma jaring pengaman di tingkat DB. Menjatuhkan seluruh aplikasi
+    karena jaring pengaman tidak terpasang justru lebih merugikan daripada tidak punya index.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_sd_partno ON sumber_daya "
+                    "(lower(regexp_replace(trim(spesifikasi), '\\s+', ' ', 'g')), jenis) "
+                    "WHERE trim(coalesce(spesifikasi, '')) <> ''"
+                )
+            )
+    except Exception as e:  # noqa: BLE001 -- sengaja: kegagalan di sini tidak boleh fatal
+        print(
+            "[warn] uq_sd_partno tidak bisa dipasang, kemungkinan ada part number kembar di "
+            f"sumber_daya. Aplikasi tetap jalan. Detail: {type(e).__name__}: {e}"
+        )
+
+
 def ensure_audit_table() -> None:
     """Jejak siapa mengubah apa, buat katalog material DAN tabel_katalog_harga.
 
