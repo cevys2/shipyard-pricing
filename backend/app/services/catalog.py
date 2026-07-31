@@ -170,7 +170,32 @@ def _next_ids(conn: Connection, prefix: str, count: int) -> list[str]:
     return ids
 
 
-def bulk_create(payload: BulkCatalogCreate, *, aktor: str, sumber: str = "form") -> int:
+def bulk_create(
+    payload: BulkCatalogCreate,
+    *,
+    aktor: str,
+    sumber: str = "form",
+    conn: Connection | None = None,
+) -> int:
+    """Simpan sekumpulan baris katalog.
+
+    `conn` opsional supaya pemanggil bisa menyatukan beberapa panggilan dalam SATU transaksi
+    -- dipakai impor docking yang menyimpan Induk dan Addendum sekaligus. Kalau Induk commit
+    sendiri lalu Addendum gagal, separuh data masuk tanpa pengguna punya cara tahu; itu yang
+    terjadi di produksi 31 Juli 2026.
+
+    Kalau `conn` tidak diberikan, fungsi ini membuka transaksinya sendiri seperti sebelumnya,
+    jadi `/catalog/bulk` dan `/catalog/import` tidak perlu ikut berubah.
+    """
+    if conn is None:
+        with engine.begin() as c:
+            return _bulk_create(c, payload, aktor=aktor, sumber=sumber)
+    return _bulk_create(conn, payload, aktor=aktor, sumber=sumber)
+
+
+def _bulk_create(
+    conn: Connection, payload: BulkCatalogCreate, *, aktor: str, sumber: str
+) -> int:
     slug = payload.nama_kapal.strip().replace(" ", "_").upper()
     prefix = f"{slug}-{payload.tahun.strip()}-"
 
@@ -187,39 +212,38 @@ def bulk_create(payload: BulkCatalogCreate, *, aktor: str, sumber: str = "form")
     kpl = payload.nama_kapal.upper()
     tipe = payload.tipe_perjanjian.value
 
-    with engine.begin() as conn:
-        # Penomoran sekarang ikut transaksi ini supaya baris yang belum commit tetap
-        # terhitung, dan supaya kunci penasihatnya lepas bersamaan dengan commit.
-        ids = _next_ids(conn, prefix, len(payload.items))
-        for new_id, item in zip(ids, payload.items, strict=True):
-            conn.execute(
-                insert_sql,
-                {
-                    "id": new_id,
-                    "pt": pt,
-                    "kpl": kpl,
-                    "tipe": tipe,
-                    "thn": payload.tahun,
-                    "kat": item.kategori_pekerjaan or "-",
-                    "urai": item.uraian_pekerjaan,
-                    "sat": item.volume_satuan or "-",
-                    "hrg": float(item.harga_satuan),
-                },
-            )
-        audit.catat(
-            conn,
-            aktor=aktor,
-            aksi="create",
-            entitas="katalog_harga",
-            jumlah=len(payload.items),
-            detail={
-                "nama_kapal": kpl,
-                "tahun": payload.tahun,
-                "tipe_perjanjian": tipe,
-                "sumber": sumber,
-                "id_range": [ids[0], ids[-1]] if ids else [],
+    # Penomoran ikut transaksi ini supaya baris yang belum commit tetap terhitung, dan
+    # supaya kunci penasihatnya lepas bersamaan dengan commit.
+    ids = _next_ids(conn, prefix, len(payload.items))
+    for new_id, item in zip(ids, payload.items, strict=True):
+        conn.execute(
+            insert_sql,
+            {
+                "id": new_id,
+                "pt": pt,
+                "kpl": kpl,
+                "tipe": tipe,
+                "thn": payload.tahun,
+                "kat": item.kategori_pekerjaan or "-",
+                "urai": item.uraian_pekerjaan,
+                "sat": item.volume_satuan or "-",
+                "hrg": float(item.harga_satuan),
             },
         )
+    audit.catat(
+        conn,
+        aktor=aktor,
+        aksi="create",
+        entitas="katalog_harga",
+        jumlah=len(payload.items),
+        detail={
+            "nama_kapal": kpl,
+            "tahun": payload.tahun,
+            "tipe_perjanjian": tipe,
+            "sumber": sumber,
+            "id_range": [ids[0], ids[-1]] if ids else [],
+        },
+    )
     return len(payload.items)
 
 

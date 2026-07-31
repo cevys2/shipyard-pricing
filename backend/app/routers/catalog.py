@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.auth import get_current_user, require_admin
+from app.database import engine
 from app.schemas.catalog import (
     BulkCatalogCreate,
     BulkPatchRequest,
@@ -134,30 +135,36 @@ def import_docking_commit(
     if not body.induk_items and not body.addendum_items:
         raise HTTPException(status_code=400, detail="Tidak ada baris untuk disimpan")
     saved = 0
-    if body.induk_items:
-        saved += catalog_service.bulk_create(
-            BulkCatalogCreate(
-                nama_perusahaan=body.nama_perusahaan,
-                nama_kapal=body.nama_kapal,
-                tahun=body.tahun,
-                tipe_perjanjian=TipePerjanjian.induk,
-                items=body.induk_items,
-            ),
-            aktor=user["username"],
-            sumber="import-docking",
-        )
-    if body.addendum_items:
-        saved += catalog_service.bulk_create(
-            BulkCatalogCreate(
-                nama_perusahaan=body.nama_perusahaan,
-                nama_kapal=body.nama_kapal,
-                tahun=body.tahun,
-                tipe_perjanjian=TipePerjanjian.addendum,
-                items=body.addendum_items,
-            ),
-            aktor=user["username"],
-            sumber="import-docking",
-        )
+    # SATU transaksi untuk Induk dan Addendum sekaligus. Sebelumnya masing-masing membuka
+    # transaksinya sendiri, sehingga Induk bisa commit lalu Addendum gagal -- separuh data
+    # masuk tanpa pengguna punya cara tahu. Persis yang terjadi 31 Juli 2026.
+    with engine.begin() as conn:
+        if body.induk_items:
+            saved += catalog_service.bulk_create(
+                BulkCatalogCreate(
+                    nama_perusahaan=body.nama_perusahaan,
+                    nama_kapal=body.nama_kapal,
+                    tahun=body.tahun,
+                    tipe_perjanjian=TipePerjanjian.induk,
+                    items=body.induk_items,
+                ),
+                aktor=user["username"],
+                sumber="import-docking",
+                conn=conn,
+            )
+        if body.addendum_items:
+            saved += catalog_service.bulk_create(
+                BulkCatalogCreate(
+                    nama_perusahaan=body.nama_perusahaan,
+                    nama_kapal=body.nama_kapal,
+                    tahun=body.tahun,
+                    tipe_perjanjian=TipePerjanjian.addendum,
+                    items=body.addendum_items,
+                ),
+                aktor=user["username"],
+                sumber="import-docking",
+                conn=conn,
+            )
     return {"saved": saved}
 
 
