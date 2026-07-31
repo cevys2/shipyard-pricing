@@ -1,0 +1,5 @@
+# Dependensi pengembangan saja -- JANGAN ikut ke build produksi.
+# Railway memasang requirements.txt, berkas ini tidak disentuh di sana.
+-r requirements.txt
+pytest
+httpx

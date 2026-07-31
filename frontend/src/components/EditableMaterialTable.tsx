@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, ClipboardPaste, LineChart, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardPaste, Copy, LineChart, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import {
   api,
   formatMoney,
@@ -10,6 +10,8 @@ import {
   type PastePreviewRow,
 } from "../lib/api";
 import { parseTsv } from "../lib/tsv";
+import NumberInput from "./NumberInput";
+import MaterialGridForm from "./MaterialGridForm";
 // Ikut di-lazy bareng tab Analitik -- drawer ini juga pakai recharts dan cuma tampil
 // setelah user klik "Riwayat".
 const PriceHistoryDrawer = lazy(() => import("./PriceHistoryDrawer"));
@@ -132,6 +134,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
   const [pasteWarnings, setPasteWarnings] = useState<string[]>([]);
   const [dampak, setDampak] = useState<PastePreview | null>(null);
   const [cekBusy, setCekBusy] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
   const [pasteSumber, setPasteSumber] = useState("Quotation");
   const [pasteNoDok, setPasteNoDok] = useState("");
 
@@ -272,6 +275,34 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
     }
   }
 
+  /** Pratinjau paste dulu cuma bisa dibaca, jadi satu sel yang meleset memaksa mengulang
+   * paste dari Excel. Sekarang bisa dibetulkan di tempat. Tiap perubahan membatalkan
+   * ringkasan dampak yang lama supaya tidak menampilkan kesimpulan dari data usang. */
+  function ubahBarisPaste(idx: number, field: keyof MaterialItemInput, nilai: unknown) {
+    setPastePreview((rows2) =>
+      rows2.map((r, i) => (i === idx ? { ...r, [field]: nilai } : r)),
+    );
+    setDampak(null);
+  }
+
+  /** Supplier, kapal, tanggal, dan tahun biasanya sama untuk seluruh isi satu quotation --
+   * membetulkannya sekali lalu menurunkannya jauh lebih cepat daripada 25 kali. */
+  function isiKeBawahPaste(idx: number, field: keyof MaterialItemInput) {
+    setPastePreview((rows2) =>
+      rows2.map((r, i) => (i > idx ? { ...r, [field]: rows2[idx][field] } : r)),
+    );
+    setDampak(null);
+  }
+
+  function duplikatBarisPaste(idx: number) {
+    setPastePreview((rows2) => [
+      ...rows2.slice(0, idx + 1),
+      { ...rows2[idx] },
+      ...rows2.slice(idx + 1),
+    ]);
+    setDampak(null);
+  }
+
   function removePasteRow(idx: number) {
     setPastePreview((rows2) => {
       const next = rows2.filter((_, i) => i !== idx);
@@ -409,13 +440,26 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
             <button
               type="button"
               onClick={() => {
-                setShowAdd((s) => !s);
+                setShowGrid((s) => !s);
+                setShowAdd(false);
                 setBulkEditOpen(false);
               }}
               className="btn btn-primary btn-md"
             >
               <Plus size={14} />
-              Tambah Material
+              Input Beberapa Baris
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdd((s) => !s);
+                setShowGrid(false);
+                setBulkEditOpen(false);
+              }}
+              className="btn btn-secondary btn-md"
+            >
+              <ClipboardPaste size={14} />
+              Paste / 1 Baris
             </button>
             <button
               type="button"
@@ -440,6 +484,14 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       </div>
 
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+
+      {editMode && showGrid && (
+        <MaterialGridForm
+          token={token}
+          onSaved={onChanged}
+          onClose={() => setShowGrid(false)}
+        />
+      )}
 
       {editMode && showAdd && (
         <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
@@ -634,12 +686,61 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                       <td className="whitespace-nowrap px-2 py-1">
                         <StatusDampak row={dampak?.baris[i]} />
                       </td>
-                      {draftToRow(d).map((v, j) => (
-                        <td key={j} className="px-2 py-1">{v}</td>
+                      {COLUMN_ORDER.map((field) => (
+                        <td key={field} className="px-2 py-1">
+                          <div className="flex items-center gap-0.5">
+                            {field === "harga_satuan" || field === "tahun_pembelian" ? (
+                              <NumberInput
+                                integer={field === "tahun_pembelian"}
+                                ariaLabel={`${field} baris ${i + 1}`}
+                                className="w-24 rounded border border-slate-200 px-1 py-0.5 text-right"
+                                value={Number(d[field] ?? 0)}
+                                onChange={(n) => ubahBarisPaste(i, field, n)}
+                              />
+                            ) : field === "mata_uang" ? (
+                              <select
+                                aria-label={`Mata uang baris ${i + 1}`}
+                                className="rounded border border-slate-200 px-1 py-0.5"
+                                value={d.mata_uang}
+                                onChange={(e) => ubahBarisPaste(i, field, e.target.value as Currency)}
+                              >
+                                {CURRENCIES.map((c) => (
+                                  <option key={c} value={c}>{c}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                aria-label={`${field} baris ${i + 1}`}
+                                type={field === "berlaku_dari" ? "date" : "text"}
+                                className="w-full min-w-24 rounded border border-slate-200 px-1 py-0.5"
+                                value={String(d[field] ?? "")}
+                                onChange={(e) => ubahBarisPaste(i, field, e.target.value)}
+                              />
+                            )}
+                            {i < pastePreview.length - 1 && (
+                              <button
+                                type="button"
+                                title="Isi nilai ini ke semua baris di bawah"
+                                onClick={() => isiKeBawahPaste(i, field)}
+                                className="shrink-0 rounded px-0.5 text-slate-300 hover:text-slate-800"
+                              >
+                                ↓
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       ))}
-                      <td className="px-2 py-1">
-                        <button type="button" onClick={() => removePasteRow(i)} className="text-xs font-semibold text-red-600 hover:underline">
-                          hapus
+                      <td className="whitespace-nowrap px-2 py-1">
+                        <button
+                          type="button"
+                          title="Duplikat baris ini"
+                          onClick={() => duplikatBarisPaste(i)}
+                          className="rounded p-1 text-slate-400 hover:text-slate-800"
+                        >
+                          <Copy size={13} />
+                        </button>
+                        <button type="button" onClick={() => removePasteRow(i)} className="rounded p-1 text-slate-400 hover:text-red-700" title="Hapus baris ini">
+                          <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>
@@ -995,57 +1096,5 @@ function StatusDampak({ row }: { row?: PastePreviewRow }) {
       )}
       {row.peringatan && <span className="text-amber-700">perlu diperiksa</span>}
     </span>
-  );
-}
-
-/** Input angka yang tidak melawan jari pengguna saat mengetik.
- *
- * Masalah pada `<input type="number" value={String(angka)}>`: mengetik "49.0" bikin nilai
- * sementara "49." yang di-parse jadi 49, lalu di-render balik sebagai "49" -- titiknya
- * terhapus tepat setelah diketik, jadi desimal mustahil dimasukkan. Hal yang sama terjadi
- * saat mengosongkan field: `Number("") || 0` memaksanya jadi "0".
- *
- * Solusinya menyimpan teks mentah selama field difokus, dan baru menyelaraskan tampilan
- * dengan nilai numerik saat field ditinggalkan. Induknya tetap menerima number.
- *
- * Koma diterima sebagai pemisah desimal ("49,5") karena itu kebiasaan penulisan di sini dan
- * harga di quotation MAN memang ditulis begitu. Titik sebagai pemisah ribuan TIDAK ditebak:
- * "1.050" ambigu antara seribu lima puluh dan 1,05 -- menebaknya berisiko mengubah harga
- * secara diam-diam, jadi dibiarkan apa adanya sebagai desimal.
- */
-function NumberInput({
-  value,
-  onChange,
-  integer = false,
-  className = "",
-  ariaLabel,
-}: {
-  value: number;
-  onChange: (n: number) => void;
-  integer?: boolean;
-  className?: string;
-  ariaLabel?: string;
-}) {
-  const [teks, setTeks] = useState<string | null>(null);
-
-  function parse(raw: string): number {
-    const bersih = raw.replace(/\s/g, "").replace(",", ".");
-    const n = integer ? parseInt(bersih, 10) : parseFloat(bersih);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  return (
-    <input
-      type="text"
-      inputMode={integer ? "numeric" : "decimal"}
-      aria-label={ariaLabel}
-      className={className}
-      value={teks ?? String(value)}
-      onChange={(e) => {
-        setTeks(e.target.value);
-        onChange(parse(e.target.value));
-      }}
-      onBlur={() => setTeks(null)}
-    />
   );
 }

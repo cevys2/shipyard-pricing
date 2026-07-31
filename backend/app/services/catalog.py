@@ -4,6 +4,7 @@ from typing import Any
 import pandas as pd
 from pydantic import ValidationError
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 from app.config import settings
 from app.database import engine
@@ -132,11 +133,67 @@ def filter_options(
     return result
 
 
-def _next_ids(prefix: str, count: int) -> list[str]:
-    with engine.connect() as conn:
-        existing = conn.execute(
-            text(f"SELECT id FROM {TABLE} WHERE id LIKE :prefix"), {"prefix": f"{prefix}%"}
-        ).all()
+_INSERT_CHUNK = 500  # 500 x 9 kolom = 4.500 parameter; batas Postgres 65.535
+_INSERT_COLS = ("id", "pt", "kpl", "tipe", "thn", "kat", "urai", "sat", "hrg")
+
+
+def _insert_rows(conn: Connection, rows: list[dict[str, Any]]) -> None:
+    """Kirim banyak baris dalam SATU perintah INSERT.
+
+    Dulu satu perintah per baris, jadi 396 baris = 396 perjalanan ke Postgres. Waktu
+    database masih beda benua itu berarti 220 detik; sekarang jauh lebih cepat, tapi
+    penggabungan ini tetap berguna untuk berkas besar dan kalau suatu saat database
+    dipindah lagi.
+
+    `executemany` tidak dipakai walau terlihat seperti solusinya: pg8000 menjalankannya
+    sebagai perulangan execute biasa dan SQLAlchemy tidak menulis ulang statement `text()`
+    jadi multi-VALUES, sehingga jumlah perjalanannya tidak berubah sama sekali.
+
+    Yang di-f-string HANYA nama placeholder; semua nilai tetap terikat sebagai parameter.
+    """
+    for start in range(0, len(rows), _INSERT_CHUNK):
+        chunk = rows[start : start + _INSERT_CHUNK]
+        placeholders, params = [], {}
+        for i, r in enumerate(chunk):
+            placeholders.append("(" + ", ".join(f":{c}{i}" for c in _INSERT_COLS) + ")")
+            for c in _INSERT_COLS:
+                params[f"{c}{i}"] = r[c]
+        conn.execute(
+            text(
+                f"""
+                INSERT INTO {TABLE}
+                (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
+                 kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                VALUES {", ".join(placeholders)}
+                """
+            ),
+            params,
+        )
+
+
+def _next_ids(conn: Connection, prefix: str, count: int) -> list[str]:
+    """Nomor urut berikutnya untuk satu kapal+tahun, dihitung DI DALAM transaksi pemanggil.
+
+    Kenapa memakai `conn` yang dioper, bukan membuka koneksi sendiri: begitu Induk dan
+    Addendum disatukan dalam satu transaksi, baris Induk yang belum commit tidak akan
+    terlihat oleh koneksi terpisah, sehingga penomoran Addendum mengulang dari 001 dan
+    tabrakan primary key terjadi setiap kali -- bukan sesekali.
+
+    Kunci penasihat menyerialkan penomoran per prefix. Tanpa ini, dua orang yang mengimpor
+    kapal+tahun yang sama bersamaan sama-sama membaca nomor terakhir yang sama lalu
+    menabrak. Kuncinya lepas sendiri saat transaksi selesai dan tidak butuh perubahan
+    struktur tabel apa pun.
+
+    `left(id, :plen) = :prefix` menggantikan `LIKE :prefix%` karena di LIKE karakter `_`
+    berarti "satu karakter apa saja". Nama kapal di-slug dengan spasi menjadi `_`, jadi
+    prefix `KMP._RHAMA_GIRI_NUSA-2025-` juga cocok dengan ID kapal lain yang hurufnya beda
+    di posisi itu -- nomor urut satu kapal bisa melompat gara-gara baris kapal lain.
+    """
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:p))"), {"p": prefix})
+    existing = conn.execute(
+        text(f"SELECT id FROM {TABLE} WHERE left(id, :plen) = :prefix"),
+        {"plen": len(prefix), "prefix": prefix},
+    ).all()
     last_num = 0
     for (id_,) in existing:
         try:
@@ -151,54 +208,73 @@ def _next_ids(prefix: str, count: int) -> list[str]:
     return ids
 
 
-def bulk_create(payload: BulkCatalogCreate, *, aktor: str, sumber: str = "form") -> int:
+def bulk_create(
+    payload: BulkCatalogCreate,
+    *,
+    aktor: str,
+    sumber: str = "form",
+    conn: Connection | None = None,
+) -> int:
+    """Simpan sekumpulan baris katalog.
+
+    `conn` opsional supaya pemanggil bisa menyatukan beberapa panggilan dalam SATU transaksi
+    -- dipakai impor docking yang menyimpan Induk dan Addendum sekaligus. Kalau Induk commit
+    sendiri lalu Addendum gagal, separuh data masuk tanpa pengguna punya cara tahu; itu yang
+    terjadi di produksi 31 Juli 2026.
+
+    Kalau `conn` tidak diberikan, fungsi ini membuka transaksinya sendiri seperti sebelumnya,
+    jadi `/catalog/bulk` dan `/catalog/import` tidak perlu ikut berubah.
+    """
+    if conn is None:
+        with engine.begin() as c:
+            return _bulk_create(c, payload, aktor=aktor, sumber=sumber)
+    return _bulk_create(conn, payload, aktor=aktor, sumber=sumber)
+
+
+def _bulk_create(
+    conn: Connection, payload: BulkCatalogCreate, *, aktor: str, sumber: str
+) -> int:
     slug = payload.nama_kapal.strip().replace(" ", "_").upper()
     prefix = f"{slug}-{payload.tahun.strip()}-"
-    ids = _next_ids(prefix, len(payload.items))
-
-    insert_sql = text(
-        f"""
-        INSERT INTO {TABLE}
-        (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
-         kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
-        VALUES (:id, :pt, :kpl, :tipe, :thn, :kat, :urai, :sat, :hrg)
-        """
-    )
 
     pt = payload.nama_perusahaan.upper() if payload.nama_perusahaan else ""
     kpl = payload.nama_kapal.upper()
     tipe = payload.tipe_perjanjian.value
 
-    with engine.begin() as conn:
-        for new_id, item in zip(ids, payload.items, strict=True):
-            conn.execute(
-                insert_sql,
-                {
-                    "id": new_id,
-                    "pt": pt,
-                    "kpl": kpl,
-                    "tipe": tipe,
-                    "thn": payload.tahun,
-                    "kat": item.kategori_pekerjaan or "-",
-                    "urai": item.uraian_pekerjaan,
-                    "sat": item.volume_satuan or "-",
-                    "hrg": float(item.harga_satuan),
-                },
-            )
-        audit.catat(
-            conn,
-            aktor=aktor,
-            aksi="create",
-            entitas="katalog_harga",
-            jumlah=len(payload.items),
-            detail={
-                "nama_kapal": kpl,
-                "tahun": payload.tahun,
-                "tipe_perjanjian": tipe,
-                "sumber": sumber,
-                "id_range": [ids[0], ids[-1]] if ids else [],
-            },
-        )
+    # Penomoran ikut transaksi ini supaya baris yang belum commit tetap terhitung, dan
+    # supaya kunci penasihatnya lepas bersamaan dengan commit.
+    ids = _next_ids(conn, prefix, len(payload.items))
+    _insert_rows(
+        conn,
+        [
+            {
+                "id": new_id,
+                "pt": pt,
+                "kpl": kpl,
+                "tipe": tipe,
+                "thn": payload.tahun,
+                "kat": item.kategori_pekerjaan or "-",
+                "urai": item.uraian_pekerjaan,
+                "sat": item.volume_satuan or "-",
+                "hrg": float(item.harga_satuan),
+            }
+            for new_id, item in zip(ids, payload.items, strict=True)
+        ],
+    )
+    audit.catat(
+        conn,
+        aktor=aktor,
+        aksi="create",
+        entitas="katalog_harga",
+        jumlah=len(payload.items),
+        detail={
+            "nama_kapal": kpl,
+            "tahun": payload.tahun,
+            "tipe_perjanjian": tipe,
+            "sumber": sumber,
+            "id_range": [ids[0], ids[-1]] if ids else [],
+        },
+    )
     return len(payload.items)
 
 
