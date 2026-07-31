@@ -8,19 +8,36 @@ langsung di GitHub.
 
 ---
 
-## Belum di-deploy — sedang dikerjakan
+## 31 Juli 2026 (kedua) — impor docking dan input material
 
-Branch `fix/impor-docking-transaksi`. Menangani kegagalan impor docking
-KMP. RHAMA GIRI NUSA (31 Juli 2026, 396 baris) yang berakhir `Failed to fetch`.
+Menangani kegagalan impor docking KMP. RHAMA GIRI NUSA (396 baris) yang berakhir
+`Failed to fetch`, dan mempermudah input katalog material.
 
-- **Penomoran ID impor tidak lagi bisa tabrakan** (`fe0f5eb`) — nomor urut dihitung di
-  dalam transaksi yang sama dengan penyimpanannya, dan dikunci per kapal+tahun. Dua orang
-  yang mengimpor kapal sama bersamaan tidak lagi saling menabrak. Sekaligus memperbaiki
-  pencocokan awalan ID: `_` pada nama kapal dulu diperlakukan sebagai wildcard, sehingga
-  nomor urut satu kapal bisa melompat gara-gara baris kapal lain.
+**Impor docking tidak bisa lagi menyimpan separuh data.** Induk dan Addendum kini satu
+transaksi. Sebelumnya Induk bisa tersimpan sementara Addendum gagal, tanpa cara bagi
+pengguna untuk tahu bahwa separuh datanya sudah masuk.
 
-Masih menyusul: Induk dan Addendum dalam satu transaksi, pesan error yang tidak lagi
-tersembunyi di balik CORS, dan penggabungan INSERT.
+**Penomoran ID tidak bisa lagi tabrakan.** Nomor urut dihitung di dalam transaksi yang
+sama dengan penyimpanannya, dan dikunci per kapal+tahun sehingga dua orang yang mengimpor
+kapal sama bersamaan tidak saling menabrak. Sekaligus memperbaiki pencocokan awalan ID —
+tanda `_` pada nama kapal dulu diperlakukan sebagai wildcard, sehingga nomor urut satu
+kapal bisa melompat gara-gara baris kapal lain.
+
+**Pesan error database sekarang terbaca.** Sebelumnya error tersangkut di lapisan yang
+membuat browser memblokir responsnya, jadi yang muncul cuma `Failed to fetch` dan sebab
+aslinya hilang. Sekarang tampil sebagai pesan yang bisa ditindaklanjuti.
+
+**Impor jadi jauh lebih sedikit bolak-balik ke database** — 396 baris turun dari 400
+perintah menjadi 8.
+
+**Input katalog material punya jalan tengah.** Sebelumnya cuma ada dua pilihan: menempel
+seluruh tabel dari Excel, atau mengisi satu baris manual berulang kali.
+
+- Form **Input Beberapa Baris**: supplier, kapal, tahun, tanggal, mata uang, dan dokumen
+  diisi sekali di atas; per barang tinggal mengetik nama, part number, satuan, dan harga.
+  Untuk quotation 25 baris, isian turun dari 225 sel jadi 100 plus 6 isian bersama.
+- **Pratinjau paste bisa diedit di tempat**, tidak perlu mengulang paste dari Excel gara-gara
+  satu sel meleset. Tiap kolom punya tombol isi-ke-bawah, dan tiap baris bisa diduplikat.
 
 ---
 
