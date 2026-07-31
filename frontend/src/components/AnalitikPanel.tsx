@@ -38,6 +38,35 @@ export default function AnalitikPanel({ auth }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Penyaringan grafik material dikerjakan di sisi klien: seluruh titik harga kandidat
+  // sudah ikut terkirim, jumlahnya kecil, dan ini bikin ganti pilihan terasa seketika
+  // tanpa bolak-balik ke server.
+  const [supplierMat, setSupplierMat] = useState("Semua");
+  /** null = semua material. Set kosong = tidak ada yang dipilih. */
+  const [pilihMat, setPilihMat] = useState<Set<number> | null>(null);
+
+  const supplierMatOpts = useMemo(() => {
+    const s = new Set<string>();
+    material?.titik.forEach((t) => t.supplier_nama && s.add(t.supplier_nama));
+    return ["Semua", ...[...s].sort()];
+  }, [material]);
+
+  /** Kandidat yang lolos filter supplier DAN dipilih pengguna. Filter supplier bekerja di
+   * tingkat material: sebuah material ikut kalau punya minimal satu titik harga dari
+   * supplier itu -- kalau disaring per titik, garis tren bisa terpotong separuh dan
+   * terlihat seperti harga turun padahal cuma datanya yang disembunyikan. */
+  const kandidatTampil = useMemo(() => {
+    if (!material) return [];
+    const punyaSupplier = new Set(
+      material.titik.filter((t) => t.supplier_nama === supplierMat).map((t) => t.sumber_daya_id),
+    );
+    return material.kandidat.filter(
+      (k) =>
+        (supplierMat === "Semua" || punyaSupplier.has(k.id)) &&
+        (pilihMat === null || pilihMat.has(k.id)),
+    );
+  }, [material, supplierMat, pilihMat]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -94,13 +123,16 @@ export default function AnalitikPanel({ auth }: Props) {
   /** Satu grafik per mata uang. EUR dan IDR tidak boleh berbagi sumbu Y -- selisihnya
    * ribuan kali dan garisnya jadi tak terbaca, selain memberi kesan angkanya sebanding. */
   const grafikMaterial = useMemo(() => {
-    if (!material || material.kandidat.length === 0) return [];
+    if (!material || kandidatTampil.length === 0) return [];
 
-    const namaPer = new Map(material.kandidat.map((k) => [k.id, k.nama]));
+    const namaPer = new Map(kandidatTampil.map((k) => [k.id, k.nama]));
+    const idTampil = new Set(kandidatTampil.map((k) => k.id));
     const perMataUang = new Map<string, Map<string, Record<string, string | number>>>();
     const seriPer = new Map<string, Set<string>>();
 
     material.titik.forEach((t) => {
+      if (!idTampil.has(t.sumber_daya_id)) return;
+      if (supplierMat !== "Semua" && t.supplier_nama !== supplierMat) return;
       const nama = namaPer.get(t.sumber_daya_id);
       if (!nama) return;
       if (!perMataUang.has(t.mata_uang)) {
@@ -121,7 +153,7 @@ export default function AnalitikPanel({ auth }: Props) {
         String(a.tanggal).localeCompare(String(b.tanggal)),
       ),
     }));
-  }, [material]);
+  }, [material, kandidatTampil, supplierMat]);
 
   const kategoriTersembunyi = useMemo(() => {
     if (!jasa) return 0;
@@ -164,6 +196,73 @@ export default function AnalitikPanel({ auth }: Props) {
               </div>
             ) : (
               <>
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="block text-xs font-medium text-slate-600">
+                      Supplier
+                      <select
+                        className="mt-1 w-64 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                        value={supplierMat}
+                        onChange={(e) => setSupplierMat(e.target.value)}
+                      >
+                        {supplierMatOpts.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="pb-2 text-xs text-slate-500">
+                      {kandidatTampil.length} dari {material.kandidat.length} material ditampilkan
+                    </p>
+                  </div>
+
+                  <p className="mt-3 text-xs font-medium text-slate-600">Material</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {material.kandidat.map((k) => {
+                      const aktif = pilihMat === null || pilihMat.has(k.id);
+                      return (
+                        <button
+                          key={k.id}
+                          type="button"
+                          aria-pressed={aktif}
+                          onClick={() =>
+                            setPilihMat((prev) => {
+                              const dasar = prev ?? new Set(material.kandidat.map((x) => x.id));
+                              const next = new Set(dasar);
+                              if (next.has(k.id)) next.delete(k.id);
+                              else next.add(k.id);
+                              return next;
+                            })
+                          }
+                          className={`rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 ${
+                            aktif
+                              ? "border-transparent bg-slate-800 text-white"
+                              : "border-slate-300 bg-white text-slate-500 hover:border-slate-400"
+                          }`}
+                        >
+                          {k.nama}
+                        </button>
+                      );
+                    })}
+                    {pilihMat !== null && (
+                      <button
+                        type="button"
+                        onClick={() => setPilihMat(null)}
+                        className="rounded-full px-2.5 py-1 text-xs text-slate-500 underline hover:text-slate-800"
+                      >
+                        tampilkan semua
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {kandidatTampil.length === 0 && (
+                  <p className="mt-4 rounded-xl border border-dashed border-slate-300 px-5 py-8 text-center text-sm text-slate-500">
+                    Tidak ada material yang cocok dengan pilihan di atas.
+                  </p>
+                )}
+
                 {grafikMaterial.map(({ mataUang, data, seri }) => (
                   <div key={mataUang} className="mt-4 rounded-xl border border-slate-200 p-5">
                     <p className="mb-3 text-sm font-medium text-slate-700">
@@ -217,7 +316,7 @@ export default function AnalitikPanel({ auth }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {material.kandidat.map((k) => (
+                      {kandidatTampil.map((k) => (
                         <tr key={k.id} className="border-t border-slate-100">
                           <td className="px-4 py-2 font-medium text-slate-800">{k.nama}</td>
                           <td className="px-4 py-2 font-mono text-xs text-slate-500">
