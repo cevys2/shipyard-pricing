@@ -133,6 +133,44 @@ def filter_options(
     return result
 
 
+_INSERT_CHUNK = 500  # 500 x 9 kolom = 4.500 parameter; batas Postgres 65.535
+_INSERT_COLS = ("id", "pt", "kpl", "tipe", "thn", "kat", "urai", "sat", "hrg")
+
+
+def _insert_rows(conn: Connection, rows: list[dict[str, Any]]) -> None:
+    """Kirim banyak baris dalam SATU perintah INSERT.
+
+    Dulu satu perintah per baris, jadi 396 baris = 396 perjalanan ke Postgres. Waktu
+    database masih beda benua itu berarti 220 detik; sekarang jauh lebih cepat, tapi
+    penggabungan ini tetap berguna untuk berkas besar dan kalau suatu saat database
+    dipindah lagi.
+
+    `executemany` tidak dipakai walau terlihat seperti solusinya: pg8000 menjalankannya
+    sebagai perulangan execute biasa dan SQLAlchemy tidak menulis ulang statement `text()`
+    jadi multi-VALUES, sehingga jumlah perjalanannya tidak berubah sama sekali.
+
+    Yang di-f-string HANYA nama placeholder; semua nilai tetap terikat sebagai parameter.
+    """
+    for start in range(0, len(rows), _INSERT_CHUNK):
+        chunk = rows[start : start + _INSERT_CHUNK]
+        placeholders, params = [], {}
+        for i, r in enumerate(chunk):
+            placeholders.append("(" + ", ".join(f":{c}{i}" for c in _INSERT_COLS) + ")")
+            for c in _INSERT_COLS:
+                params[f"{c}{i}"] = r[c]
+        conn.execute(
+            text(
+                f"""
+                INSERT INTO {TABLE}
+                (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
+                 kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                VALUES {", ".join(placeholders)}
+                """
+            ),
+            params,
+        )
+
+
 def _next_ids(conn: Connection, prefix: str, count: int) -> list[str]:
     """Nomor urut berikutnya untuk satu kapal+tahun, dihitung DI DALAM transaksi pemanggil.
 
@@ -199,15 +237,6 @@ def _bulk_create(
     slug = payload.nama_kapal.strip().replace(" ", "_").upper()
     prefix = f"{slug}-{payload.tahun.strip()}-"
 
-    insert_sql = text(
-        f"""
-        INSERT INTO {TABLE}
-        (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
-         kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
-        VALUES (:id, :pt, :kpl, :tipe, :thn, :kat, :urai, :sat, :hrg)
-        """
-    )
-
     pt = payload.nama_perusahaan.upper() if payload.nama_perusahaan else ""
     kpl = payload.nama_kapal.upper()
     tipe = payload.tipe_perjanjian.value
@@ -215,9 +244,9 @@ def _bulk_create(
     # Penomoran ikut transaksi ini supaya baris yang belum commit tetap terhitung, dan
     # supaya kunci penasihatnya lepas bersamaan dengan commit.
     ids = _next_ids(conn, prefix, len(payload.items))
-    for new_id, item in zip(ids, payload.items, strict=True):
-        conn.execute(
-            insert_sql,
+    _insert_rows(
+        conn,
+        [
             {
                 "id": new_id,
                 "pt": pt,
@@ -228,8 +257,10 @@ def _bulk_create(
                 "urai": item.uraian_pekerjaan,
                 "sat": item.volume_satuan or "-",
                 "hrg": float(item.harga_satuan),
-            },
-        )
+            }
+            for new_id, item in zip(ids, payload.items, strict=True)
+        ],
+    )
     audit.catat(
         conn,
         aktor=aktor,
