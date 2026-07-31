@@ -132,6 +132,8 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
   const [pasteWarnings, setPasteWarnings] = useState<string[]>([]);
   const [dampak, setDampak] = useState<PastePreview | null>(null);
   const [cekBusy, setCekBusy] = useState(false);
+  const [pasteSumber, setPasteSumber] = useState("Quotation");
+  const [pasteNoDok, setPasteNoDok] = useState("");
 
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkEditRows, setBulkEditRows] = useState<{ id: number; data: MaterialItemInput }[]>([]);
@@ -223,7 +225,11 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
     const warnings: string[] = [];
     const drafts: MaterialItemInput[] = [];
     parsedRows.forEach((cells, i) => {
-      const d = cellsToDraft(cells);
+      // Satu paste = satu dokumen. Nomor quotation/PO ditanyakan sekali di atas, bukan
+      // diulang di tiap baris -- itu sifat dokumennya, bukan sifat tiap barang. Sebelum ini
+      // kolom paste tidak punya tempat untuk nomor dokumen sama sekali, sehingga asal-usul
+      // 29 dari 46 titik harga di produksi tidak tercatat.
+      const d = { ...cellsToDraft(cells), sumber: pasteSumber, no_dokumen: pasteNoDok.trim() };
       if (!d.nama || !d.satuan || d.harga_satuan <= 0) {
         warnings.push(`Baris ${i + 1}: Nama/Satuan/Harga wajib diisi (harga > 0), dilewati`);
         return;
@@ -442,12 +448,14 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
             <LabeledInput label="Nama *" value={addDraft.nama} onChange={(v) => setAddDraft((d) => ({ ...d, nama: v }))} />
             <LabeledInput label="Spesifikasi" value={addDraft.spesifikasi} onChange={(v) => setAddDraft((d) => ({ ...d, spesifikasi: v }))} />
             <LabeledInput label="Satuan *" value={addDraft.satuan} onChange={(v) => setAddDraft((d) => ({ ...d, satuan: v }))} />
-            <LabeledInput
-              label="Harga *"
-              type="number"
-              value={String(addDraft.harga_satuan)}
-              onChange={(v) => setAddDraft((d) => ({ ...d, harga_satuan: Number(v) || 0 }))}
-            />
+            <label className="block text-xs font-medium text-slate-600">
+              Harga *
+              <NumberInput
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                value={addDraft.harga_satuan}
+                onChange={(n) => setAddDraft((d) => ({ ...d, harga_satuan: n }))}
+              />
+            </label>
             <label className="block text-xs font-medium text-slate-600">
               Mata Uang
               <select
@@ -462,12 +470,15 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                 ))}
               </select>
             </label>
-            <LabeledInput
-              label="Tahun Pembelian *"
-              type="number"
-              value={String(addDraft.tahun_pembelian)}
-              onChange={(v) => setAddDraft((d) => ({ ...d, tahun_pembelian: Number(v) || 0 }))}
-            />
+            <label className="block text-xs font-medium text-slate-600">
+              Tahun Pembelian *
+              <NumberInput
+                integer
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                value={addDraft.tahun_pembelian}
+                onChange={(n) => setAddDraft((d) => ({ ...d, tahun_pembelian: n }))}
+              />
+            </label>
             <LabeledInput label="Supplier" value={addDraft.supplier_nama} onChange={(v) => setAddDraft((d) => ({ ...d, supplier_nama: v }))} />
             <LabeledInput label="Kapal" value={addDraft.nama_kapal} onChange={(v) => setAddDraft((d) => ({ ...d, nama_kapal: v }))} />
             <LabeledInput
@@ -504,6 +515,36 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
             Uang terpisah nggak usah diisi kalau begini. Tahun Pembelian WAJIB diisi angka tahun yang valid -- ini
             acuan analitik, jadi sengaja nggak di-tebak otomatis kayak dibuat_pada). Select semua sel, Ctrl+C, lalu
             paste di kotak bawah.
+          </p>
+          <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="block text-xs font-medium text-slate-600">
+              Jenis Dokumen
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                value={pasteSumber}
+                onChange={(e) => setPasteSumber(e.target.value)}
+              >
+                {["Quotation", "Sales Quotation", "PO", "Invoice", "Manual"].map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+              Nomor Dokumen
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                placeholder="mis. 2410-1547/MAN-SQ"
+                value={pasteNoDok}
+                onChange={(e) => setPasteNoDok(e.target.value)}
+              />
+            </label>
+          </div>
+          <p className="mb-2 text-xs text-slate-500">
+            Dua isian di atas berlaku untuk seluruh baris paste ini, karena satu quotation adalah
+            satu dokumen. Dari situlah asal-usul tiap harga bisa ditelusuri balik ke berkas
+            aslinya — biarkan kosong kalau memang tidak ada dokumennya.
           </p>
           <textarea
             className="h-32 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs"
@@ -678,26 +719,22 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                         </td>
                       ) : (
                         <td key={field} className="px-1 py-1">
-                          <input
-                            className="cell-input"
-                            type={
-                              field === "harga_satuan" || field === "tahun_pembelian"
-                                ? "number"
-                                : field === "berlaku_dari"
-                                  ? "date"
-                                  : "text"
-                            }
-                            value={r.data[field] ?? ""}
-                            onChange={(e) =>
-                              updateBulkEditCell(
-                                i,
-                                field,
-                                field === "harga_satuan" || field === "tahun_pembelian"
-                                  ? Number(e.target.value) || 0
-                                  : e.target.value,
-                              )
-                            }
-                          />
+                          {field === "harga_satuan" || field === "tahun_pembelian" ? (
+                            <NumberInput
+                              integer={field === "tahun_pembelian"}
+                              ariaLabel={field}
+                              className="cell-input"
+                              value={Number(r.data[field] ?? 0)}
+                              onChange={(n) => updateBulkEditCell(i, field, n)}
+                            />
+                          ) : (
+                            <input
+                              className="cell-input"
+                              type={field === "berlaku_dari" ? "date" : "text"}
+                              value={r.data[field] ?? ""}
+                              onChange={(e) => updateBulkEditCell(i, field, e.target.value)}
+                            />
+                          )}
                         </td>
                       ),
                     )}
@@ -767,7 +804,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                           <Cell><input className="cell-input" value={draft.satuan} onChange={(e) => setDraft((d) => ({ ...d, satuan: e.target.value }))} /></Cell>
                           <Cell align="right">
                             <div className="flex items-center gap-1">
-                              <input type="number" className="cell-input text-right" value={draft.harga_satuan} onChange={(e) => setDraft((d) => ({ ...d, harga_satuan: Number(e.target.value) || 0 }))} />
+                              <NumberInput
+                                ariaLabel="Harga satuan"
+                                className="cell-input text-right"
+                                value={draft.harga_satuan}
+                                onChange={(n) => setDraft((d) => ({ ...d, harga_satuan: n }))}
+                              />
                               <select
                                 className="cell-input"
                                 value={draft.mata_uang}
@@ -782,11 +824,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                             </div>
                           </Cell>
                           <Cell>
-                            <input
-                              type="number"
+                            <NumberInput
+                              integer
+                              ariaLabel="Tahun pembelian"
                               className="cell-input"
                               value={draft.tahun_pembelian}
-                              onChange={(e) => setDraft((d) => ({ ...d, tahun_pembelian: Number(e.target.value) || 0 }))}
+                              onChange={(n) => setDraft((d) => ({ ...d, tahun_pembelian: n }))}
                             />
                           </Cell>
                           <Cell><input className="cell-input" value={draft.supplier_nama} onChange={(e) => setDraft((d) => ({ ...d, supplier_nama: e.target.value }))} /></Cell>
@@ -952,5 +995,57 @@ function StatusDampak({ row }: { row?: PastePreviewRow }) {
       )}
       {row.peringatan && <span className="text-amber-700">perlu diperiksa</span>}
     </span>
+  );
+}
+
+/** Input angka yang tidak melawan jari pengguna saat mengetik.
+ *
+ * Masalah pada `<input type="number" value={String(angka)}>`: mengetik "49.0" bikin nilai
+ * sementara "49." yang di-parse jadi 49, lalu di-render balik sebagai "49" -- titiknya
+ * terhapus tepat setelah diketik, jadi desimal mustahil dimasukkan. Hal yang sama terjadi
+ * saat mengosongkan field: `Number("") || 0` memaksanya jadi "0".
+ *
+ * Solusinya menyimpan teks mentah selama field difokus, dan baru menyelaraskan tampilan
+ * dengan nilai numerik saat field ditinggalkan. Induknya tetap menerima number.
+ *
+ * Koma diterima sebagai pemisah desimal ("49,5") karena itu kebiasaan penulisan di sini dan
+ * harga di quotation MAN memang ditulis begitu. Titik sebagai pemisah ribuan TIDAK ditebak:
+ * "1.050" ambigu antara seribu lima puluh dan 1,05 -- menebaknya berisiko mengubah harga
+ * secara diam-diam, jadi dibiarkan apa adanya sebagai desimal.
+ */
+function NumberInput({
+  value,
+  onChange,
+  integer = false,
+  className = "",
+  ariaLabel,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  integer?: boolean;
+  className?: string;
+  ariaLabel?: string;
+}) {
+  const [teks, setTeks] = useState<string | null>(null);
+
+  function parse(raw: string): number {
+    const bersih = raw.replace(/\s/g, "").replace(",", ".");
+    const n = integer ? parseInt(bersih, 10) : parseFloat(bersih);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode={integer ? "numeric" : "decimal"}
+      aria-label={ariaLabel}
+      className={className}
+      value={teks ?? String(value)}
+      onChange={(e) => {
+        setTeks(e.target.value);
+        onChange(parse(e.target.value));
+      }}
+      onBlur={() => setTeks(null)}
+    />
   );
 }
