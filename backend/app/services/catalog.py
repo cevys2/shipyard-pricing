@@ -4,6 +4,7 @@ from typing import Any
 import pandas as pd
 from pydantic import ValidationError
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 from app.config import settings
 from app.database import engine
@@ -132,11 +133,29 @@ def filter_options(
     return result
 
 
-def _next_ids(prefix: str, count: int) -> list[str]:
-    with engine.connect() as conn:
-        existing = conn.execute(
-            text(f"SELECT id FROM {TABLE} WHERE id LIKE :prefix"), {"prefix": f"{prefix}%"}
-        ).all()
+def _next_ids(conn: Connection, prefix: str, count: int) -> list[str]:
+    """Nomor urut berikutnya untuk satu kapal+tahun, dihitung DI DALAM transaksi pemanggil.
+
+    Kenapa memakai `conn` yang dioper, bukan membuka koneksi sendiri: begitu Induk dan
+    Addendum disatukan dalam satu transaksi, baris Induk yang belum commit tidak akan
+    terlihat oleh koneksi terpisah, sehingga penomoran Addendum mengulang dari 001 dan
+    tabrakan primary key terjadi setiap kali -- bukan sesekali.
+
+    Kunci penasihat menyerialkan penomoran per prefix. Tanpa ini, dua orang yang mengimpor
+    kapal+tahun yang sama bersamaan sama-sama membaca nomor terakhir yang sama lalu
+    menabrak. Kuncinya lepas sendiri saat transaksi selesai dan tidak butuh perubahan
+    struktur tabel apa pun.
+
+    `left(id, :plen) = :prefix` menggantikan `LIKE :prefix%` karena di LIKE karakter `_`
+    berarti "satu karakter apa saja". Nama kapal di-slug dengan spasi menjadi `_`, jadi
+    prefix `KMP._RHAMA_GIRI_NUSA-2025-` juga cocok dengan ID kapal lain yang hurufnya beda
+    di posisi itu -- nomor urut satu kapal bisa melompat gara-gara baris kapal lain.
+    """
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:p))"), {"p": prefix})
+    existing = conn.execute(
+        text(f"SELECT id FROM {TABLE} WHERE left(id, :plen) = :prefix"),
+        {"plen": len(prefix), "prefix": prefix},
+    ).all()
     last_num = 0
     for (id_,) in existing:
         try:
@@ -154,7 +173,6 @@ def _next_ids(prefix: str, count: int) -> list[str]:
 def bulk_create(payload: BulkCatalogCreate, *, aktor: str, sumber: str = "form") -> int:
     slug = payload.nama_kapal.strip().replace(" ", "_").upper()
     prefix = f"{slug}-{payload.tahun.strip()}-"
-    ids = _next_ids(prefix, len(payload.items))
 
     insert_sql = text(
         f"""
@@ -170,6 +188,9 @@ def bulk_create(payload: BulkCatalogCreate, *, aktor: str, sumber: str = "form")
     tipe = payload.tipe_perjanjian.value
 
     with engine.begin() as conn:
+        # Penomoran sekarang ikut transaksi ini supaya baris yang belum commit tetap
+        # terhitung, dan supaya kunci penasihatnya lepas bersamaan dengan commit.
+        ids = _next_ids(conn, prefix, len(payload.items))
         for new_id, item in zip(ids, payload.items, strict=True):
             conn.execute(
                 insert_sql,
