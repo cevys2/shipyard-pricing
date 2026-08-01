@@ -8,6 +8,28 @@ langsung di GitHub.
 
 ---
 
+## 1 Agustus 2026 — cadangan database akhirnya benar-benar ada
+
+**`backup-service` selama ini tidak mencadangkan apa pun.** Berkas `backup.py`-nya kosong
+0 byte sejak dibuat 27 Juli 2026 — hash blob-nya `e69de29`, hash baku Git untuk berkas
+kosong. Service-nya sukses tiap kali menjalankan berkas kosong, keluar dengan status 0,
+tidak pernah terlihat merah. Satu-satunya cadangan yang ada cuma tabel
+`backup_katalog_harga_juli2026` berisi 3.054 baris, sementara tabelnya sekarang 4.914 baris.
+
+Sekarang skripnya menyalin **seluruh tabel** jadi CSV, membungkusnya jadi satu `.tar.gz`
+beserta manifest jumlah baris, lalu mengunggahnya ke Backblaze B2 — di luar Railway, jadi
+selamat kalau ada apa-apa dengan platformnya.
+
+Dua penolakan yang disengaja supaya kegagalan diam tidak terulang: menolak mengunggah kalau
+tidak ada tabel atau semua tabel kosong, dan memverifikasi ukuran objek dengan membacanya
+ulang dari B2 sesudah unggah. Kalau salah satu tidak terpenuhi, service-nya gagal terang-terangan.
+
+Cadangan pertama sudah jalan dan **sudah diuji pulih**: diunduh kembali dari B2, dibongkar,
+dan jumlah baris tiap tabel cocok persis dengan database. Termasuk 2.950 baris yang memuat
+newline di dalam sel — dibandingkan byte demi byte, identik.
+
+---
+
 ## 31 Juli 2026 (ketiga) — impor tidak lagi menggantung tanpa kabar
 
 **Impor docking punya batas waktu 5 menit.** Sebelumnya permintaan yang menggantung tidak
