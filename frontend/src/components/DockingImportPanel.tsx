@@ -40,6 +40,10 @@ export default function DockingImportPanel({ token, onImported }: Props) {
   const [induk, setInduk] = useState<EditRow[] | null>(null);
   const [addendum, setAddendum] = useState<EditRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  /** Jumlah baris yang sedang disimpan; 0 kalau bukan sedang menyimpan. Dipisah dari
+   * `loading` supaya pesannya bisa menyebut angka dan peringatan jangan-tutup-halaman,
+   * bukan cuma "Memproses..." yang sama untuk baca berkas maupun menulis ke database. */
+  const [menyimpan, setMenyimpan] = useState(0);
   const [error, setError] = useState("");
   const [resultMsg, setResultMsg] = useState("");
 
@@ -111,6 +115,7 @@ export default function DockingImportPanel({ token, onImported }: Props) {
       return;
     }
     setLoading(true);
+    setMenyimpan(induk.length + addendum.length);
     setError("");
     try {
       const toItems = (rows: EditRow[]) =>
@@ -135,6 +140,7 @@ export default function DockingImportPanel({ token, onImported }: Props) {
       setError(e instanceof Error ? e.message : "Gagal menyimpan");
     } finally {
       setLoading(false);
+      setMenyimpan(0);
     }
   }
 
@@ -151,7 +157,16 @@ export default function DockingImportPanel({ token, onImported }: Props) {
           if (f) void handleFile(f);
         }}
       />
-      {loading && <p className="mt-3 text-sm text-slate-500">Memproses...</p>}
+      {loading && menyimpan === 0 && <p className="mt-3 text-sm text-slate-500">Memproses...</p>}
+      {menyimpan > 0 && (
+        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+          <p className="font-medium text-slate-800">Menyimpan {menyimpan} baris...</p>
+          <p className="mt-0.5 text-slate-600">
+            Jangan tutup atau muat ulang halaman ini dulu. Kalau prosesnya terhenti, cek dulu
+            tabelnya sebelum mencoba menyimpan lagi — sebagian data bisa jadi sudah masuk.
+          </p>
+        </div>
+      )}
       {error && <p className="mt-3 text-sm font-medium text-red-600">{error}</p>}
       {resultMsg && <p className="mt-3 text-sm text-green-700">{resultMsg}</p>}
 

@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cache build TypeScript -- ditulis ulang tiap 'tsc -b'/'npm run build'.
+# Sempat ikut terlacak; dilepas supaya tidak muncul terus di git status.
+*.tsbuildinfo

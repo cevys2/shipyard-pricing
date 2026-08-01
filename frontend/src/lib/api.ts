@@ -50,10 +50,22 @@ export function touchSession() {
   }
 }
 
+/** Pesan untuk permintaan yang kita hentikan sendiri karena kelamaan.
+ *
+ * Yang bikin kegagalan impor 31 Juli 2026 membingungkan bukan lamanya, melainkan
+ * pengguna tidak punya cara tahu apakah datanya sudah masuk atau belum -- lalu mencoba
+ * ulang secara buta, yang justru memperparah keadaan. Jadi pesannya harus menyebutkan
+ * akibatnya, bukan cuma "gagal".
+ */
+const PESAN_TIMEOUT =
+  "Permintaan dihentikan karena terlalu lama. Penyimpanan belum tentu gagal — " +
+  "muat ulang halaman dan cek tabelnya dulu sebelum mencoba menyimpan lagi.";
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
   token?: string,
+  timeoutMs?: number,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
@@ -61,12 +73,25 @@ async function request<T>(
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail));
+  // Tanpa batas waktu, permintaan yang menggantung tidak pernah selesai dan tombolnya
+  // terkunci selamanya. Batasnya sengaja longgar: yang dikejar bukan memutus cepat,
+  // melainkan memastikan ada akhir yang bisa dijelaskan.
+  const ac = timeoutMs ? new AbortController() : undefined;
+  const timer = ac ? setTimeout(() => ac.abort(), timeoutMs) : undefined;
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: ac?.signal });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail));
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw new Error(PESAN_TIMEOUT);
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 export const api = {
@@ -134,10 +159,13 @@ export const api = {
     );
   },
   dockingCommit(token: string, body: DockingImportCommit) {
+    // Satu-satunya panggilan yang diberi batas waktu: ini yang menulis ratusan baris
+    // sekaligus, dan satu-satunya yang pernah menggantung sampai proxy menyerah.
     return request<{ saved: number }>(
       "/catalog/import/docking-commit",
       { method: "POST", body: JSON.stringify(body) },
       token,
+      5 * 60 * 1000,
     );
   },
   material(token: string, params: Record<string, string | undefined> = {}) {
