@@ -8,6 +8,22 @@ langsung di GitHub.
 
 ---
 
+## 31 Juli 2026 (ketiga) — impor tidak lagi menggantung tanpa kabar
+
+**Impor docking punya batas waktu 5 menit.** Sebelumnya permintaan yang menggantung tidak
+pernah selesai dan tombolnya terkunci selamanya. Kalau batas itu terlampaui, pesannya
+menyebut akibatnya: penyimpanan belum tentu gagal, jadi muat ulang dan cek tabelnya dulu
+sebelum mencoba lagi. Mencoba ulang secara buta justru yang bikin kejadian 31 Juli
+membingungkan.
+
+**Saat menyimpan, jumlah barisnya ditampilkan** beserta peringatan jangan menutup halaman.
+
+Deteksi tahun dari nama berkas sengaja dibiarkan manual — angka tahun di nama berkas itu
+tahun terbit dokumen realisasi (saat deal dan pembayaran), bukan waktu survei dan
+pengerjaan, jadi keduanya memang bisa berbeda.
+
+---
+
 ## 31 Juli 2026 (kedua) — impor docking dan input material
 
 Menangani kegagalan impor docking KMP. RHAMA GIRI NUSA (396 baris) yang berakhir
