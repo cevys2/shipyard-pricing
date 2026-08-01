@@ -1,1 +1,3 @@
 boto3
+sqlalchemy
+pg8000
