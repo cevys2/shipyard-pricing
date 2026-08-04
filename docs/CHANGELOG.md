@@ -35,6 +35,32 @@ sebenarnya — harga jualnya sendiri ditahan backend.
 Di bawah setiap total tertulis **"belum termasuk PPN"**. Karena harga jual sama persis dengan
 biaya modal, angka itu mudah disalahartikan sebagai harga final ke pelanggan.
 
+**Lembar rincian dirombak di hari yang sama: dua bentuk baris, bukan satu.**
+
+Semula tiap baris punya kolom Qty · Satuan · Shift · Jml Hari yang sama, dan kolom terakhir
+itu dinamai terhadap satuan yang dijual. Untuk pekerjaan per m² masih terbaca; untuk satuan
+lain jadi omong kosong — "hari per Pcs" membuat pekerjaan maintenance terdengar seperti
+produksi barang, dan baris pasir terpaksa diisi "Jml Hari = 1" yang tidak berarti apa-apa.
+
+Yang terlewat: **Qty, Shift, dan Jml Hari bukan tiga fakta, melainkan cara menurunkan satu
+angka** — koefisien AHSP, yang satuannya milik sumber dayanya sendiri, bukan milik barang
+yang dijual. "3 orang × 1 shift × 0,02 hari" adalah cara menuliskan **0,06 OH**.
+
+Sekarang tenaga kerja dan alat menampilkan penurunannya *beserta hasilnya* (Banyaknya ·
+Shift · Lama → Koefisien "0,06 OH"), sementara bahan dan konsumabel cuma punya satu kolom
+Koefisien — keduanya habis dipakai, tidak punya dimensi waktu sama sekali. Excel aslinya pun
+sudah menunjukkan gejala ini: 18 dari 298 barisnya memang cuma memakai Qty × Harga.
+
+Di bawah kotak Lama ada pembanding hidup: ketik 0,02 dan muncul "≈ 50 m² per hari". Kolom itu
+punya satu mode gagal yang mahal — salah ketik 0,2 alih-alih 0,02 melipatgandakan harga 10×
+tanpa terlihat aneh sedikit pun. Angka pembaliknya jauh lebih mudah dibantah orang lapangan.
+Untuk koefisien di atas 1 hari kalimatnya dibalik jadi durasi ("3 hari untuk 1 Unit"), karena
+di sana pembaliknya justru membingungkan.
+
+**Catatan untuk yang memakai:** "koefisien" dan "OH" (Orang-Hari) adalah istilah baku AHSP
+yang mungkin belum familiar. Artinya sederhana — berapa banyak sumber daya untuk satu satuan
+yang dijual.
+
 **Perbaikan menyusul di hari yang sama.** Menghapus material yang sedang dipakai di sebuah
 analisa sebelumnya gagal dengan "Gagal menyimpan ke database" — benar bahwa tidak ada data
 yang hilang, tapi tidak menyebutkan sebabnya, sehingga satu-satunya tindakan yang masuk akal

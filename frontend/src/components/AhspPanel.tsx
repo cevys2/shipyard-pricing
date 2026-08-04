@@ -43,6 +43,31 @@ function n(v: string | null | undefined): number {
   return v == null ? 0 : Number(v);
 }
 
+/** Tenaga kerja dan alat DISEWA per waktu: biayanya tarif x lama x banyaknya.
+ * Bahan dan konsumabel HABIS DIPAKAI: biayanya harga x jumlah, tanpa dimensi waktu.
+ *
+ * Dua-duanya dulu dipaksa masuk satu bentuk tabel, sehingga baris pasir harus diisi
+ * "Jml Hari = 1" -- angka yang tidak berarti apa-apa, dipasang cuma supaya perkaliannya
+ * tidak berubah. Excel aslinya sendiri sudah menunjukkan gejalanya: 18 dari 298 baris
+ * memang cuma memakai Qty x Harga. */
+function pakaiDimensiWaktu(kel: JenisSumberDaya): boolean {
+  return kel === "UPAH" || kel === "ALAT";
+}
+
+/** Koefisien AHSP: berapa banyak sumber daya ini untuk SATU satuan yang dijual.
+ *
+ * Inilah angka yang sebenarnya bermakna; qty/shift/jml_hari cuma cara menurunkannya
+ * ("3 orang x 1 shift x 0,02 hari = 0,06 OH"). Satuannya milik sumber dayanya sendiri,
+ * bukan milik barang yang dijual -- karena harga_satuan juga per satuan itu. Menamainya
+ * terhadap satuan jual menghasilkan omong kosong seperti "hari per pcs". */
+function koefisien(d: { qty: string; shift: string; jml_hari: string }): number {
+  return Number((n(d.qty) * n(d.shift) * n(d.jml_hari)).toFixed(6));
+}
+
+function angka(x: number): string {
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 6 }).format(x);
+}
+
 /** Cari pakai dua kata pertama saja.
  *
  * Mengetik "Cat Epoxy" memang menemukan "Cat Epoxy 5kg" karena pencariannya substring,
@@ -558,10 +583,14 @@ function LembarRincian({
                   {idx + 1} · {KELOMPOK_LABEL[kel]}{" "}
                   <span className="font-normal text-xs text-slate-500">
                     — {KELOMPOK_CATATAN[kel]}
+                    {pakaiDimensiWaktu(kel)
+                      ? `; koefisien = banyaknya × shift × lama, dalam satuan sumber dayanya`
+                      : `; koefisien = jumlah yang habis dipakai untuk satu ${ahsp.satuan}`}
                   </span>
                 </p>
                 <TabelKelompok
                   baris={baris}
+                  kelompok={kel}
                   sedangEdit={sedangEdit}
                   onUbah={ubah}
                   onHapus={hapusBaris}
@@ -608,6 +637,7 @@ function LembarRincian({
 
 function TabelKelompok({
   baris,
+  kelompok,
   sedangEdit,
   onUbah,
   onHapus,
@@ -615,22 +645,28 @@ function TabelKelompok({
   satuanJual,
 }: {
   baris: Draf[];
+  kelompok: JenisSumberDaya;
   sedangEdit: boolean;
   onUbah: (key: string, patch: Partial<Draf>) => void;
   onHapus: (key: string) => void;
   subtotal: string | null;
   satuanJual: string;
 }) {
+  const berwaktu = pakaiDimensiWaktu(kelompok);
+  // Kolom sebelum Harga satuan: berwaktu punya penurunannya (banyaknya, shift, lama) plus
+  // hasil koefisiennya; yang habis dipakai cuma punya koefisiennya.
+  const kolomSebelumHarga = berwaktu ? 5 : 2;
+
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="min-w-full text-left text-xs">
         <thead className="bg-slate-50 uppercase text-slate-500">
           <tr>
             <th className="px-3 py-2">Uraian</th>
-            <th className="px-2 py-2 w-20">Qty</th>
-            <th className="px-2 py-2 w-16">Sat</th>
-            <th className="px-2 py-2 w-20">Shift</th>
-            <th className="px-2 py-2 w-24">Jml Hari</th>
+            {berwaktu && <th className="px-2 py-2 w-20">Banyaknya</th>}
+            {berwaktu && <th className="px-2 py-2 w-16">Shift</th>}
+            {berwaktu && <th className="px-2 py-2 w-28">Lama (hari)</th>}
+            <th className="px-3 py-2 w-32">Koefisien per {satuanJual}</th>
             <th className="px-3 py-2 text-right">Harga satuan</th>
             <th className="px-3 py-2 text-right">Jumlah</th>
             {sedangEdit && <th className="w-8"></th>}
@@ -641,10 +677,9 @@ function TabelKelompok({
             const belumBerharga = b.harga_satuan == null;
             const bukanRupiah = b.mata_uang != null && b.mata_uang !== "IDR";
             const bermasalah = belumBerharga || bukanRupiah;
+            const koef = koefisien(b);
             // Pratinjau saja -- angka final datang dari /ahsp/{id}/hitung.
-            const jumlah = bermasalah
-              ? null
-              : n(b.qty) * n(b.shift) * n(b.jml_hari) * n(b.harga_satuan);
+            const jumlah = bermasalah ? null : koef * n(b.harga_satuan);
             return (
               <tr
                 key={b.key}
@@ -654,14 +689,48 @@ function TabelKelompok({
                   {b.nama}
                   {b.spesifikasi && <span className="text-slate-400"> · {b.spesifikasi}</span>}
                 </td>
-                <SelPengali nilai={b.qty} edit={sedangEdit} onUbah={(v) => onUbah(b.key, { qty: v })} />
-                <td className="px-2 py-1.5 text-slate-500">{b.satuan}</td>
-                <SelPengali nilai={b.shift} edit={sedangEdit} onUbah={(v) => onUbah(b.key, { shift: v })} />
-                <SelPengali
-                  nilai={b.jml_hari}
-                  edit={sedangEdit}
-                  onUbah={(v) => onUbah(b.key, { jml_hari: v })}
-                />
+
+                {berwaktu && (
+                  <>
+                    <SelAngka
+                      nilai={b.qty}
+                      edit={sedangEdit}
+                      onUbah={(v) => onUbah(b.key, { qty: v })}
+                    />
+                    <SelAngka
+                      nilai={b.shift}
+                      edit={sedangEdit}
+                      onUbah={(v) => onUbah(b.key, { shift: v })}
+                    />
+                    <SelAngka
+                      nilai={b.jml_hari}
+                      edit={sedangEdit}
+                      onUbah={(v) => onUbah(b.key, { jml_hari: v })}
+                      petunjuk={petunjukLama(b.jml_hari, satuanJual)}
+                    />
+                  </>
+                )}
+
+                {/* Untuk bahan dan konsumabel, koefisiennya ADALAH jumlahnya -- tidak ada
+                    lama atau shift yang perlu ditanyakan, jadi kotaknya menulis langsung
+                    ke qty dan dua kolom lain tidak pernah muncul. */}
+                {berwaktu ? (
+                  <td className="px-3 py-1.5 tabular-nums font-medium text-slate-700">
+                    {angka(koef)} <span className="font-normal text-slate-400">{b.satuan}</span>
+                  </td>
+                ) : (
+                  <SelAngka
+                    // Membaca: tampilkan koefisien sebenarnya, supaya baris warisan yang
+                    // shift/jml_hari-nya bukan 1 tidak berbohong soal angkanya.
+                    // Menyunting: kotaknya menulis ke qty dan sekalian mengembalikan dua
+                    // pengali lain ke 1 -- itu yang membuat janji kolom ini benar.
+                    nilai={sedangEdit ? b.qty : String(koef)}
+                    edit={sedangEdit}
+                    onUbah={(v) => onUbah(b.key, { qty: v, shift: "1", jml_hari: "1" })}
+                    suffix={b.satuan}
+                  />
+                )}
+
                 <td className="px-3 py-1.5 text-right tabular-nums">
                   {belumBerharga ? (
                     <span className="font-medium text-amber-700">belum ada harga</span>
@@ -670,7 +739,10 @@ function TabelKelompok({
                       {b.mata_uang} {b.harga_satuan}
                     </span>
                   ) : (
-                    formatRp(n(b.harga_satuan))
+                    <>
+                      {formatRp(n(b.harga_satuan))}
+                      <span className="text-slate-400"> /{b.satuan}</span>
+                    </>
                   )}
                 </td>
                 <td className="px-3 py-1.5 text-right tabular-nums">
@@ -692,7 +764,7 @@ function TabelKelompok({
             );
           })}
           <tr className="border-t border-slate-200 bg-slate-50 font-semibold">
-            <td className="px-3 py-2" colSpan={6}>
+            <td className="px-3 py-2" colSpan={kolomSebelumHarga + 1}>
               Sub Total
             </td>
             <td className="px-3 py-2 text-right tabular-nums">
@@ -702,19 +774,38 @@ function TabelKelompok({
           </tr>
         </tbody>
       </table>
-      <p className="px-3 py-1 text-[11px] text-slate-400">per {satuanJual}</p>
     </div>
   );
 }
 
-function SelPengali({
+/** Kalimat pembanding di bawah kotak "Lama".
+ *
+ * Kolom ini punya satu mode gagal yang berbahaya: salah ketik 0,2 alih-alih 0,02 membuat
+ * harganya 10x lipat dan tidak ada apa pun di layar yang terlihat aneh. Angka pembaliknya
+ * jauh lebih mudah dibantah orang lapangan -- "5 m2 per hari" langsung ketahuan salah.
+ *
+ * Di atas 1 hari pembaliknya justru membingungkan ("0,33 Unit per hari"), jadi di sana
+ * kalimatnya dibalik jadi durasi.
+ */
+function petunjukLama(jmlHari: string, satuanJual: string): string {
+  const h = Number(jmlHari);
+  if (!Number.isFinite(h) || h <= 0) return "";
+  if (h >= 1) return `${angka(h)} hari untuk 1 ${satuanJual}`;
+  return `≈ ${angka(Number((1 / h).toFixed(2)))} ${satuanJual} per hari`;
+}
+
+function SelAngka({
   nilai,
   edit,
   onUbah,
+  petunjuk,
+  suffix,
 }: {
   nilai: string;
   edit: boolean;
   onUbah: (v: string) => void;
+  petunjuk?: string;
+  suffix?: string;
 }) {
   // Sengaja input teks, bukan number: koefisien seperti 0,07 dikirim apa adanya sebagai
   // string ke Decimal di backend, tidak lewat float sama sekali.
@@ -728,8 +819,10 @@ function SelPengali({
           onChange={(e) => onUbah(e.target.value.replace(",", "."))}
         />
       ) : (
-        <span>{Number(nilai)}</span>
+        <span>{angka(Number(nilai))}</span>
       )}
+      {suffix && <span className="ml-1 text-slate-400">{suffix}</span>}
+      {petunjuk && <p className="mt-0.5 text-[10px] font-normal text-slate-400">{petunjuk}</p>}
     </td>
   );
 }
