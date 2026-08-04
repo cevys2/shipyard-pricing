@@ -6,6 +6,7 @@ from sqlalchemy.engine import Connection
 
 from app.database import engine, sd_identitas_sql
 from app.schemas.material import (
+    JENIS_SUMBER_DAYA,
     BulkMaterialCreate,
     BulkPatchMaterialRequest,
     MaterialItemCreate,
@@ -49,8 +50,20 @@ _LIST_QUERY = f"""
            h.supplier_nama
     FROM   sumber_daya sd
     {_LATERAL_HARGA}
-    WHERE  sd.jenis = 'BAHAN' AND sd.aktif
+    WHERE  sd.jenis = :jenis AND sd.aktif
 """
+
+
+def _cek_jenis(jenis: str) -> str:
+    """Jaga-jaga kalau ada pemanggil selain router (tes, skrip) yang salah ketik.
+
+    Nilainya selalu masuk query sebagai bindparam, jadi ini bukan soal injeksi -- yang
+    dicegah adalah jenis yang salah eja diam-diam mengembalikan nol baris dan terlihat
+    seperti "datanya memang belum ada".
+    """
+    if jenis not in JENIS_SUMBER_DAYA:
+        raise ValueError(f"jenis tidak dikenal: {jenis!r}. Pilihan: {', '.join(JENIS_SUMBER_DAYA)}")
+    return jenis
 
 
 def _norm_filter(v: str | None) -> str | None:
@@ -59,6 +72,7 @@ def _norm_filter(v: str | None) -> str | None:
 
 def _build_where(
     *,
+    jenis: str = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
@@ -70,6 +84,7 @@ def _build_where(
     kapal_n, supplier_n = _norm_filter(kapal), _norm_filter(supplier)
     tahun_n = _norm_filter(tahun)
     params: dict[str, Any] = {
+        "jenis": _cek_jenis(jenis),
         "kapal": kapal_n,
         "supplier": supplier_n,
         "tahun": int(tahun_n) if tahun_n else None,
@@ -92,13 +107,16 @@ def _build_where(
 
 def list_material(
     *,
+    jenis: str = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
     tahun: str | None = None,
     search: str | None = None,
 ) -> list[MaterialRowOut]:
-    where, params = _build_where(supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search)
+    where, params = _build_where(
+        jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+    )
     query = text(f"{_LIST_QUERY} {where} ORDER BY sd.nama, sd.id")
     with engine.connect() as conn:
         rows = conn.execute(query, params).mappings().all()
@@ -113,13 +131,16 @@ def list_material(
 
 def material_stats(
     *,
+    jenis: str = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
     tahun: str | None = None,
     search: str | None = None,
 ) -> MaterialStats:
-    where, params = _build_where(supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search)
+    where, params = _build_where(
+        jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+    )
     # Supplier & kapal dihitung dari SELURUH riwayat material yang lolos filter, bukan dari
     # harga terakhirnya saja -- kalau tidak, KPI "Total Kapal" ikut salah seperti filternya.
     query = text(
@@ -128,7 +149,7 @@ def material_stats(
             SELECT sd.id
             FROM   sumber_daya sd
             {_LATERAL_HARGA}
-            WHERE  sd.jenis = 'BAHAN' AND sd.aktif {where}
+            WHERE  sd.jenis = :jenis AND sd.aktif {where}
         )
         SELECT (SELECT COUNT(*) FROM lolos) AS total_material,
                COUNT(DISTINCT hh.supplier_id) AS total_supplier,
@@ -147,6 +168,7 @@ def material_stats(
 
 def filter_options(
     *,
+    jenis: str = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
@@ -167,12 +189,13 @@ def filter_options(
         "tahun": ("hh.tahun_pembelian", _norm_filter(tahun)),
     }
     satuan_n = _norm_filter(satuan)
+    jenis_n = _cek_jenis(jenis)
     result: dict[str, list[str]] = {}
 
     with engine.connect() as conn:
         for key in ("supplier", "satuan", "kapal", "tahun"):
             col_expr = "sd.satuan" if key == "satuan" else beli[key][0]
-            clauses, params = [], {}
+            clauses, params = [], {"jenis": jenis_n}
 
             # Filter pembelian lain (selain yang sedang dihitung) diterapkan per baris harga.
             for other, (col, val) in beli.items():
@@ -196,7 +219,7 @@ def filter_options(
                     FROM   sumber_daya sd
                     JOIN   sumber_daya_harga hh ON hh.sumber_daya_id = sd.id
                     LEFT   JOIN supplier sup ON sup.id = hh.supplier_id
-                    WHERE  sd.jenis = 'BAHAN' AND sd.aktif {where}
+                    WHERE  sd.jenis = :jenis AND sd.aktif {where}
                     ORDER  BY {col_expr}
                     """
                 ),
@@ -289,15 +312,23 @@ def _identitas_key(nama: str, spesifikasi: str | None, satuan: str) -> tuple:
     return ("nama", _norm_teks(nama), _norm_teks(satuan))
 
 
-def _peta_identitas(conn: Connection) -> dict[tuple, int]:
-    """Kunci identitas -> id material, untuk seluruh BAHAN yang ada."""
+def _peta_identitas(conn: Connection, jenis: str = "BAHAN") -> dict[tuple, int]:
+    """Kunci identitas -> id material, untuk seluruh sumber daya berjenis `jenis`.
+
+    Disaring per jenis dengan sengaja. `_identitas_key()` tidak menyertakan jenis, jadi
+    peta yang dicampur akan menyamakan "Pengecatan" sebagai BAHAN dengan "Pengecatan"
+    sebagai ALAT -- padahal `uq_sd_identitas` di DB memisahkan keduanya.
+    """
     rows = conn.execute(
-        text("SELECT id, nama, spesifikasi, satuan FROM sumber_daya WHERE jenis = 'BAHAN'")
+        text("SELECT id, nama, spesifikasi, satuan FROM sumber_daya WHERE jenis = :jenis"),
+        {"jenis": _cek_jenis(jenis)},
     ).all()
     return {_identitas_key(nama, spek, satuan): id_ for id_, nama, spek, satuan in rows}
 
 
-def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> list[int]:
+def _resolve_sumber_daya(
+    conn: Connection, items: list[MaterialItemCreate], jenis: str = "BAHAN"
+) -> list[int]:
     """Cari-atau-buat master material, kembalikan id sejajar dengan `items`.
 
     Dulu fungsi ini selalu INSERT, jadi paste batch yang sama dua kali bikin material
@@ -306,7 +337,7 @@ def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> l
     bikin tren harga bisa terbentuk sama sekali.
     """
     keys = [_identitas_key(i.nama, i.spesifikasi, i.satuan) for i in items]
-    existing = _peta_identitas(conn)
+    existing = _peta_identitas(conn, jenis)
 
     # Batch yang sama bisa memuat material yang sama dua kali; yang kedua harus memakai
     # id hasil insert yang pertama, bukan bikin baris baru lagi.
@@ -317,13 +348,25 @@ def _resolve_sumber_daya(conn: Connection, items: list[MaterialItemCreate]) -> l
             baru.append(item)
 
     if baru:
+        # `jenis` WAJIB disebut di sini. Tanpa kolom itu, INSERT jatuh ke DEFAULT 'BAHAN'
+        # (lihat DDL sumber_daya di database.py) sehingga baris upah/alat yang baru dipaste
+        # tersimpan sebagai bahan dan muncul di tab Katalog Material -- rusaknya diam, tidak
+        # ada error yang kelihatan.
         values_sql, params = _multi_values(
-            ["nama", "spesifikasi", "satuan"],
-            [{"nama": i.nama, "spesifikasi": i.spesifikasi or None, "satuan": i.satuan} for i in baru],
+            ["nama", "spesifikasi", "satuan", "jenis"],
+            [
+                {
+                    "nama": i.nama,
+                    "spesifikasi": i.spesifikasi or None,
+                    "satuan": i.satuan,
+                    "jenis": _cek_jenis(jenis),
+                }
+                for i in baru
+            ],
         )
         inserted = conn.execute(
             text(
-                f"INSERT INTO sumber_daya (nama, spesifikasi, satuan) VALUES {values_sql} "
+                f"INSERT INTO sumber_daya (nama, spesifikasi, satuan, jenis) VALUES {values_sql} "
                 "RETURNING id, nama, spesifikasi, satuan"
             ),
             params,
@@ -348,10 +391,10 @@ def _tanda_harga(row: dict[str, Any]) -> tuple:
     )
 
 
-def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> dict[str, int]:
+def bulk_create(payload: BulkMaterialCreate, *, aktor: str, jenis: str = "BAHAN") -> dict[str, int]:
     with engine.begin() as conn:
         supplier_map = _resolve_suppliers(conn, [item.supplier_nama for item in payload.items])
-        sd_ids = _resolve_sumber_daya(conn, payload.items)
+        sd_ids = _resolve_sumber_daya(conn, payload.items, jenis)
 
         semua_rows = [
             {
@@ -404,7 +447,7 @@ def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> dict[str, int]:
                 aksi="create",
                 entitas="material",
                 jumlah=0,
-                detail={"dilewati_duplikat": dilewati},
+                detail={"jenis": jenis, "dilewati_duplikat": dilewati},
             )
             return {"saved": 0, "titik_harga_baru": 0, "dilewati": dilewati}
 
@@ -438,7 +481,11 @@ def bulk_create(payload: BulkMaterialCreate, *, aktor: str) -> dict[str, int]:
             aksi="create",
             entitas="material",
             jumlah=len(harga_rows),
-            detail={"nama": [i.nama for i in payload.items[:20]], "dilewati_duplikat": dilewati},
+            detail={
+                "jenis": jenis,
+                "nama": [i.nama for i in payload.items[:20]],
+                "dilewati_duplikat": dilewati,
+            },
         )
     return {"saved": len(harga_rows), "titik_harga_baru": len(harga_rows), "dilewati": dilewati}
 
@@ -539,7 +586,7 @@ def bulk_patch(body: BulkPatchMaterialRequest, *, aktor: str) -> dict[str, int]:
 # ---------- Pratinjau paste ----------
 
 
-def preview_bulk(payload: BulkMaterialCreate) -> dict[str, Any]:
+def preview_bulk(payload: BulkMaterialCreate, *, jenis: str = "BAHAN") -> dict[str, Any]:
     """Jalankan seluruh logika keputusan tanpa menulis apa pun.
 
     Tanpa ini antarmuka diam soal apa yang akan terjadi, sehingga orang yang hati-hati
@@ -549,9 +596,12 @@ def preview_bulk(payload: BulkMaterialCreate) -> dict[str, Any]:
     bisa berbeda dari yang benar-benar terjadi nanti.
     """
     with engine.connect() as conn:
-        peta = _peta_identitas(conn)
+        peta = _peta_identitas(conn, jenis)
         nama_master = dict(
-            conn.execute(text("SELECT id, nama FROM sumber_daya WHERE jenis = 'BAHAN'")).all()
+            conn.execute(
+                text("SELECT id, nama FROM sumber_daya WHERE jenis = :jenis"),
+                {"jenis": _cek_jenis(jenis)},
+            ).all()
         )
 
         ids = [peta.get(_identitas_key(i.nama, i.spesifikasi, i.satuan)) for i in payload.items]

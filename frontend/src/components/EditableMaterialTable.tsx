@@ -3,7 +3,9 @@ import { ChevronLeft, ChevronRight, ClipboardPaste, Copy, LineChart, Pencil, Plu
 import {
   api,
   formatMoney,
+  pakaiKolomPembelian,
   type Currency,
+  type JenisSumberDaya,
   type MaterialItemInput,
   type MaterialRow,
   type PastePreview,
@@ -20,6 +22,7 @@ const PAGE_SIZE = 50;
 
 type Props = {
   token: string;
+  jenis: JenisSumberDaya;
   rows: MaterialRow[];
   loading: boolean;
   onChanged: () => void; // call after any successful save/delete/add to refresh parent data
@@ -28,28 +31,39 @@ type Props = {
 const CURRENCIES: Currency[] = ["IDR", "EUR", "USD"];
 const CURRENT_YEAR = new Date().getFullYear();
 
-const COLUMN_ORDER: (keyof MaterialItemInput)[] = [
+/** Susunan kolom paste/edit massal. Untuk upah dan alat, Supplier dan Kapal hilang dari
+ * susunan -- bukan cuma disembunyikan tampilannya -- supaya orang tidak perlu menyisipkan
+ * dua kolom kosong di Excel sebelum menempel. `cellsToDraft` membaca susunan yang sama. */
+const KOLOM_INTI: (keyof MaterialItemInput)[] = [
   "nama",
   "spesifikasi",
   "satuan",
   "harga_satuan",
   "mata_uang",
   "tahun_pembelian",
-  "supplier_nama",
-  "nama_kapal",
-  "berlaku_dari",
 ];
-const COLUMN_LABELS = [
-  "Nama",
-  "Spesifikasi",
-  "Satuan",
-  "Harga",
-  "Mata Uang",
-  "Tahun Pembelian",
-  "Supplier",
-  "Kapal",
-  "Berlaku Dari",
-];
+const LABEL_INTI = ["Nama", "Spesifikasi", "Satuan", "Harga", "Mata Uang", "Tahun Pembelian"];
+
+function kolomOrder(adaPembelian: boolean): (keyof MaterialItemInput)[] {
+  return adaPembelian
+    ? [...KOLOM_INTI, "supplier_nama", "nama_kapal", "berlaku_dari"]
+    : [...KOLOM_INTI, "berlaku_dari"];
+}
+
+/** Kata yang dipakai di pesan ke pengguna. "Hapus 3 material terpilih" salah kalau yang
+ * dihapus baris tarif tukang. */
+const ISTILAH: Record<JenisSumberDaya, string> = {
+  BAHAN: "material",
+  UPAH: "tarif upah",
+  ALAT: "tarif alat",
+  KONSUMABEL: "konsumabel",
+};
+
+function kolomLabel(adaPembelian: boolean): string[] {
+  return adaPembelian
+    ? [...LABEL_INTI, "Supplier", "Kapal", "Berlaku Dari"]
+    : [...LABEL_INTI, "Berlaku Dari"];
+}
 
 const emptyDraft: MaterialItemInput = {
   nama: "",
@@ -77,7 +91,7 @@ function normalizeCurrency(raw: string): Currency {
 // udah ke-cover di sel yang sama, jadi sisa kolom dihitung sebagai 8-kolom.
 const INLINE_CURRENCY_RE = /^(IDR|EUR|USD)\s*([\d.,]+)$/i;
 
-function cellsToDraft(cells: string[]): MaterialItemInput {
+function cellsToDraft(cells: string[], adaPembelian = true): MaterialItemInput {
   const get = (i: number) => (cells[i] ?? "").trim();
   const hargaCell = get(3);
   const inlineMatch = hargaCell.match(INLINE_CURRENCY_RE);
@@ -95,6 +109,10 @@ function cellsToDraft(cells: string[]): MaterialItemInput {
     restStart = 5;
   }
 
+  // Tanpa Supplier dan Kapal, Berlaku Dari maju dua kolom. Angka ini harus sejalan dengan
+  // kolomOrder() -- kalau salah, tanggal terbaca sebagai nama supplier tanpa error apa pun.
+  const kolomTanggal = adaPembelian ? restStart + 3 : restStart + 1;
+
   return {
     nama: get(0),
     spesifikasi: get(1),
@@ -106,20 +124,24 @@ function cellsToDraft(cells: string[]): MaterialItemInput {
     // kepaksa dapet tahun yang salah tanpa ketauan). Baris nol/invalid ditolak &
     // di-warning di parsePasteFull.
     tahun_pembelian: Number(get(restStart).replace(/[^\d]/g, "")) || 0,
-    supplier_nama: get(restStart + 1),
-    nama_kapal: get(restStart + 2),
-    berlaku_dari: get(restStart + 3) || null,
+    supplier_nama: adaPembelian ? get(restStart + 1) : "",
+    nama_kapal: adaPembelian ? get(restStart + 2) : "",
+    berlaku_dari: get(kolomTanggal) || null,
     sumber: "",
     no_dokumen: "",
     catatan: "",
   };
 }
 
-function draftToRow(d: MaterialItemInput): string[] {
-  return COLUMN_ORDER.map((k) => String(d[k] ?? ""));
+function draftToRow(d: MaterialItemInput, adaPembelian: boolean): string[] {
+  return kolomOrder(adaPembelian).map((k) => String(d[k] ?? ""));
 }
 
-export default function EditableMaterialTable({ token, rows, loading, onChanged }: Props) {
+export default function EditableMaterialTable({ token, jenis, rows, loading, onChanged }: Props) {
+  const adaPembelian = pakaiKolomPembelian(jenis);
+  const COLUMN_ORDER = useMemo(() => kolomOrder(adaPembelian), [adaPembelian]);
+  const COLUMN_LABELS = useMemo(() => kolomLabel(adaPembelian), [adaPembelian]);
+
   const [historyFor, setHistoryFor] = useState<MaterialRow | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -207,7 +229,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
 
   async function deleteSelected() {
     if (selected.size === 0) return;
-    if (!confirm(`Hapus ${selected.size} material terpilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!confirm(`Hapus ${selected.size} ${ISTILAH[jenis]} terpilih? Tindakan ini tidak bisa dibatalkan.`)) return;
     setBusy(true);
     setError("");
     try {
@@ -232,7 +254,11 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       // diulang di tiap baris -- itu sifat dokumennya, bukan sifat tiap barang. Sebelum ini
       // kolom paste tidak punya tempat untuk nomor dokumen sama sekali, sehingga asal-usul
       // 29 dari 46 titik harga di produksi tidak tercatat.
-      const d = { ...cellsToDraft(cells), sumber: pasteSumber, no_dokumen: pasteNoDok.trim() };
+      const d = {
+        ...cellsToDraft(cells, adaPembelian),
+        sumber: pasteSumber,
+        no_dokumen: pasteNoDok.trim(),
+      };
       if (!d.nama || !d.satuan || d.harga_satuan <= 0) {
         warnings.push(`Baris ${i + 1}: Nama/Satuan/Harga wajib diisi (harga > 0), dilewati`);
         return;
@@ -261,7 +287,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
   async function cekDampak(drafts: MaterialItemInput[]) {
     setCekBusy(true);
     try {
-      setDampak(await api.materialBulkPreview(token, drafts));
+      setDampak(await api.materialBulkPreview(token, drafts, jenis));
     } catch (e) {
       // Pratinjau gagal bukan alasan memblokir penyimpanan -- yang menentukan tetap backend
       // saat simpan. Cukup beri tahu bahwa ringkasannya tidak tersedia.
@@ -317,7 +343,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
     setBusy(true);
     setError("");
     try {
-      const res = await api.materialBulkCreate(token, pastePreview);
+      const res = await api.materialBulkCreate(token, pastePreview, jenis);
       setPasteText("");
       setPastePreview([]);
       setPasteWarnings([]);
@@ -352,7 +378,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
     setBusy(true);
     setError("");
     try {
-      await api.materialBulkCreate(token, [addDraft]);
+      await api.materialBulkCreate(token, [addDraft], jenis);
       setAddDraft(emptyDraft);
       setShowAdd(false);
       onChanged();
@@ -390,13 +416,17 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
   }
 
   function copyBulkEditToClipboard() {
-    const tsv = bulkEditRows.map((r) => draftToRow(r.data).join("\t")).join("\n");
+    const tsv = bulkEditRows.map((r) => draftToRow(r.data, adaPembelian).join("\t")).join("\n");
     navigator.clipboard.writeText(tsv).catch(() => setError("Gagal menyalin ke clipboard"));
   }
 
   function pasteBulkEditFromText(text: string) {
     const parsedRows = parseTsv(text);
-    setBulkEditRows((prev) => prev.map((r, i) => (parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i]) } : r)));
+    setBulkEditRows((prev) =>
+      prev.map((r, i) =>
+        parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i], adaPembelian) } : r,
+      ),
+    );
   }
 
   function updateBulkEditCell(rowIdx: number, field: keyof MaterialItemInput, value: string | number) {
@@ -488,6 +518,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       {editMode && showGrid && (
         <MaterialGridForm
           token={token}
+          jenis={jenis}
           onSaved={onChanged}
           onClose={() => setShowGrid(false)}
         />
@@ -531,8 +562,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                 onChange={(n) => setAddDraft((d) => ({ ...d, tahun_pembelian: n }))}
               />
             </label>
-            <LabeledInput label="Supplier" value={addDraft.supplier_nama} onChange={(v) => setAddDraft((d) => ({ ...d, supplier_nama: v }))} />
-            <LabeledInput label="Kapal" value={addDraft.nama_kapal} onChange={(v) => setAddDraft((d) => ({ ...d, nama_kapal: v }))} />
+            {adaPembelian && (
+              <>
+                <LabeledInput label="Supplier" value={addDraft.supplier_nama} onChange={(v) => setAddDraft((d) => ({ ...d, supplier_nama: v }))} />
+                <LabeledInput label="Kapal" value={addDraft.nama_kapal} onChange={(v) => setAddDraft((d) => ({ ...d, nama_kapal: v }))} />
+              </>
+            )}
             <LabeledInput
               label="Berlaku Dari"
               type="date"
@@ -561,12 +596,19 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
 
           <p className="mb-2 text-xs font-bold text-slate-700">Tempel dari Excel (banyak baris sekaligus)</p>
           <p className="mb-2 text-xs text-slate-600">
-            Urutkan kolom di Excel: <strong>Nama | Spesifikasi | Satuan | Harga | Mata Uang | Tahun Pembelian | Supplier | Kapal | Berlaku Dari</strong>{" "}
-            (Spesifikasi/Mata Uang/Supplier/Kapal/Berlaku Dari boleh kosong -- Mata Uang kosong/tidak dikenali otomatis
-            jadi IDR. Boleh juga gabung Harga+Mata Uang dalam 1 sel, mis. <strong>"EUR 45.10"</strong> -- kolom Mata
-            Uang terpisah nggak usah diisi kalau begini. Tahun Pembelian WAJIB diisi angka tahun yang valid -- ini
-            acuan analitik, jadi sengaja nggak di-tebak otomatis kayak dibuat_pada). Select semua sel, Ctrl+C, lalu
-            paste di kotak bawah.
+            Urutkan kolom di Excel: <strong>{COLUMN_LABELS.join(" | ")}</strong>{" "}
+            (Spesifikasi/Mata Uang/{adaPembelian ? "Supplier/Kapal/" : ""}Berlaku Dari boleh kosong -- Mata Uang
+            kosong/tidak dikenali otomatis jadi IDR. Boleh juga gabung Harga+Mata Uang dalam 1 sel, mis.{" "}
+            <strong>"EUR 45.10"</strong> -- kolom Mata Uang terpisah nggak usah diisi kalau begini. Tahun Pembelian
+            WAJIB diisi angka tahun yang valid -- ini acuan analitik, jadi sengaja nggak di-tebak otomatis kayak
+            dibuat_pada). Select semua sel, Ctrl+C, lalu paste di kotak bawah.
+            {!adaPembelian && (
+              <>
+                {" "}
+                <strong>Tanpa kolom Supplier dan Kapal</strong> -- tarif {jenis === "UPAH" ? "tenaga kerja" : "alat"}{" "}
+                milik sendiri tidak dibeli dari supplier.
+              </>
+            )}
           </p>
           <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="block text-xs font-medium text-slate-600">
@@ -770,7 +812,9 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
       {editMode && bulkEditOpen && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-bold text-slate-800">Edit massal ({bulkEditRows.length} material)</p>
+            <p className="text-sm font-bold text-slate-800">
+              Edit massal ({bulkEditRows.length} {ISTILAH[jenis]})
+            </p>
             <div className="flex gap-2">
               <button type="button" onClick={copyBulkEditToClipboard} className="btn btn-secondary btn-sm">
                 <ClipboardPaste size={13} />
@@ -857,7 +901,9 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
         {loading ? (
           <p className="p-8 text-center text-slate-500">Memuat data...</p>
         ) : rows.length === 0 ? (
-          <p className="p-8 text-center text-sm text-slate-400">Belum ada material yang cocok dengan filter ini.</p>
+          <p className="p-8 text-center text-sm text-slate-400">
+            Belum ada {ISTILAH[jenis]} yang cocok dengan filter ini.
+          </p>
         ) : (
           <div className="max-h-[560px] overflow-auto">
             <table className="min-w-full text-left text-sm">
@@ -881,8 +927,8 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                   <th className="px-4 py-3">Satuan</th>
                   <th className="px-4 py-3 text-right">Harga Terkini</th>
                   <th className="px-4 py-3">Tahun Pembelian</th>
-                  <th className="px-4 py-3">Supplier</th>
-                  <th className="px-4 py-3">Kapal</th>
+                  {adaPembelian && <th className="px-4 py-3">Supplier</th>}
+                  {adaPembelian && <th className="px-4 py-3">Kapal</th>}
                   <th className="px-4 py-3">Berlaku Dari</th>
                   <th className="px-4 py-3"></th>
                   {editMode && <th className="px-4 py-3"></th>}
@@ -933,8 +979,12 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                               onChange={(n) => setDraft((d) => ({ ...d, tahun_pembelian: n }))}
                             />
                           </Cell>
-                          <Cell><input className="cell-input" value={draft.supplier_nama} onChange={(e) => setDraft((d) => ({ ...d, supplier_nama: e.target.value }))} /></Cell>
-                          <Cell><input className="cell-input" value={draft.nama_kapal} onChange={(e) => setDraft((d) => ({ ...d, nama_kapal: e.target.value }))} /></Cell>
+                          {adaPembelian && (
+                            <>
+                              <Cell><input className="cell-input" value={draft.supplier_nama} onChange={(e) => setDraft((d) => ({ ...d, supplier_nama: e.target.value }))} /></Cell>
+                              <Cell><input className="cell-input" value={draft.nama_kapal} onChange={(e) => setDraft((d) => ({ ...d, nama_kapal: e.target.value }))} /></Cell>
+                            </>
+                          )}
                           <Cell><input type="date" className="cell-input" value={draft.berlaku_dari ?? ""} onChange={(e) => setDraft((d) => ({ ...d, berlaku_dari: e.target.value || null }))} /></Cell>
                           <td className="px-4 py-2"></td>
                           <td className="whitespace-nowrap px-4 py-2">
@@ -957,8 +1007,8 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
                             {r.harga_satuan != null ? formatMoney(r.harga_satuan, r.mata_uang ?? "IDR") : "-"}
                           </td>
                           <td className="px-4 py-2">{r.tahun_pembelian ?? "-"}</td>
-                          <td className="px-4 py-2">{r.supplier_nama ?? "-"}</td>
-                          <td className="px-4 py-2">{r.nama_kapal ?? "-"}</td>
+                          {adaPembelian && <td className="px-4 py-2">{r.supplier_nama ?? "-"}</td>}
+                          {adaPembelian && <td className="px-4 py-2">{r.nama_kapal ?? "-"}</td>}
                           <td className="px-4 py-2">{r.berlaku_dari ?? "-"}</td>
                           <td className="px-4 py-2">
                             <button
@@ -992,7 +1042,7 @@ export default function EditableMaterialTable({ token, rows, loading, onChanged 
           <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
             <span>
               Menampilkan {currentPage * PAGE_SIZE + 1}-{Math.min(rows.length, (currentPage + 1) * PAGE_SIZE)} dari{" "}
-              {rows.length} material
+              {rows.length} {ISTILAH[jenis]}
             </span>
             <div className="flex items-center gap-2">
               <button

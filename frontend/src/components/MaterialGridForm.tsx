@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Copy, Plus, Save, Trash2 } from "lucide-react";
-import { api, type Currency, type MaterialItemInput, type PastePreview } from "../lib/api";
+import {
+  api,
+  pakaiKolomPembelian,
+  type Currency,
+  type JenisSumberDaya,
+  type MaterialItemInput,
+  type PastePreview,
+} from "../lib/api";
 import NumberInput from "./NumberInput";
 
 /** Jalan tengah antara menempel seluruh tabel Excel dan mengisi satu baris manual.
@@ -22,11 +29,13 @@ const barisKosong: Baris = { nama: "", spesifikasi: "", satuan: "", harga_satuan
 
 type Props = {
   token: string;
+  jenis: JenisSumberDaya;
   onSaved: () => void;
   onClose: () => void;
 };
 
-export default function MaterialGridForm({ token, onSaved, onClose }: Props) {
+export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Props) {
+  const adaPembelian = pakaiKolomPembelian(jenis);
   const [supplier, setSupplier] = useState("");
   const [kapal, setKapal] = useState("");
   const [tahun, setTahun] = useState(CURRENT_YEAR);
@@ -78,8 +87,8 @@ export default function MaterialGridForm({ token, onSaved, onClose }: Props) {
       harga_satuan: b.harga_satuan,
       mata_uang: mataUang,
       tahun_pembelian: tahun,
-      supplier_nama: supplier.trim(),
-      nama_kapal: kapal.trim(),
+      supplier_nama: adaPembelian ? supplier.trim() : "",
+      nama_kapal: adaPembelian ? kapal.trim() : "",
       berlaku_dari: berlakuDari || null,
       sumber,
       no_dokumen: noDokumen.trim(),
@@ -99,7 +108,7 @@ export default function MaterialGridForm({ token, onSaved, onClose }: Props) {
     setError("");
     setBusy(true);
     try {
-      setDampak(await api.materialBulkPreview(token, keItems()));
+      setDampak(await api.materialBulkPreview(token, keItems(), jenis));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal memeriksa dampak");
     } finally {
@@ -113,7 +122,7 @@ export default function MaterialGridForm({ token, onSaved, onClose }: Props) {
     setError("");
     setBusy(true);
     try {
-      const res = await api.materialBulkCreate(token, keItems());
+      const res = await api.materialBulkCreate(token, keItems(), jenis);
       onSaved();
       alert(
         res.dilewati > 0
@@ -133,14 +142,18 @@ export default function MaterialGridForm({ token, onSaved, onClose }: Props) {
     <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
       <p className="mb-1 text-xs font-bold text-slate-700">Input Beberapa Baris</p>
       <p className="mb-3 text-xs text-slate-600">
-        Isian di bawah ini berlaku untuk seluruh baris, karena satu pembelian biasanya satu
-        supplier, satu kapal, dan satu dokumen. Di tabel bawah tinggal mengetik yang memang
-        berbeda tiap barang.
+        {adaPembelian
+          ? "Isian di bawah ini berlaku untuk seluruh baris, karena satu pembelian biasanya satu supplier, satu kapal, dan satu dokumen. Di tabel bawah tinggal mengetik yang memang berbeda tiap barang."
+          : "Isian di bawah ini berlaku untuk seluruh baris. Supplier dan kapal tidak ditanyakan -- tarif milik sendiri tidak dibeli dari siapa pun."}
       </p>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Isian label="Supplier" value={supplier} onChange={setSupplier} />
-        <Isian label="Kapal" value={kapal} onChange={setKapal} />
+        {adaPembelian && (
+          <>
+            <Isian label="Supplier" value={supplier} onChange={setSupplier} />
+            <Isian label="Kapal" value={kapal} onChange={setKapal} />
+          </>
+        )}
         <label className="block text-xs font-medium text-slate-600">
           Tahun Pembelian *
           <NumberInput

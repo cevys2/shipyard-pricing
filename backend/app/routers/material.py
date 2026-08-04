@@ -6,6 +6,7 @@ from app.auth import get_current_user
 from app.schemas.material import (
     BulkMaterialCreate,
     BulkPatchMaterialRequest,
+    JenisSumberDaya,
     MaterialRowOut,
     MaterialStats,
     PriceCreate,
@@ -15,10 +16,15 @@ from app.services import material as material_service
 
 router = APIRouter(prefix="/material", tags=["material"])
 
+# Default 'BAHAN' di semua endpoint bukan sekadar kenyamanan: klien lama yang tidak
+# mengirim `jenis` harus melihat persis isi yang sama seperti sebelum kolom ini
+# diparameterkan. Tipe Literal-nya yang bikin nilai selain empat itu ditolak 422.
+
 
 @router.get("", response_model=list[MaterialRowOut])
 def get_material(
     _: Annotated[dict, Depends(get_current_user)],
+    jenis: JenisSumberDaya = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
@@ -26,13 +32,14 @@ def get_material(
     search: str | None = None,
 ):
     return material_service.list_material(
-        supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+        jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
     )
 
 
 @router.get("/stats", response_model=MaterialStats)
 def get_stats(
     _: Annotated[dict, Depends(get_current_user)],
+    jenis: JenisSumberDaya = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
@@ -40,13 +47,14 @@ def get_stats(
     search: str | None = None,
 ):
     return material_service.material_stats(
-        supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+        jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
     )
 
 
 @router.get("/filters")
 def get_filters(
     _: Annotated[dict, Depends(get_current_user)],
+    jenis: JenisSumberDaya = "BAHAN",
     supplier: str | None = None,
     satuan: str | None = None,
     kapal: str | None = None,
@@ -54,7 +62,7 @@ def get_filters(
     search: str | None = None,
 ):
     return material_service.filter_options(
-        supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
+        jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
     )
 
 
@@ -62,17 +70,19 @@ def get_filters(
 def preview_bulk(
     body: BulkMaterialCreate,
     _: Annotated[dict, Depends(get_current_user)],
+    jenis: JenisSumberDaya = "BAHAN",
 ):
     """Apa yang akan terjadi kalau paste ini disimpan -- tanpa menulis apa pun."""
-    return material_service.preview_bulk(body)
+    return material_service.preview_bulk(body, jenis=jenis)
 
 
 @router.post("/bulk")
 def create_bulk(
     body: BulkMaterialCreate,
     user: Annotated[dict, Depends(get_current_user)],
+    jenis: JenisSumberDaya = "BAHAN",
 ):
-    return material_service.bulk_create(body, aktor=user["username"])
+    return material_service.bulk_create(body, aktor=user["username"], jenis=jenis)
 
 
 @router.patch("")

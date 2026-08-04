@@ -22,6 +22,11 @@ _DATE_FORMATS = (
 )
 _ORDINAL_SUFFIX_RE = re.compile(r"(\d{1,2})(st|nd|rd|th)\b", re.IGNORECASE)
 
+# Empat nilai ini harus sama persis dengan CHECK constraint sumber_daya.jenis di
+# database.py -- kalau bergeser, FastAPI meloloskan nilai yang nanti ditolak Postgres.
+JenisSumberDaya = Literal["BAHAN", "UPAH", "ALAT", "KONSUMABEL"]
+JENIS_SUMBER_DAYA: tuple[str, ...] = ("BAHAN", "UPAH", "ALAT", "KONSUMABEL")
+
 
 class PriceCreate(BaseModel):
     """Satu titik harga di `sumber_daya_harga`, tanpa field master material.

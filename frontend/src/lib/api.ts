@@ -192,16 +192,16 @@ export const api = {
     const qs = q.toString();
     return request<MaterialFilterOptions>(`/material/filters${qs ? `?${qs}` : ""}`, {}, token);
   },
-  materialBulkPreview(token: string, items: MaterialItemInput[]) {
+  materialBulkPreview(token: string, items: MaterialItemInput[], jenis: JenisSumberDaya = "BAHAN") {
     return request<PastePreview>(
-      "/material/bulk/preview",
+      `/material/bulk/preview?jenis=${jenis}`,
       { method: "POST", body: JSON.stringify({ items }) },
       token,
     );
   },
-  materialBulkCreate(token: string, items: MaterialItemInput[]) {
+  materialBulkCreate(token: string, items: MaterialItemInput[], jenis: JenisSumberDaya = "BAHAN") {
     return request<{ saved: number; titik_harga_baru: number; dilewati: number }>(
-      "/material/bulk",
+      `/material/bulk?jenis=${jenis}`,
       { method: "POST", body: JSON.stringify({ items }) },
       token,
     );
@@ -426,6 +426,23 @@ export type FilterOptions = {
 
 export type Currency = "IDR" | "EUR" | "USD";
 
+/** Harus sama persis dengan CHECK constraint sumber_daya.jenis di backend. */
+export type JenisSumberDaya = "BAHAN" | "UPAH" | "ALAT" | "KONSUMABEL";
+
+export const JENIS_SUMBER_DAYA: { nilai: JenisSumberDaya; label: string }[] = [
+  { nilai: "BAHAN", label: "Bahan" },
+  { nilai: "UPAH", label: "Upah" },
+  { nilai: "ALAT", label: "Alat" },
+  { nilai: "KONSUMABEL", label: "Konsumabel" },
+];
+
+/** Supplier dan kapal itu sifat PEMBELIAN. Upah dan alat milik sendiri tidak dibeli dari
+ * siapa pun -- angkanya tarif internal -- jadi dua kolom itu akan selalu kosong dan lebih
+ * baik tidak ditampilkan sama sekali. Konsumabel (oksigen, elektroda) tetap dibeli. */
+export function pakaiKolomPembelian(jenis: JenisSumberDaya) {
+  return jenis === "BAHAN" || jenis === "KONSUMABEL";
+}
+
 export type MaterialItemInput = {
   nama: string;
   spesifikasi: string;
@@ -469,6 +486,7 @@ export type MaterialFilterOptions = {
   kapal: string[];
   tahun: string[];
 };
+
 
 export function formatRp(n: number) {
   return new Intl.NumberFormat("id-ID", {
