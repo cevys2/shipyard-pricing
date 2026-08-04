@@ -8,6 +8,45 @@ langsung di GitHub.
 
 ---
 
+## 3 Agustus 2026 — upah dan alat bisa diinput, dan fondasi Struktur Biaya
+
+Dua langkah pertama Langkah 3 roadmap (lihat
+[rencana-langkah-3-struktur-biaya.md](rencana-langkah-3-struktur-biaya.md)).
+
+**Katalog Material sekarang menampung empat jenis, bukan cuma bahan.** Ada pemilih
+Bahan / Upah / Alat / Konsumabel di atas tabel. Sebelumnya `jenis = 'BAHAN'` dikunci mati di
+enam tempat di kueri, jadi tidak ada satu pun cara memasukkan tarif tukang atau alat —
+padahal analisa harga satuan tanpa upah dan alat cuma jadi daftar belanja.
+
+Untuk Upah dan Alat, kolom Supplier dan Kapal hilang dari tabel, form, dan susunan tempel
+Excel. Tarif tukang dan kompresor sendiri tidak dibeli dari supplier mana pun; menampilkan
+dua kolom yang selamanya kosong cuma bikin orang mengira ada yang belum diisi.
+
+Tab Bahan tidak berubah isinya sama sekali — nilai bawaannya tetap `'BAHAN'`, jadi kueri yang
+dijalankan sama persis dengan sebelumnya. Ada tes otomatis yang menjaga batas itu.
+
+**Tabel `ahsp` dan `ahsp_komponen` beserta API-nya sudah berdiri**, tanpa tampilan dulu.
+Tiga hal yang sengaja ditolak aplikasinya:
+
+- **Komponen tanpa harga tidak pernah dihitung sebagai nol.** Analisa yang separuh biayanya
+  belum berharga ditandai belum lengkap, komponennya disebut satu per satu, dan harga
+  jualnya ditahan — tidak dikeluarkan angka yang terlihat seperti harga final.
+- **Mata uang berbeda tidak dijumlahkan dan tidak dikonversi.** Konversi butuh kurs, kurs
+  butuh tanggal dan sumber yang disepakati; menebaknya sama saja mengubah harga diam-diam.
+- **Menyimpan rincian itu satu transaksi penuh.** Kalau satu baris bermasalah, tidak ada
+  satu pun baris yang tersimpan — pelajaran yang sama dengan perbaikan impor docking
+  31 Juli.
+
+Baris komponen menyimpan **qty, shift, dan jumlah hari terpisah**, bukan satu koefisien hasil
+perkalian. "4 orang, 1 shift, 0,07 hari" bisa diperiksa orang lapangan; "0,28" tidak bisa.
+Semua angka diproses sebagai desimal tepat, bukan bilangan pecahan biner — kalau tidak,
+4 × 1 × 0,07 × 50.000 menghasilkan 14.000,000000000002.
+
+**Tidak ada markup di tingkat analisa harga satuan.** Ini diverifikasi dari file Excel asli
+perusahaan: 54 dari 54 blok punya nilai akhir sama persis dengan jumlah subtotalnya, tanpa
+satu pun baris overhead atau keuntungan. Marginnya sudah tertanam di tarif tiap komponen, dan
+PPN ditambahkan sekali di tingkat dokumen penawaran — bukan per item.
+
 ## 1 Agustus 2026 — cadangan database akhirnya benar-benar ada
 
 **`backup-service` selama ini tidak mencadangkan apa pun.** Berkas `backup.py`-nya kosong
