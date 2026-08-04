@@ -234,6 +234,67 @@ def _dedup_sumber_daya(conn) -> None:
     )
 
 
+def ensure_ahsp_tables() -> None:
+    """Langkah 3 Sesi 3.1: ahsp + ahsp_komponen (tab Struktur Biaya).
+
+    Berdiri sendiri: `tabel_katalog_harga` tidak disentuh, dan CHECK constraint
+    `sumber_daya.jenis` tidak diubah -- empat jenis yang sudah ada sudah menampung
+    semua komponen (bagian 2 docs/rencana-langkah-3-struktur-biaya.md).
+
+    Baris komponen sengaja menyimpan qty/shift/jml_hari terpisah, bukan satu koefisien
+    hasil perkalian. "4 orang, 1 shift, 0,07 hari" bisa diperiksa orang lapangan;
+    "0,28" tidak bisa.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS ahsp (
+                    id          SERIAL PRIMARY KEY,
+                    uraian      TEXT NOT NULL,
+                    satuan      TEXT NOT NULL,
+                    jenis_jual  TEXT NOT NULL DEFAULT 'JASA'
+                                CHECK (jenis_jual IN ('JASA','MATERIAL')),
+                    kategori    TEXT,
+                    parameter   JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    catatan     TEXT,
+                    aktif       BOOLEAN NOT NULL DEFAULT TRUE,
+                    dibuat_pada TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    diubah_pada TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        # Normalisasi yang sama persis dengan sd_identitas_sql() -- aturan "dianggap kembar"
+        # harus seragam di seluruh aplikasi, kalau tidak yang satu menolak apa yang lain terima.
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_ahsp_uraian ON ahsp "
+                "(lower(regexp_replace(trim(uraian), '\\s+', ' ', 'g')), lower(trim(satuan)))"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS ahsp_komponen (
+                    id             SERIAL PRIMARY KEY,
+                    ahsp_id        INT NOT NULL REFERENCES ahsp(id) ON DELETE CASCADE,
+                    sumber_daya_id INT NOT NULL REFERENCES sumber_daya(id),
+                    kelompok       TEXT NOT NULL
+                                   CHECK (kelompok IN ('BAHAN','UPAH','ALAT','KONSUMABEL')),
+                    qty            NUMERIC(18,6) NOT NULL DEFAULT 1 CHECK (qty > 0),
+                    shift          NUMERIC(18,6) NOT NULL DEFAULT 1 CHECK (shift > 0),
+                    jml_hari       NUMERIC(18,6) NOT NULL DEFAULT 1 CHECK (jml_hari > 0),
+                    urutan         INT NOT NULL DEFAULT 0,
+                    catatan        TEXT,
+                    UNIQUE (ahsp_id, sumber_daya_id, kelompok)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ak_ahsp ON ahsp_komponen(ahsp_id)"))
+
+
 def ensure_partno_unique() -> None:
     """Part number unik per jenis -- part number adalah identitas sebenarnya sebuah material.
 

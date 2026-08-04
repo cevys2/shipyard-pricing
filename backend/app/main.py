@@ -7,7 +7,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.config import settings
-from app.database import ensure_audit_table, ensure_material_tables, ensure_partno_unique
+from app.database import (
+    ensure_ahsp_tables,
+    ensure_audit_table,
+    ensure_material_tables,
+    ensure_partno_unique,
+)
+from app.routers.ahsp import router as ahsp_router
 from app.routers.analitik import router as analitik_router
 from app.routers.catalog import router as catalog_router
 from app.routers.material import router as material_router
@@ -17,6 +23,8 @@ from app.routers.material import router as material_router
 async def lifespan(_: FastAPI):
     ensure_material_tables()
     ensure_partno_unique()
+    # Setelah material: ahsp_komponen punya foreign key ke sumber_daya.
+    ensure_ahsp_tables()
     ensure_audit_table()
     yield
 
@@ -38,6 +46,7 @@ app.add_middleware(
 app.include_router(catalog_router)
 app.include_router(material_router)
 app.include_router(analitik_router)
+app.include_router(ahsp_router)
 
 logger = logging.getLogger(__name__)
 
