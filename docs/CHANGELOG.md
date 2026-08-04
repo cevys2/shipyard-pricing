@@ -8,6 +8,31 @@ langsung di GitHub.
 
 ---
 
+## 4 Agustus 2026 — mengisi Upah dan Alat tidak lagi satu-satu
+
+**Tempel satu kolom sekaligus.** Salin daftar nama dari mana pun, tempel di kotak Nama baris
+pertama, dan tiap baris teks jadi satu baris sendiri — barisnya ditambah otomatis kalau
+kurang. Menyalin beberapa kolom dari Excel juga bisa: tiap kolom mendarat di tempatnya.
+Sebelumnya menempel teks banyak baris ke satu kotak cuma menghasilkan satu baris kacau,
+karena begitulah perilaku bawaan browser, sehingga daftar apa pun harus disalin sel per sel.
+
+**Istilah pembelian tidak lagi dipaksakan ke tarif sendiri.** Untuk Upah dan Alat, "Tahun
+Pembelian" jadi **"Tahun Berlaku"**, "Jenis Dokumen" jadi **"Dasar Penetapan"** dengan pilihan
+SK Manajemen / Memo Internal / Hasil Rapat menggantikan Quotation / PO / Invoice yang tidak
+pernah relevan, dan "Nomor Dokumen" jadi "Nomor SK / Memo". Tarif tukang tidak dibeli dari
+siapa pun; menanyakan tahun pembeliannya tidak pernah masuk akal.
+
+**Kolom Part No. hilang untuk Upah.** Tenaga kerja tidak punya part number. Alat tetap punya —
+model dan kapasitas ditulis di situ.
+
+**Titik ribuan pada tempelan dibaca sebagai ribuan.** "150.000" sekarang menjadi seratus lima
+puluh ribu, bukan 150. Sebelumnya titik selalu dibaca sebagai desimal — keputusan yang
+disengaja untuk isian yang diketik satu per satu, karena "1.050" memang ambigu dan orang yang
+mengetik bisa langsung melihat hasilnya. Untuk tempelan puluhan baris keadaannya terbalik:
+tidak ada yang memeriksa satu per satu, dan kesalahan 1000× lolos tanpa jejak. Angka yang
+ditafsirkan begitu dihitung dan dilaporkan di bawah tabel, jadi penafsirannya tidak diam-diam.
+Format desimal dua angka seperti "45.10" dari quotation EUR tetap dibaca sebagai desimal.
+
 ## 4 Agustus 2026 — tab "Struktur Biaya"
 
 Tampilan untuk tabel AHSP yang dibangun kemarin. Satu tab baru di sidebar.

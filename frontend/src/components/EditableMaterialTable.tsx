@@ -3,7 +3,11 @@ import { ChevronLeft, ChevronRight, ClipboardPaste, Copy, LineChart, Pencil, Plu
 import {
   api,
   formatMoney,
+  labelTahun,
   pakaiKolomPembelian,
+  pakaiSpesifikasi,
+  DASAR_PENETAPAN,
+  JENIS_DOKUMEN_BELI,
   type Currency,
   type JenisSumberDaya,
   type MaterialItemInput,
@@ -11,7 +15,7 @@ import {
   type PastePreview,
   type PastePreviewRow,
 } from "../lib/api";
-import { parseTsv } from "../lib/tsv";
+import { angkaTempel, parseTsv } from "../lib/tsv";
 import NumberInput from "./NumberInput";
 import MaterialGridForm from "./MaterialGridForm";
 // Ikut di-lazy bareng tab Analitik -- drawer ini juga pakai recharts dan cuma tampil
@@ -31,23 +35,28 @@ type Props = {
 const CURRENCIES: Currency[] = ["IDR", "EUR", "USD"];
 const CURRENT_YEAR = new Date().getFullYear();
 
-/** Susunan kolom paste/edit massal. Untuk upah dan alat, Supplier dan Kapal hilang dari
- * susunan -- bukan cuma disembunyikan tampilannya -- supaya orang tidak perlu menyisipkan
- * dua kolom kosong di Excel sebelum menempel. `cellsToDraft` membaca susunan yang sama. */
-const KOLOM_INTI: (keyof MaterialItemInput)[] = [
-  "nama",
-  "spesifikasi",
-  "satuan",
-  "harga_satuan",
-  "mata_uang",
-  "tahun_pembelian",
-];
-const LABEL_INTI = ["Nama", "Spesifikasi", "Satuan", "Harga", "Mata Uang", "Tahun Pembelian"];
+/** Susunan kolom paste/edit massal, diturunkan dari jenisnya. Kolom yang tidak berlaku
+ * benar-benar hilang dari susunan -- bukan cuma disembunyikan tampilannya -- supaya orang
+ * tidak perlu menyisipkan kolom kosong di Excel sebelum menempel.
+ *
+ * `cellsToDraft()` membaca susunan yang SAMA, jadi menambah atau membuang kolom di sini
+ * otomatis ikut menggeser pembacaan tempelan. Tidak ada lagi indeks yang dihitung tangan. */
+function kolomOrder(jenis: JenisSumberDaya): (keyof MaterialItemInput)[] {
+  const k: (keyof MaterialItemInput)[] = ["nama"];
+  if (pakaiSpesifikasi(jenis)) k.push("spesifikasi");
+  k.push("satuan", "harga_satuan", "mata_uang", "tahun_pembelian");
+  if (pakaiKolomPembelian(jenis)) k.push("supplier_nama", "nama_kapal");
+  k.push("berlaku_dari");
+  return k;
+}
 
-function kolomOrder(adaPembelian: boolean): (keyof MaterialItemInput)[] {
-  return adaPembelian
-    ? [...KOLOM_INTI, "supplier_nama", "nama_kapal", "berlaku_dari"]
-    : [...KOLOM_INTI, "berlaku_dari"];
+function kolomLabel(jenis: JenisSumberDaya): string[] {
+  const l = ["Nama"];
+  if (pakaiSpesifikasi(jenis)) l.push("Spesifikasi");
+  l.push("Satuan", "Harga", "Mata Uang", labelTahun(jenis));
+  if (pakaiKolomPembelian(jenis)) l.push("Supplier", "Kapal");
+  l.push("Berlaku Dari");
+  return l;
 }
 
 /** Kata yang dipakai di pesan ke pengguna. "Hapus 3 material terpilih" salah kalau yang
@@ -58,12 +67,6 @@ const ISTILAH: Record<JenisSumberDaya, string> = {
   ALAT: "tarif alat",
   KONSUMABEL: "konsumabel",
 };
-
-function kolomLabel(adaPembelian: boolean): string[] {
-  return adaPembelian
-    ? [...LABEL_INTI, "Supplier", "Kapal", "Berlaku Dari"]
-    : [...LABEL_INTI, "Berlaku Dari"];
-}
 
 const emptyDraft: MaterialItemInput = {
   nama: "",
@@ -91,56 +94,59 @@ function normalizeCurrency(raw: string): Currency {
 // udah ke-cover di sel yang sama, jadi sisa kolom dihitung sebagai 8-kolom.
 const INLINE_CURRENCY_RE = /^(IDR|EUR|USD)\s*([\d.,]+)$/i;
 
-function cellsToDraft(cells: string[], adaPembelian = true): MaterialItemInput {
-  const get = (i: number) => (cells[i] ?? "").trim();
-  const hargaCell = get(3);
-  const inlineMatch = hargaCell.match(INLINE_CURRENCY_RE);
+function cellsToDraft(cells: string[], jenis: JenisSumberDaya = "BAHAN"): MaterialItemInput {
+  const d: MaterialItemInput = { ...emptyDraft, berlaku_dari: null };
+  let i = 0;
+  let mataUangIkutHarga = false;
 
-  let harga_satuan: number;
-  let mata_uang: Currency;
-  let restStart: number;
-  if (inlineMatch) {
-    mata_uang = normalizeCurrency(inlineMatch[1]);
-    harga_satuan = Number(inlineMatch[2].replace(/[^\d.-]/g, "")) || 0;
-    restStart = 4; // Tahun Pembelian langsung di kolom berikutnya, Mata Uang nggak makan kolom sendiri
-  } else {
-    harga_satuan = Number(hargaCell.replace(/[^\d.-]/g, "")) || 0;
-    mata_uang = normalizeCurrency(get(4));
-    restStart = 5;
+  for (const kolom of kolomOrder(jenis)) {
+    // Kalau mata uang digabung di sel harga ("EUR 45.10"), kolom Mata Uang tidak memakan
+    // sel sendiri -- jadi penunjuk selnya sengaja tidak maju di sini.
+    if (kolom === "mata_uang" && mataUangIkutHarga) continue;
+    const sel = (cells[i] ?? "").trim();
+    i++;
+
+    switch (kolom) {
+      case "harga_satuan": {
+        const cocok = sel.match(INLINE_CURRENCY_RE);
+        if (cocok) {
+          mataUangIkutHarga = true;
+          d.mata_uang = normalizeCurrency(cocok[1]);
+          d.harga_satuan = angkaTempel(cocok[2]).nilai;
+        } else {
+          d.harga_satuan = angkaTempel(sel).nilai;
+        }
+        break;
+      }
+      case "mata_uang":
+        d.mata_uang = normalizeCurrency(sel);
+        break;
+      case "tahun_pembelian":
+        // Sengaja TIDAK di-default diam-diam ke tahun sekarang kalau kosong/invalid --
+        // itu masalah yang sama kayak dibuat_pada yang mau dihindari (data lama/backfill
+        // kepaksa dapet tahun yang salah tanpa ketauan). Baris nol/invalid ditolak &
+        // di-warning di parsePasteFull.
+        d.tahun_pembelian = Number(sel.replace(/[^\d]/g, "")) || 0;
+        break;
+      case "berlaku_dari":
+        d.berlaku_dari = sel || null;
+        break;
+      default:
+        d[kolom] = sel as never;
+    }
   }
-
-  // Tanpa Supplier dan Kapal, Berlaku Dari maju dua kolom. Angka ini harus sejalan dengan
-  // kolomOrder() -- kalau salah, tanggal terbaca sebagai nama supplier tanpa error apa pun.
-  const kolomTanggal = adaPembelian ? restStart + 3 : restStart + 1;
-
-  return {
-    nama: get(0),
-    spesifikasi: get(1),
-    satuan: get(2),
-    harga_satuan,
-    mata_uang,
-    // Sengaja TIDAK di-default diam-diam ke tahun sekarang kalau kosong/invalid --
-    // itu masalah yang sama kayak dibuat_pada yang mau dihindari (data lama/backfill
-    // kepaksa dapet tahun yang salah tanpa ketauan). Baris nol/invalid ditolak &
-    // di-warning di parsePasteFull.
-    tahun_pembelian: Number(get(restStart).replace(/[^\d]/g, "")) || 0,
-    supplier_nama: adaPembelian ? get(restStart + 1) : "",
-    nama_kapal: adaPembelian ? get(restStart + 2) : "",
-    berlaku_dari: get(kolomTanggal) || null,
-    sumber: "",
-    no_dokumen: "",
-    catatan: "",
-  };
+  return d;
 }
 
-function draftToRow(d: MaterialItemInput, adaPembelian: boolean): string[] {
-  return kolomOrder(adaPembelian).map((k) => String(d[k] ?? ""));
+function draftToRow(d: MaterialItemInput, jenis: JenisSumberDaya): string[] {
+  return kolomOrder(jenis).map((k) => String(d[k] ?? ""));
 }
 
 export default function EditableMaterialTable({ token, jenis, rows, loading, onChanged }: Props) {
   const adaPembelian = pakaiKolomPembelian(jenis);
-  const COLUMN_ORDER = useMemo(() => kolomOrder(adaPembelian), [adaPembelian]);
-  const COLUMN_LABELS = useMemo(() => kolomLabel(adaPembelian), [adaPembelian]);
+  const adaSpesifikasi = pakaiSpesifikasi(jenis);
+  const COLUMN_ORDER = useMemo(() => kolomOrder(jenis), [jenis]);
+  const COLUMN_LABELS = useMemo(() => kolomLabel(jenis), [jenis]);
 
   const [historyFor, setHistoryFor] = useState<MaterialRow | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -157,7 +163,9 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
   const [dampak, setDampak] = useState<PastePreview | null>(null);
   const [cekBusy, setCekBusy] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
-  const [pasteSumber, setPasteSumber] = useState("Quotation");
+  const [pasteSumber, setPasteSumber] = useState(
+    pakaiKolomPembelian(jenis) ? "Quotation" : "SK Manajemen",
+  );
   const [pasteNoDok, setPasteNoDok] = useState("");
 
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
@@ -255,7 +263,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
       // kolom paste tidak punya tempat untuk nomor dokumen sama sekali, sehingga asal-usul
       // 29 dari 46 titik harga di produksi tidak tercatat.
       const d = {
-        ...cellsToDraft(cells, adaPembelian),
+        ...cellsToDraft(cells, jenis),
         sumber: pasteSumber,
         no_dokumen: pasteNoDok.trim(),
       };
@@ -265,7 +273,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
       }
       if (d.tahun_pembelian < 1990 || d.tahun_pembelian > 2100) {
         warnings.push(
-          `Baris ${i + 1}: Tahun Pembelian tidak valid, dilewati -- cek urutan kolomnya (Harga dan Mata Uang ` +
+          `Baris ${i + 1}: ${labelTahun(jenis)} tidak valid, dilewati -- cek urutan kolomnya (Harga dan Mata Uang ` +
             `boleh digabung 1 sel spt "EUR 45.10", tapi kalau dipisah harus tetap 2 kolom terpisah)`,
         );
         return;
@@ -372,7 +380,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
       return;
     }
     if (addDraft.tahun_pembelian < 1990 || addDraft.tahun_pembelian > 2100) {
-      setError("Tahun Pembelian tidak valid");
+      setError(`${labelTahun(jenis)} tidak valid`);
       return;
     }
     setBusy(true);
@@ -416,7 +424,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
   }
 
   function copyBulkEditToClipboard() {
-    const tsv = bulkEditRows.map((r) => draftToRow(r.data, adaPembelian).join("\t")).join("\n");
+    const tsv = bulkEditRows.map((r) => draftToRow(r.data, jenis).join("\t")).join("\n");
     navigator.clipboard.writeText(tsv).catch(() => setError("Gagal menyalin ke clipboard"));
   }
 
@@ -424,7 +432,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
     const parsedRows = parseTsv(text);
     setBulkEditRows((prev) =>
       prev.map((r, i) =>
-        parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i], adaPembelian) } : r,
+        parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i], jenis) } : r,
       ),
     );
   }
@@ -529,7 +537,9 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
           <p className="mb-3 text-xs font-bold text-slate-700">1 Baris Manual</p>
           <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             <LabeledInput label="Nama *" value={addDraft.nama} onChange={(v) => setAddDraft((d) => ({ ...d, nama: v }))} />
-            <LabeledInput label="Spesifikasi" value={addDraft.spesifikasi} onChange={(v) => setAddDraft((d) => ({ ...d, spesifikasi: v }))} />
+            {adaSpesifikasi && (
+              <LabeledInput label="Spesifikasi" value={addDraft.spesifikasi} onChange={(v) => setAddDraft((d) => ({ ...d, spesifikasi: v }))} />
+            )}
             <LabeledInput label="Satuan *" value={addDraft.satuan} onChange={(v) => setAddDraft((d) => ({ ...d, satuan: v }))} />
             <label className="block text-xs font-medium text-slate-600">
               Harga *
@@ -554,7 +564,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
               </select>
             </label>
             <label className="block text-xs font-medium text-slate-600">
-              Tahun Pembelian *
+              {labelTahun(jenis)} *
               <NumberInput
                 integer
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
@@ -597,7 +607,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
           <p className="mb-2 text-xs font-bold text-slate-700">Tempel dari Excel (banyak baris sekaligus)</p>
           <p className="mb-2 text-xs text-slate-600">
             Urutkan kolom di Excel: <strong>{COLUMN_LABELS.join(" | ")}</strong>{" "}
-            (Spesifikasi/Mata Uang/{adaPembelian ? "Supplier/Kapal/" : ""}Berlaku Dari boleh kosong -- Mata Uang
+            ({adaSpesifikasi ? "Spesifikasi/" : ""}Mata Uang/{adaPembelian ? "Supplier/Kapal/" : ""}Berlaku Dari boleh kosong -- Mata Uang
             kosong/tidak dikenali otomatis jadi IDR. Boleh juga gabung Harga+Mata Uang dalam 1 sel, mis.{" "}
             <strong>"EUR 45.10"</strong> -- kolom Mata Uang terpisah nggak usah diisi kalau begini. Tahun Pembelian
             WAJIB diisi angka tahun yang valid -- ini acuan analitik, jadi sengaja nggak di-tebak otomatis kayak
@@ -612,13 +622,13 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
           </p>
           <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="block text-xs font-medium text-slate-600">
-              Jenis Dokumen
+              {adaPembelian ? "Jenis Dokumen" : "Dasar Penetapan"}
               <select
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
                 value={pasteSumber}
                 onChange={(e) => setPasteSumber(e.target.value)}
               >
-                {["Quotation", "Sales Quotation", "PO", "Invoice", "Manual"].map((s) => (
+                {(adaPembelian ? JENIS_DOKUMEN_BELI : DASAR_PENETAPAN).map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -626,10 +636,10 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
               </select>
             </label>
             <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
-              Nomor Dokumen
+              {adaPembelian ? "Nomor Dokumen" : "Nomor SK / Memo"}
               <input
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-                placeholder="mis. 2410-1547/MAN-SQ"
+                placeholder={adaPembelian ? "mis. 2410-1547/MAN-SQ" : "mis. SK-012/DR/2026"}
                 value={pasteNoDok}
                 onChange={(e) => setPasteNoDok(e.target.value)}
               />
@@ -923,10 +933,10 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
                     </th>
                   )}
                   <th className="px-4 py-3">Nama</th>
-                  <th className="px-4 py-3">Spesifikasi</th>
+                  {adaSpesifikasi && <th className="px-4 py-3">Spesifikasi</th>}
                   <th className="px-4 py-3">Satuan</th>
                   <th className="px-4 py-3 text-right">Harga Terkini</th>
-                  <th className="px-4 py-3">Tahun Pembelian</th>
+                  <th className="px-4 py-3">{labelTahun(jenis)}</th>
                   {adaPembelian && <th className="px-4 py-3">Supplier</th>}
                   {adaPembelian && <th className="px-4 py-3">Kapal</th>}
                   <th className="px-4 py-3">Berlaku Dari</th>
@@ -947,7 +957,9 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
                       {isEditing ? (
                         <>
                           <Cell><input className="cell-input" value={draft.nama} onChange={(e) => setDraft((d) => ({ ...d, nama: e.target.value }))} /></Cell>
-                          <Cell><input className="cell-input" value={draft.spesifikasi} onChange={(e) => setDraft((d) => ({ ...d, spesifikasi: e.target.value }))} /></Cell>
+                          {adaSpesifikasi && (
+                            <Cell><input className="cell-input" value={draft.spesifikasi} onChange={(e) => setDraft((d) => ({ ...d, spesifikasi: e.target.value }))} /></Cell>
+                          )}
                           <Cell><input className="cell-input" value={draft.satuan} onChange={(e) => setDraft((d) => ({ ...d, satuan: e.target.value }))} /></Cell>
                           <Cell align="right">
                             <div className="flex items-center gap-1">
@@ -1001,7 +1013,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
                       ) : (
                         <>
                           <td className="px-4 py-2">{r.nama}</td>
-                          <td className="px-4 py-2">{r.spesifikasi || "-"}</td>
+                          {adaSpesifikasi && <td className="px-4 py-2">{r.spesifikasi || "-"}</td>}
                           <td className="px-4 py-2">{r.satuan}</td>
                           <td className="px-4 py-2 text-right font-medium">
                             {r.harga_satuan != null ? formatMoney(r.harga_satuan, r.mata_uang ?? "IDR") : "-"}

@@ -468,6 +468,24 @@ export function pakaiKolomPembelian(jenis: JenisSumberDaya) {
   return jenis === "BAHAN" || jenis === "KONSUMABEL";
 }
 
+/** Part number adalah identitas sebenarnya sebuah barang. Tenaga kerja tidak punya
+ * part number, jadi kolomnya cuma jadi kotak kosong yang bikin orang mengira ada yang
+ * belum diisi. Alat masih punya -- model dan kapasitas ditulis di situ. */
+export function pakaiSpesifikasi(jenis: JenisSumberDaya) {
+  return jenis !== "UPAH";
+}
+
+/** Tarif tukang dan alat sendiri tidak dibeli dari siapa pun, jadi tahunnya bukan tahun
+ * pembelian melainkan tahun tarif itu berlaku. */
+export function labelTahun(jenis: JenisSumberDaya) {
+  return pakaiKolomPembelian(jenis) ? "Tahun Pembelian" : "Tahun Berlaku";
+}
+
+/** Asal-usul harga. Untuk barang yang dibeli itu dokumen dari supplier; untuk tarif
+ * internal tidak ada quotation atau PO -- yang ada keputusan manajemen. */
+export const JENIS_DOKUMEN_BELI = ["Quotation", "Sales Quotation", "PO", "Invoice", "Manual"];
+export const DASAR_PENETAPAN = ["SK Manajemen", "Memo Internal", "Hasil Rapat", "Manual"];
+
 export type MaterialItemInput = {
   nama: string;
   spesifikasi: string;

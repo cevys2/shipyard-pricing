@@ -2,12 +2,17 @@ import { useState } from "react";
 import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import {
   api,
+  labelTahun,
   pakaiKolomPembelian,
+  pakaiSpesifikasi,
+  DASAR_PENETAPAN,
+  JENIS_DOKUMEN_BELI,
   type Currency,
   type JenisSumberDaya,
   type MaterialItemInput,
   type PastePreview,
 } from "../lib/api";
+import { angkaTempel } from "../lib/tsv";
 import NumberInput from "./NumberInput";
 
 /** Jalan tengah antara menempel seluruh tabel Excel dan mengisi satu baris manual.
@@ -20,7 +25,6 @@ import NumberInput from "./NumberInput";
  */
 
 const CURRENCIES: Currency[] = ["IDR", "EUR", "USD"];
-const JENIS_DOKUMEN = ["Quotation", "Sales Quotation", "PO", "Invoice", "Manual"];
 const CURRENT_YEAR = new Date().getFullYear();
 
 type Baris = { nama: string; spesifikasi: string; satuan: string; harga_satuan: number };
@@ -36,16 +40,25 @@ type Props = {
 
 export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Props) {
   const adaPembelian = pakaiKolomPembelian(jenis);
+  const adaSpesifikasi = pakaiSpesifikasi(jenis);
+  // Urutan kolom tabel di bawah. Dipakai juga waktu menempel banyak sel sekaligus,
+  // supaya tempelan mendarat di kolom yang benar tanpa indeks dihitung tangan.
+  const kolomGrid: (keyof Baris)[] = adaSpesifikasi
+    ? ["nama", "spesifikasi", "satuan", "harga_satuan"]
+    : ["nama", "satuan", "harga_satuan"];
   const [supplier, setSupplier] = useState("");
   const [kapal, setKapal] = useState("");
   const [tahun, setTahun] = useState(CURRENT_YEAR);
   const [berlakuDari, setBerlakuDari] = useState("");
   const [mataUang, setMataUang] = useState<Currency>("IDR");
-  const [sumber, setSumber] = useState("Quotation");
+  const [sumber, setSumber] = useState(
+    pakaiKolomPembelian(jenis) ? "Quotation" : "SK Manajemen",
+  );
   const [noDokumen, setNoDokumen] = useState("");
 
   const [baris, setBaris] = useState<Baris[]>([{ ...barisKosong }, { ...barisKosong }, { ...barisKosong }]);
   const [dampak, setDampak] = useState<PastePreview | null>(null);
+  const [catatanTempel, setCatatanTempel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,6 +81,61 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
   function hapus(i: number) {
     setBaris((prev) => (prev.length === 1 ? [{ ...barisKosong }] : prev.filter((_, j) => j !== i)));
     setDampak(null);
+  }
+
+  /** Tempel banyak baris sekaligus ke dalam grid.
+   *
+   * Mengisi satu per satu itu pekerjaan yang sebenarnya tidak perlu: sumber datanya
+   * biasanya sudah berupa daftar, cuma berantakan. Menempel teks banyak baris ke satu
+   * kotak secara bawaan cuma menghasilkan satu baris kacau, karena begitulah perilaku
+   * <input>. Di sini tempelannya dipecah: tiap baris teks jadi satu baris grid, dan kalau
+   * tempelannya memuat tab (mis. langsung dari Excel) tiap sel mendarat di kolom
+   * berikutnya, dimulai dari kolom tempat kursornya berada.
+   *
+   * Baris ditambahkan otomatis kalau tempelannya lebih panjang daripada grid.
+   */
+  function tempelBanyak(e: React.ClipboardEvent, mulaiBaris: number, kolom: keyof Baris) {
+    const teks = e.clipboardData.getData("text");
+    if (!teks.includes("\n") && !teks.includes("\t")) return; // satu sel: biarkan normal
+    e.preventDefault();
+
+    const grid = teks
+      .split(/\r?\n/)
+      .map((b) => b.split("\t"))
+      .filter((sel) => sel.some((v) => v.trim() !== ""));
+    if (grid.length === 0) return;
+
+    const mulaiKolom = kolomGrid.indexOf(kolom);
+    let nRibuan = 0;
+    setBaris((prev) => {
+      const next = [...prev];
+      while (next.length < mulaiBaris + grid.length) next.push({ ...barisKosong });
+      grid.forEach((sel, r) => {
+        const target = { ...next[mulaiBaris + r] };
+        sel.forEach((nilai, c) => {
+          const k = kolomGrid[mulaiKolom + c];
+          if (!k) return; // tempelan lebih lebar dari kolom yang ada -- sisanya diabaikan
+          const bersih = nilai.trim();
+          if (k === "harga_satuan") {
+            const { nilai, ditafsirkan } = angkaTempel(bersih);
+            target.harga_satuan = nilai;
+            if (ditafsirkan) nRibuan++;
+          }
+          else if (k === "nama") target.nama = bersih;
+          else if (k === "spesifikasi") target.spesifikasi = bersih;
+          else if (k === "satuan") target.satuan = bersih;
+        });
+        next[mulaiBaris + r] = target;
+      });
+      return next;
+    });
+    setDampak(null);
+    setCatatanTempel(
+      nRibuan > 0
+        ? `${grid.length} baris ditempel. ${nRibuan} harga ditulis dengan titik ribuan ` +
+          `(mis. "150.000") dan dibaca sebagai ribuan — periksa kolom Harga sebelum menyimpan.`
+        : `${grid.length} baris ditempel.`,
+    );
   }
 
   /** Isi nilai satu kolom ke semua baris di bawahnya. Satuan sering sama sekelompok
@@ -98,7 +166,7 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
 
   function validasi(): string {
     if (terisi.length === 0) return "Belum ada baris yang lengkap (nama, satuan, dan harga di atas 0).";
-    if (tahun < 1990 || tahun > 2100) return "Tahun pembelian tidak valid.";
+    if (tahun < 1990 || tahun > 2100) return `${labelTahun(jenis)} tidak valid.`;
     return "";
   }
 
@@ -155,7 +223,7 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
           </>
         )}
         <label className="block text-xs font-medium text-slate-600">
-          Tahun Pembelian *
+          {labelTahun(jenis)} *
           <NumberInput
             integer
             className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
@@ -185,21 +253,34 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
           </select>
         </label>
         <label className="block text-xs font-medium text-slate-600">
-          Jenis Dokumen
+          {adaPembelian ? "Jenis Dokumen" : "Dasar Penetapan"}
           <select
             className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
             value={sumber}
             onChange={(e) => setSumber(e.target.value)}
           >
-            {JENIS_DOKUMEN.map((s) => (
+            {(adaPembelian ? JENIS_DOKUMEN_BELI : DASAR_PENETAPAN).map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
         </label>
         <div className="md:col-span-2">
-          <Isian label="Nomor Dokumen" value={noDokumen} onChange={setNoDokumen} placeholder="mis. 2410-1547/MAN-SQ" />
+          <Isian
+            label={adaPembelian ? "Nomor Dokumen" : "Nomor SK / Memo"}
+            value={noDokumen}
+            onChange={setNoDokumen}
+            placeholder={adaPembelian ? "mis. 2410-1547/MAN-SQ" : "mis. SK-012/DR/2026"}
+          />
         </div>
       </div>
+
+      <p className="mb-2 text-xs text-slate-500">
+        Punya daftarnya di tempat lain? Salin satu kolom sekaligus, lalu tempel di kotak
+        <strong> Nama</strong> baris pertama — tiap baris teks jadi satu baris sendiri, dan
+        barisnya ditambah otomatis kalau kurang. Kalau menyalin beberapa kolom dari Excel,
+        kolom-kolomnya ikut mendarat di tempatnya. Tanda <strong>↓</strong> di kolom Satuan
+        mengisi nilai itu ke semua baris di bawahnya.
+      </p>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full text-left text-xs">
@@ -207,7 +288,7 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
             <tr>
               <th className="w-8 px-2 py-2">#</th>
               <th className="px-2 py-2">Nama *</th>
-              <th className="px-2 py-2">Part No. / Spesifikasi</th>
+              {adaSpesifikasi && <th className="px-2 py-2">Part No. / Spesifikasi</th>}
               <th className="px-2 py-2">Satuan *</th>
               <th className="px-2 py-2 text-right">Harga *</th>
               <th className="px-2 py-2"></th>
@@ -223,16 +304,20 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
                     className="w-full rounded border border-slate-200 px-1.5 py-1"
                     value={b.nama}
                     onChange={(e) => ubah(i, { nama: e.target.value })}
+                    onPaste={(e) => tempelBanyak(e, i, "nama")}
                   />
                 </td>
-                <td className="px-2 py-1">
-                  <input
-                    aria-label={`Part number baris ${i + 1}`}
-                    className="w-full rounded border border-slate-200 px-1.5 py-1 font-mono"
-                    value={b.spesifikasi}
-                    onChange={(e) => ubah(i, { spesifikasi: e.target.value })}
-                  />
-                </td>
+                {adaSpesifikasi && (
+                  <td className="px-2 py-1">
+                    <input
+                      aria-label={`Part number baris ${i + 1}`}
+                      className="w-full rounded border border-slate-200 px-1.5 py-1 font-mono"
+                      value={b.spesifikasi}
+                      onChange={(e) => ubah(i, { spesifikasi: e.target.value })}
+                      onPaste={(e) => tempelBanyak(e, i, "spesifikasi")}
+                    />
+                  </td>
+                )}
                 <td className="px-2 py-1">
                   <div className="flex items-center gap-1">
                     <input
@@ -240,6 +325,7 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
                       className="w-full rounded border border-slate-200 px-1.5 py-1"
                       value={b.satuan}
                       onChange={(e) => ubah(i, { satuan: e.target.value })}
+                      onPaste={(e) => tempelBanyak(e, i, "satuan")}
                     />
                     {i < baris.length - 1 && b.satuan.trim() !== "" && (
                       <button
@@ -317,6 +403,10 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
               </p>
             ))}
         </div>
+      )}
+
+      {catatanTempel && (
+        <p className="mt-2 text-xs text-slate-600">{catatanTempel}</p>
       )}
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
