@@ -8,6 +8,33 @@ langsung di GitHub.
 
 ---
 
+## 4 Agustus 2026 — tab "Struktur Biaya"
+
+Tampilan untuk tabel AHSP yang dibangun kemarin. Satu tab baru di sidebar.
+
+Isinya: dua kartu ringkasan (berapa analisa yang rinciannya sudah lengkap, berapa komponen
+yang belum berharga), daftar item yang dijual dengan status per baris, dan lembar rincian
+yang bisa dibuka dengan mengklik barisnya.
+
+**Urutan kelompok biaya mengikuti data, bukan dipatok.** Di file Excel asli urutannya
+berbeda-beda per pekerjaan — 29 blok Upah-Alat-Bahan, 13 cuma Upah-Alat, 8 cuma Alat. Jadi
+nomor kelompok diambil dari urutan komponennya, tidak dikunci Bahan-Upah-Alat.
+
+**Menambah komponen baru bisa langsung dari lembar AHSP.** Ketik namanya; yang mirip di
+katalog ditampilkan lebih dulu, opsi "buat baru" ada di bawahnya. Barang yang dibuat lewat
+sini tersimpan ke Katalog Material juga — memang satu tabel yang sama dilihat dari dua layar.
+Pencariannya sengaja memakai dua kata pertama saja: mengetik "Cat Epoxy 5kg" tidak akan
+menemukan "Cat Epoxy" yang sudah ada kalau seluruh teksnya dipakai, dan di situlah barang
+kembar lahir.
+
+Baris yang komponennya belum berharga diberi latar kuning dan tulisan "belum ada harga",
+tidak pernah nol. Kalau ada satu saja yang bolong, angka totalnya diredupkan, dilabeli
+"subtotal sementara", dan diberi keterangan bahwa angka itu lebih rendah dari biaya
+sebenarnya — harga jualnya sendiri ditahan backend.
+
+Di bawah setiap total tertulis **"belum termasuk PPN"**. Karena harga jual sama persis dengan
+biaya modal, angka itu mudah disalahartikan sebagai harga final ke pelanggan.
+
 ## 3 Agustus 2026 — upah dan alat bisa diinput, dan fondasi Struktur Biaya
 
 Dua langkah pertama Langkah 3 roadmap (lihat

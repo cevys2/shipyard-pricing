@@ -229,6 +229,31 @@ export const api = {
   deletePrice(token: string, hargaId: number) {
     return request<{ deleted: number }>(`/material/harga/${hargaId}`, { method: "DELETE" }, token);
   },
+  ahspList(token: string) {
+    return request<AhspRow[]>("/ahsp", {}, token);
+  },
+  ahspRingkas(token: string) {
+    return request<AhspRingkas>("/ahsp/ringkas", {}, token);
+  },
+  ahspCreate(token: string, body: AhspCreateInput) {
+    return request<{ id: number }>("/ahsp", { method: "POST", body: JSON.stringify(body) }, token);
+  },
+  ahspDelete(token: string, id: number) {
+    return request<{ deleted: number }>(`/ahsp/${id}`, { method: "DELETE" }, token);
+  },
+  ahspKomponen(token: string, id: number) {
+    return request<AhspKomponenRow[]>(`/ahsp/${id}/komponen`, {}, token);
+  },
+  ahspSimpanKomponen(token: string, id: number, items: AhspKomponenInput[]) {
+    return request<{ komponen: number }>(
+      `/ahsp/${id}/komponen`,
+      { method: "PUT", body: JSON.stringify(items) },
+      token,
+    );
+  },
+  ahspHitung(token: string, id: number) {
+    return request<AhspHitung>(`/ahsp/${id}/hitung`, {}, token);
+  },
   trenJasa(token: string, params: { kategori?: string; min_sampel?: number } = {}) {
     const q = new URLSearchParams();
     if (params.kategori && params.kategori !== "Semua") q.set("kategori", params.kategori);
@@ -487,6 +512,75 @@ export type MaterialFilterOptions = {
   tahun: string[];
 };
 
+/* ---------- AHSP / Struktur Biaya ----------
+ *
+ * Semua angka uang dan pengali datang sebagai STRING, bukan number. Pydantic
+ * menserialisasi Decimal jadi string ("12000.50"), dan itu memang yang diinginkan:
+ * koefisien seperti 0,07 tidak lewat float sama sekali. Konversi ke number cuma
+ * dilakukan sesaat sebelum ditampilkan. */
+
+export type AhspRow = {
+  id: number;
+  uraian: string;
+  satuan: string;
+  jenis_jual: "JASA" | "MATERIAL";
+  kategori: string | null;
+  catatan: string | null;
+  aktif: boolean;
+  n_komponen: number;
+  n_tanpa_harga: number;
+  lengkap: boolean;
+  subtotal_total: string | null;
+};
+
+export type AhspKomponenRow = {
+  id: number;
+  sumber_daya_id: number;
+  nama: string;
+  spesifikasi: string;
+  satuan: string;
+  kelompok: JenisSumberDaya;
+  qty: string;
+  shift: string;
+  jml_hari: string;
+  urutan: number;
+  catatan: string;
+  /** null = belum ada baris harga sama sekali. Bukan nol. */
+  harga_satuan: string | null;
+  mata_uang: string | null;
+  jumlah: string | null;
+};
+
+export type AhspHitung = {
+  subtotal: Record<string, string>;
+  subtotal_total: string;
+  /** null selama `lengkap` false -- backend menahan harga jual, bukan menampilkan angka separuh. */
+  harga_jual: string | null;
+  rumus_terpasang: boolean;
+  lengkap: boolean;
+  alasan: string[];
+};
+
+export type AhspRingkas = { total: number; lengkap: number; komponen_tanpa_harga: number };
+
+export type AhspCreateInput = {
+  uraian: string;
+  satuan: string;
+  jenis_jual: "JASA" | "MATERIAL";
+  kategori: string;
+  catatan: string;
+};
+
+export type AhspKomponenInput = {
+  sumber_daya_id: number;
+  kelompok: JenisSumberDaya;
+  /** Dikirim sebagai string supaya 0,07 sampai ke Decimal tanpa mampir ke float. */
+  qty: string;
+  shift: string;
+  jml_hari: string;
+  urutan: number;
+  catatan: string;
+};
 
 export function formatRp(n: number) {
   return new Intl.NumberFormat("id-ID", {
