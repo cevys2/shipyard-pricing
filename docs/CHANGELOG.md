@@ -35,6 +35,15 @@ sebenarnya — harga jualnya sendiri ditahan backend.
 Di bawah setiap total tertulis **"belum termasuk PPN"**. Karena harga jual sama persis dengan
 biaya modal, angka itu mudah disalahartikan sebagai harga final ke pelanggan.
 
+**Perbaikan menyusul di hari yang sama.** Menghapus material yang sedang dipakai di sebuah
+analisa sebelumnya gagal dengan "Gagal menyimpan ke database" — benar bahwa tidak ada data
+yang hilang, tapi tidak menyebutkan sebabnya, sehingga satu-satunya tindakan yang masuk akal
+(mencoba lagi) dijamin gagal terus. Sekarang penolakannya menyebut barangnya dipakai di
+analisa mana dan apa yang harus dilakukan. Selain itu: kotak Qty tidak lagi menampilkan
+`2.000000`, komponen kembar ditolak saat dipilih alih-alih saat disimpan, dan tab ini
+disembunyikan dari pengguna yang bukan admin — seluruh endpoint-nya memang dibatasi admin,
+jadi sebelumnya mereka cuma mendapat pesan "Admin only".
+
 ## 3 Agustus 2026 — upah dan alat bisa diinput, dan fondasi Struktur Biaya
 
 Dua langkah pertama Langkah 3 roadmap (lihat

@@ -111,10 +111,15 @@ export default function DashboardPage({ auth, onLogout }: Props) {
     }
   }
 
+  // Seluruh endpoint /ahsp memakai require_admin, jadi tabnya disembunyikan dari yang bukan
+  // admin. Kalau tetap ditampilkan, satu-satunya yang mereka dapat adalah "Admin only" mentah
+  // dari backend. Ini cuma tampilan -- yang benar-benar menjaga tetap backend.
   const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
     { key: "material", label: "Katalog Material", icon: Package },
-    { key: "ahsp", label: "Struktur Biaya", icon: Calculator },
+    ...(auth.role === "admin"
+      ? [{ key: "ahsp" as Tab, label: "Struktur Biaya", icon: Calculator }]
+      : []),
     { key: "analitik", label: "Analitik", icon: TrendingUp },
     { key: "import", label: "Import Excel", icon: Upload },
   ];

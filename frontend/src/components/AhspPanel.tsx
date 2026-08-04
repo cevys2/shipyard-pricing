@@ -357,6 +357,14 @@ type Draf = {
   mata_uang: string | null;
 };
 
+/** NUMERIC(18,6) kembali dari Postgres sebagai "2.000000". Dibersihkan sekali di sini,
+ * waktu masuk draf -- bukan tiap ketikan. Kalau dibersihkan tiap ketikan, mengetik "0."
+ * langsung jadi "0" dan angka desimal tidak bisa diketik sama sekali. */
+function rapi(s: string): string {
+  const x = Number(s);
+  return Number.isFinite(x) ? String(x) : s;
+}
+
 function keDraf(k: AhspKomponenRow): Draf {
   return {
     key: `k${k.id}`,
@@ -365,9 +373,9 @@ function keDraf(k: AhspKomponenRow): Draf {
     spesifikasi: k.spesifikasi,
     satuan: k.satuan,
     kelompok: k.kelompok,
-    qty: k.qty,
-    shift: k.shift,
-    jml_hari: k.jml_hari,
+    qty: rapi(k.qty),
+    shift: rapi(k.shift),
+    jml_hari: rapi(k.jml_hari),
     harga_satuan: k.harga_satuan,
     mata_uang: k.mata_uang,
   };
@@ -438,6 +446,15 @@ function LembarRincian({
   }
 
   function tambahBaris(kel: JenisSumberDaya, m: MaterialRow) {
+    const sekarang = draf ?? komponen.map(keDraf);
+    // Backend menolak pasangan (komponen, kelompok) yang kembar, tapi kalau baru ketahuan
+    // waktu menyimpan, seluruh isian lain ikut tertahan sampai orang menemukan barisnya.
+    if (sekarang.some((d) => d.sumber_daya_id === m.id && d.kelompok === kel)) {
+      setError(`"${m.nama}" sudah ada di kelompok ${KELOMPOK_LABEL[kel]}. Ubah saja barisnya.`);
+      setTambahKe(null);
+      return;
+    }
+    setError("");
     setDraf((prev) => [
       ...(prev ?? komponen.map(keDraf)),
       {
