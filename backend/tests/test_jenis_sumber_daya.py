@@ -7,18 +7,26 @@ yang sekarang tidak boleh berubah isinya sedikit pun gara-gara ada baris upah.
 import pytest
 from sqlalchemy import text
 
-from app.database import engine, ensure_material_tables
+from app.database import engine, ensure_ahsp_tables, ensure_material_tables
 from app.schemas.material import BulkMaterialCreate, MaterialItemCreate
 from app.services import material as svc
 
 
 @pytest.fixture(autouse=True)
 def tabel_material_bersih():
-    """DB tes cuma punya tabel_katalog_harga + audit_log, jadi tabel material dibikin dulu."""
+    """DB tes cuma punya tabel_katalog_harga + audit_log, jadi tabel material dibikin dulu.
+
+    Tabel AHSP ikut dibikin karena `bulk_patch` sekarang memeriksa `ahsp_komponen` sebelum
+    menghapus -- sama seperti urutan di lifespan aplikasi sungguhan.
+    """
     ensure_material_tables()
+    ensure_ahsp_tables()
     with engine.begin() as conn:
         conn.execute(
-            text("TRUNCATE sumber_daya, sumber_daya_harga, supplier RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE ahsp, ahsp_komponen, sumber_daya, sumber_daya_harga, supplier "
+                "RESTART IDENTITY CASCADE"
+            )
         )
     yield
 

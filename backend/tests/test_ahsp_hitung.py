@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from app.database import engine, ensure_ahsp_tables, ensure_material_tables
 from app.schemas.ahsp import AhspCreate, KomponenInput
-from app.schemas.material import BulkMaterialCreate, MaterialItemCreate
+from app.schemas.material import BulkMaterialCreate, BulkPatchMaterialRequest, MaterialItemCreate
 from app.services import ahsp as svc
 from app.services import material as material_svc
 
@@ -228,6 +228,41 @@ def test_urutan_kelompok_ikut_kolom_urutan_bukan_abjad_jenis():
         aktor="tes",
     )
     assert [k["kelompok"] for k in svc.komponen(a)] == ["UPAH", "BAHAN"]
+
+
+def test_hapus_material_yang_dipakai_ahsp_ditolak_dengan_sebabnya():
+    """Foreign key ahsp_komponen -> sumber_daya menolak penghapusan ini.
+
+    Tanpa pemeriksaan di aplikasi, penolakan itu jatuh ke penangan SQLAlchemyError dan
+    pengguna cuma melihat "Gagal menyimpan ke database" -- benar bahwa datanya aman, tapi
+    tidak menyebut barang mana, dipakai di mana, atau apa yang harus dilakukan.
+    """
+    cat = _sumber_daya("Cat Epoxy", "BAHAN", 100_000.0)
+    a = _ahsp("Pengecatan lambung", "m2")
+    svc.ganti_komponen(a, [KomponenInput(sumber_daya_id=cat, kelompok="BAHAN")], aktor="tes")
+
+    with pytest.raises(ValueError) as e:
+        material_svc.bulk_patch(BulkPatchMaterialRequest(delete_ids=[cat]), aktor="tes")
+
+    pesan = str(e.value)
+    assert "Cat Epoxy" in pesan and "Pengecatan lambung" in pesan, (
+        f"pesannya harus menyebut barang dan analisanya, dapat: {pesan}"
+    )
+
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM sumber_daya WHERE id = :i"), {"i": cat}).scalar() == 1
+        assert conn.execute(text("SELECT COUNT(*) FROM ahsp_komponen")).scalar() == 1
+
+
+def test_material_yang_tidak_dipakai_tetap_bisa_dihapus():
+    """Penjaga di atas tidak boleh ikut memblokir penghapusan biasa."""
+    cat = _sumber_daya("Cat Epoxy", "BAHAN", 100_000.0)
+    nganggur = _sumber_daya("Kuas", "BAHAN", 25_000.0, satuan="Bh")
+    a = _ahsp("Pengecatan lambung", "m2")
+    svc.ganti_komponen(a, [KomponenInput(sumber_daya_id=cat, kelompok="BAHAN")], aktor="tes")
+
+    hasil = material_svc.bulk_patch(BulkPatchMaterialRequest(delete_ids=[nganggur]), aktor="tes")
+    assert hasil["deleted"] == 1
 
 
 def test_penerimaan_dr05_delapan_juta_lima_ratus_ribu():

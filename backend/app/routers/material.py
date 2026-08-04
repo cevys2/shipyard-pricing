@@ -92,7 +92,12 @@ def patch_material(
 ):
     if not body.updates and not body.delete_ids:
         raise HTTPException(status_code=400, detail="Tidak ada perubahan")
-    return material_service.bulk_patch(body, aktor=user["username"])
+    try:
+        return material_service.bulk_patch(body, aktor=user["username"])
+    except ValueError as e:
+        # Mis. material yang masih dipakai di AHSP. Tanpa ini, penolakan foreign key jatuh
+        # ke penangan SQLAlchemyError dan pengguna cuma melihat "Gagal menyimpan ke database".
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{sumber_daya_id}/harga", response_model=list[PriceHistoryRow])

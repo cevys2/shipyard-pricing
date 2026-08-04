@@ -528,6 +528,34 @@ def bulk_patch(body: BulkPatchMaterialRequest, *, aktor: str) -> dict[str, int]:
     harga_baru = 0
     with engine.begin() as conn:
         if body.delete_ids:
+            # ahsp_komponen menunjuk ke sumber_daya tanpa ON DELETE, jadi Postgres menolak
+            # penghapusan ini sebagai pelanggaran foreign key. Tanpa pemeriksaan di sini,
+            # yang sampai ke pengguna cuma "Gagal menyimpan ke database" -- benar bahwa
+            # datanya aman, tapi tidak memberi tahu apa pun tentang sebabnya atau jalan
+            # keluarnya.
+            terpakai = conn.execute(
+                text(
+                    """
+                    SELECT sd.nama, a.uraian
+                    FROM   ahsp_komponen k
+                    JOIN   sumber_daya sd ON sd.id = k.sumber_daya_id
+                    JOIN   ahsp a         ON a.id  = k.ahsp_id
+                    WHERE  k.sumber_daya_id = ANY(:ids)
+                    ORDER  BY sd.nama, a.uraian
+                    """
+                ),
+                {"ids": body.delete_ids},
+            ).all()
+            if terpakai:
+                nama = sorted({t[0] for t in terpakai})
+                analisa = sorted({t[1] for t in terpakai})
+                raise ValueError(
+                    f"{', '.join(nama)} masih dipakai di analisa harga satuan: "
+                    f"{', '.join(analisa[:5])}"
+                    + (f", dan {len(analisa) - 5} lainnya" if len(analisa) > 5 else "")
+                    + ". Hapus dulu komponennya dari analisa itu di tab Struktur Biaya."
+                )
+
             nama_dihapus = conn.execute(
                 text("SELECT nama FROM sumber_daya WHERE id = ANY(:ids)"), {"ids": body.delete_ids}
             ).scalars().all()
