@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import engine, sd_identitas_sql
+from app.database import KOLOM_CARI_MATERIAL, engine, sd_identitas_sql
 from app.schemas.material import (
     JENIS_SUMBER_DAYA,
     BulkMaterialCreate,
@@ -15,7 +15,10 @@ from app.schemas.material import (
     PriceHistoryRow,
     PriceCreate,
 )
-from app.services import audit
+from app.services import audit, pencarian
+
+# Nama kolom dengan alias tabelnya, sesuai bentuk yang dipakai query di file ini.
+_KOLOM_CARI = tuple(f"sd.{k}" for k in KOLOM_CARI_MATERIAL)
 
 # Kapal, supplier, dan tahun itu sifat PEMBELIAN, bukan sifat materialnya -- satu material
 # bisa dibeli untuk beberapa kapal dari beberapa supplier di beberapa tahun. Dulu ketiganya
@@ -78,9 +81,13 @@ def _build_where(
     kapal: str | None = None,
     tahun: str | None = None,
     search: str | None = None,
-) -> tuple[str, dict[str, Any]]:
-    """Klausa tambahan + parameter. Parameter kapal/supplier/tahun SELALU ada (None kalau
-    tidak aktif) karena dipakai di dalam LATERAL, bukan cuma di WHERE."""
+) -> tuple[str, dict[str, Any], pencarian.Pencarian | None]:
+    """Klausa tambahan + parameter + rakitan pencarian. Parameter kapal/supplier/tahun SELALU
+    ada (None kalau tidak aktif) karena dipakai di dalam LATERAL, bukan cuma di WHERE.
+
+    Rakitan pencarian ikut dikembalikan supaya pemanggil yang menampilkan baris bisa
+    mengurutkan pakai skor relevansinya; yang cuma menghitung (stats) boleh mengabaikannya.
+    """
     kapal_n, supplier_n = _norm_filter(kapal), _norm_filter(supplier)
     tahun_n = _norm_filter(tahun)
     params: dict[str, Any] = {
@@ -98,11 +105,12 @@ def _build_where(
     if satuan and satuan != "Semua":
         clauses.append("sd.satuan = :satuan")
         params["satuan"] = satuan
-    if search:
-        clauses.append("(sd.nama ILIKE :search OR sd.spesifikasi ILIKE :search)")
-        params["search"] = f"%{search}%"
+    cari = pencarian.bangun(search, _KOLOM_CARI)
+    if cari:
+        clauses.append(cari.kondisi)
+        params.update(cari.params)
     where = (" AND " + " AND ".join(clauses)) if clauses else ""
-    return where, params
+    return where, params, cari
 
 
 def list_material(
@@ -114,10 +122,14 @@ def list_material(
     tahun: str | None = None,
     search: str | None = None,
 ) -> list[MaterialRowOut]:
-    where, params = _build_where(
+    where, params, cari = _build_where(
         jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
     )
-    query = text(f"{_LIST_QUERY} {where} ORDER BY sd.nama, sd.id")
+    # Tanpa kata kunci urutannya tetap alfabetis seperti dulu -- peringkat relevansi cuma
+    # punya arti kalau ada yang dicari. Nama & id tetap jadi pemecah seri supaya urutannya
+    # stabil antar pemanggilan, bukan berubah-ubah untuk skor yang sama.
+    urut = f"{cari.skor} DESC, sd.nama, sd.id" if cari else "sd.nama, sd.id"
+    query = text(f"{_LIST_QUERY} {where} ORDER BY {urut}")
     with engine.connect() as conn:
         rows = conn.execute(query, params).mappings().all()
     out = []
@@ -138,7 +150,7 @@ def material_stats(
     tahun: str | None = None,
     search: str | None = None,
 ) -> MaterialStats:
-    where, params = _build_where(
+    where, params, _ = _build_where(
         jenis=jenis, supplier=supplier, satuan=satuan, kapal=kapal, tahun=tahun, search=search
     )
     # Supplier & kapal dihitung dari SELURUH riwayat material yang lolos filter, bukan dari
@@ -207,9 +219,10 @@ def filter_options(
             if key != "satuan" and satuan_n:
                 clauses.append("sd.satuan = :satuan")
                 params["satuan"] = satuan_n
-            if search:
-                clauses.append("(sd.nama ILIKE :search OR sd.spesifikasi ILIKE :search)")
-                params["search"] = f"%{search}%"
+            cari = pencarian.bangun(search, _KOLOM_CARI)
+            if cari:
+                clauses.append(cari.kondisi)
+                params.update(cari.params)
 
             where = (" AND " + " AND ".join(clauses)) if clauses else ""
             rows = conn.execute(

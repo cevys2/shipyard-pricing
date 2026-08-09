@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.config import settings
-from app.database import engine
+from app.database import KOLOM_CARI_KATALOG, engine
 from app.schemas.catalog import (
     BulkCatalogCreate,
     BulkPatchRequest,
@@ -16,7 +16,7 @@ from app.schemas.catalog import (
     CatalogStats,
     TipePerjanjian,
 )
-from app.services import audit
+from app.services import audit, pencarian
 
 TABLE = settings.catalog_table
 
@@ -42,7 +42,7 @@ def _build_where(
     tahun: str | None = None,
     tipe: str | None = None,
     search: str | None = None,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, dict[str, Any], pencarian.Pencarian | None]:
     clauses = []
     params: dict[str, Any] = {}
     filters = {"perusahaan": perusahaan, "kapal": kapal, "kategori": kategori, "tahun": tahun, "tipe": tipe}
@@ -51,11 +51,16 @@ def _build_where(
             col = _FILTER_COLS[key]
             clauses.append(f"{col} = :{key}")
             params[key] = val
-    if search:
-        clauses.append("uraian_pekerjaan ILIKE :search")
-        params["search"] = f"%{search}%"
+    # Kategori pekerjaan ikut dicari, bukan cuma uraiannya: orang mengetik "sandblasting"
+    # tanpa tahu itu isi kolom kategori atau kolom uraian. Nama kapal & perusahaan sengaja
+    # TIDAK ikut -- keduanya sudah punya dropdown sendiri, dan kalau ikut tercari maka
+    # mengetik nama kapal akan menarik seluruh baris kapal itu dan menenggelamkan yang dicari.
+    cari = pencarian.bangun(search, KOLOM_CARI_KATALOG)
+    if cari:
+        clauses.append(cari.kondisi)
+        params.update(cari.params)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    return where, params
+    return where, params, cari
 
 
 def list_catalog(
@@ -67,10 +72,11 @@ def list_catalog(
     tipe: str | None = None,
     search: str | None = None,
 ) -> list[CatalogRowOut]:
-    where, params = _build_where(
+    where, params, cari = _build_where(
         perusahaan=perusahaan, kapal=kapal, kategori=kategori, tahun=tahun, tipe=tipe, search=search
     )
-    query = text(f"SELECT {_COLUMNS} FROM {TABLE} {where} ORDER BY nama_kapal, id")
+    urut = f"{cari.skor} DESC, nama_kapal, id" if cari else "nama_kapal, id"
+    query = text(f"SELECT {_COLUMNS} FROM {TABLE} {where} ORDER BY {urut}")
     with engine.connect() as conn:
         rows = conn.execute(query, params).mappings().all()
     out = []
@@ -92,7 +98,7 @@ def catalog_stats(
     tipe: str | None = None,
     search: str | None = None,
 ) -> CatalogStats:
-    where, params = _build_where(
+    where, params, _ = _build_where(
         perusahaan=perusahaan, kapal=kapal, kategori=kategori, tahun=tahun, tipe=tipe, search=search
     )
     query = text(
@@ -125,7 +131,7 @@ def filter_options(
     with engine.connect() as conn:
         for key, col in _FILTER_COLS.items():
             others = {k: v for k, v in active.items() if k != key}
-            where, params = _build_where(**others, search=search)
+            where, params, _ = _build_where(**others, search=search)
             rows = conn.execute(
                 text(f"SELECT DISTINCT {col} FROM {TABLE} {where} ORDER BY {col}"), params
             ).all()

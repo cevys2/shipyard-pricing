@@ -12,6 +12,7 @@ from app.database import (
     ensure_audit_table,
     ensure_material_tables,
     ensure_partno_unique,
+    ensure_pencarian_index,
 )
 from app.routers.ahsp import router as ahsp_router
 from app.routers.analitik import router as analitik_router
@@ -26,6 +27,9 @@ async def lifespan(_: FastAPI):
     # Setelah material: ahsp_komponen punya foreign key ke sumber_daya.
     ensure_ahsp_tables()
     ensure_audit_table()
+    # Paling akhir: index pencarian menempel ke sumber_daya dan tabel_katalog_harga,
+    # jadi keduanya harus sudah ada.
+    ensure_pencarian_index()
     yield
 
 

@@ -185,7 +185,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
           <div className="relative w-72">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              placeholder="Cari uraian pekerjaan..."
+              placeholder="Cari uraian / kategori pekerjaan..."
               className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-blue-100"
               value={filters.search}
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}

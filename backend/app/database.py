@@ -1,9 +1,14 @@
+import logging
 import os
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
+from app.services import pencarian
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_db_url(db_url: str) -> str:
@@ -28,6 +33,32 @@ def get_engine() -> Engine:
 
 
 engine = get_engine()
+
+
+@event.listens_for(engine, "connect")
+def _atur_ambang_trgm(dbapi_conn, _catatan) -> None:
+    """Setel ambang operator `<%` sekali per koneksi baru, bukan tiap query.
+
+    Operator `<%` di pencarian memakai ambang dari GUC ini. Menyetelnya per query berarti
+    satu round-trip tambahan ke Railway untuk setiap ketikan di kotak cari; per koneksi
+    berarti sekali saja lalu ikut dipakai ulang oleh pool.
+
+    Dilewati kalau pg_trgm belum ketahuan terpasang -- menyetel parameter milik ekstensi
+    yang tidak ada bikin koneksinya gagal, dan itu akan menjatuhkan seluruh aplikasi,
+    bukan cuma pencariannya.
+    """
+    if not pencarian.trgm_siap():
+        return
+    try:
+        cur = dbapi_conn.cursor()
+        cur.execute(f"SET pg_trgm.word_similarity_threshold = {pencarian.AMBANG}")
+        cur.close()
+    except Exception:  # noqa: BLE001 -- driver bisa melempar apa saja di sini
+        logger.warning(
+            "Gagal menyetel pg_trgm.word_similarity_threshold; pencarian jatuh ke ambang "
+            "bawaan 0.6 (lebih ketat, salah ketik berat tidak ketemu).",
+            exc_info=True,
+        )
 
 
 def ensure_material_tables() -> None:
@@ -318,6 +349,70 @@ def ensure_partno_unique() -> None:
             "[warn] uq_sd_partno tidak bisa dipasang, kemungkinan ada part number kembar di "
             f"sumber_daya. Aplikasi tetap jalan. Detail: {type(e).__name__}: {e}"
         )
+
+
+# Kolom yang ikut tercari di tiap kotak pencarian. Dipakai bareng oleh definisi index di
+# bawah dan oleh service-nya, supaya ekspresi index dan ekspresi query tidak pernah beda.
+KOLOM_CARI_MATERIAL = ("nama", "spesifikasi")
+KOLOM_CARI_KATALOG = ("uraian_pekerjaan", "kategori_pekerjaan")
+
+
+def ensure_pencarian_index() -> None:
+    """pg_trgm + index GIN buat pencarian yang memaafkan salah ketik.
+
+    Ekstensinya sengaja tidak diwajibkan. Kalau role DB di Railway tidak boleh
+    `CREATE EXTENSION`, aplikasi tetap start dan pencarian jatuh ke pencocokan substring
+    per kata (lihat services/pencarian.py) -- lebih tumpul, tapi hidup. Menjadikannya
+    syarat wajib artinya satu izin DB yang kurang bikin seluruh aplikasi tidak bisa naik.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+    except SQLAlchemyError:
+        logger.warning(
+            "pg_trgm tidak bisa dipasang -- pencarian tetap jalan tapi tanpa toleransi "
+            "salah ketik. Pasang manual sebagai superuser: CREATE EXTENSION pg_trgm;",
+            exc_info=True,
+        )
+
+    with engine.connect() as conn:
+        ada = conn.execute(
+            text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")
+        ).first()
+    pencarian.set_trgm(bool(ada))
+    if not ada:
+        return
+
+    # Koneksi yang terlanjur dibuat sebelum baris di atas (termasuk yang dipakai fungsi ini)
+    # melewati listener `_atur_ambang_trgm` karena saat itu status pg_trgm belum ketahuan.
+    # Dibuang supaya semua koneksi yang melayani request nanti benar-benar punya ambangnya.
+    engine.dispose()
+
+    # Index ekspresi: yang di-index adalah gabungan kolom yang sudah dinormalisasi, persis
+    # ekspresi yang dipakai query -- kalau beda sedikit saja, index terpasang tapi tidak
+    # pernah tersentuh. Ini bukan kekhawatiran teoretis: versi pertama memakai
+    # `word_similarity(...) >= ambang` alih-alih operator `<%`, dan EXPLAIN menunjukkan
+    # SELURUH index pencarian tidak terpakai -- satu cabang OR yang tidak bisa di-index
+    # memaksa pindai penuh, yang bikin index cabang-cabang lainnya jadi percuma.
+    index = (
+        ("idx_sd_cari_trgm", "sumber_daya", pencarian.jerami_sql(KOLOM_CARI_MATERIAL)),
+        ("idx_sd_cari_rapat", "sumber_daya", pencarian.rapat_sql(KOLOM_CARI_MATERIAL)),
+        ("idx_katalog_cari_trgm", settings.catalog_table, pencarian.jerami_sql(KOLOM_CARI_KATALOG)),
+        ("idx_katalog_cari_rapat", settings.catalog_table, pencarian.rapat_sql(KOLOM_CARI_KATALOG)),
+    )
+    for nama, tabel, ekspresi in index:
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        f"CREATE INDEX IF NOT EXISTS {nama} ON {tabel} "
+                        f"USING gin (({ekspresi}) gin_trgm_ops)"
+                    )
+                )
+        except SQLAlchemyError:
+            # Satu index gagal (mis. tabelnya belum ada di DB kosong) tidak boleh
+            # menggagalkan yang lain -- semuanya cuma optimasi, bukan syarat kebenaran.
+            logger.warning("Index pencarian %s gagal dibuat", nama, exc_info=True)
 
 
 def ensure_audit_table() -> None:
