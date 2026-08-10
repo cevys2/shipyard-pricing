@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ClipboardPaste, Copy, LineChart, Pencil, Plu
 import {
   api,
   formatMoney,
+  formatMoneyRingkas,
   labelTahun,
   pakaiKolomPembelian,
   pakaiSpesifikasi,
@@ -15,7 +16,7 @@ import {
   type PastePreview,
   type PastePreviewRow,
 } from "../lib/api";
-import { angkaTempel, parseTsv } from "../lib/tsv";
+import { bacaAngkaUang, parseTsv } from "../lib/tsv";
 import NumberInput from "./NumberInput";
 import MaterialGridForm from "./MaterialGridForm";
 // Ikut di-lazy bareng tab Analitik -- drawer ini juga pakai recharts dan cuma tampil
@@ -94,10 +95,22 @@ function normalizeCurrency(raw: string): Currency {
 // udah ke-cover di sel yang sama, jadi sisa kolom dihitung sebagai 8-kolom.
 const INLINE_CURRENCY_RE = /^(IDR|EUR|USD)\s*([\d.,]+)$/i;
 
-function cellsToDraft(cells: string[], jenis: JenisSumberDaya = "BAHAN"): MaterialItemInput {
+/** Hasil baca satu baris tempelan: draftnya, plus bagaimana kolom Harga dibaca.
+ *
+ * Sel mentahnya ikut dibawa keluar supaya pemanggil bisa menyebut sel apa yang bermasalah,
+ * bukan cuma bahwa ada yang bermasalah. Sebelumnya harga yang tidak terbaca jatuh jadi 0
+ * lalu tertangkap oleh syarat "harga > 0", jadi orang yang menempel "abc" diberi tahu
+ * bahwa harganya belum diisi -- padahal sudah, cuma tidak terbaca. */
+type HasilBarisTempel = {
+  draft: MaterialItemInput;
+  harga: { mentah: string; ditafsirkan: boolean; dikenali: boolean };
+};
+
+function cellsToDraft(cells: string[], jenis: JenisSumberDaya = "BAHAN"): HasilBarisTempel {
   const d: MaterialItemInput = { ...emptyDraft, berlaku_dari: null };
   let i = 0;
   let mataUangIkutHarga = false;
+  let harga = { mentah: "", ditafsirkan: false, dikenali: false };
 
   for (const kolom of kolomOrder(jenis)) {
     // Kalau mata uang digabung di sel harga ("EUR 45.10"), kolom Mata Uang tidak memakan
@@ -109,13 +122,15 @@ function cellsToDraft(cells: string[], jenis: JenisSumberDaya = "BAHAN"): Materi
     switch (kolom) {
       case "harga_satuan": {
         const cocok = sel.match(INLINE_CURRENCY_RE);
+        // Sel mentahnya selalu sel utuhnya, termasuk mata uang yang ikut di dalamnya --
+        // itu yang dilihat pengguna di Excel, jadi itu yang harus dia kenali di peringatan.
+        const r = bacaAngkaUang(cocok ? cocok[2] : sel);
         if (cocok) {
           mataUangIkutHarga = true;
           d.mata_uang = normalizeCurrency(cocok[1]);
-          d.harga_satuan = angkaTempel(cocok[2]).nilai;
-        } else {
-          d.harga_satuan = angkaTempel(sel).nilai;
         }
+        d.harga_satuan = r.nilai;
+        harga = { mentah: sel, ditafsirkan: r.ditafsirkan, dikenali: r.dikenali };
         break;
       }
       case "mata_uang":
@@ -135,7 +150,7 @@ function cellsToDraft(cells: string[], jenis: JenisSumberDaya = "BAHAN"): Materi
         d[kolom] = sel as never;
     }
   }
-  return d;
+  return { draft: d, harga };
 }
 
 function draftToRow(d: MaterialItemInput, jenis: JenisSumberDaya): string[] {
@@ -262,11 +277,19 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
       // diulang di tiap baris -- itu sifat dokumennya, bukan sifat tiap barang. Sebelum ini
       // kolom paste tidak punya tempat untuk nomor dokumen sama sekali, sehingga asal-usul
       // 29 dari 46 titik harga di produksi tidak tercatat.
+      const { draft, harga } = cellsToDraft(cells, jenis);
       const d = {
-        ...cellsToDraft(cells, jenis),
+        ...draft,
         sumber: pasteSumber,
         no_dokumen: pasteNoDok.trim(),
       };
+      // Sel harga yang terisi tapi tidak terbaca dipisahkan dari sel harga yang kosong.
+      // Keduanya sama-sama jatuh ke 0 dan sama-sama ditolak, tapi cuma yang pertama yang
+      // bisa diperbaiki pengguna kalau dia tahu sel mana dan tulisannya kenapa.
+      if (harga.mentah !== "" && !harga.dikenali) {
+        warnings.push(`Baris ${i + 1}: harga "${harga.mentah}" tidak terbaca sebagai angka, dilewati`);
+        return;
+      }
       if (!d.nama || !d.satuan || d.harga_satuan <= 0) {
         warnings.push(`Baris ${i + 1}: Nama/Satuan/Harga wajib diisi (harga > 0), dilewati`);
         return;
@@ -277,6 +300,11 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
             `boleh digabung 1 sel spt "EUR 45.10", tapi kalau dipisah harus tetap 2 kolom terpisah)`,
         );
         return;
+      }
+      if (harga.ditafsirkan) {
+        warnings.push(
+          `Baris ${i + 1}: "${harga.mentah}" dibaca sebagai ${formatMoneyRingkas(d.harga_satuan, d.mata_uang)}`,
+        );
       }
       drafts.push(d);
     });
@@ -432,7 +460,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
     const parsedRows = parseTsv(text);
     setBulkEditRows((prev) =>
       prev.map((r, i) =>
-        parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i], jenis) } : r,
+        parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i], jenis).draft } : r,
       ),
     );
   }
