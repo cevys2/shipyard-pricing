@@ -318,7 +318,16 @@ export type TrenJasaPoint = {
 export type TrenJasa = {
   seri: TrenJasaPoint[];
   per_tahun: { tahun: string; n_baris: number; n_kapal: number }[];
-  cakupan: { total_baris: number; total_kategori: number; total_tahun: number };
+  cakupan: {
+    total_baris: number;
+    total_kategori: number;
+    total_tahun: number;
+    /** Baris yang belum punya kategori kanonik, jadi tidak masuk `seri` sama sekali.
+     * Biasanya naik sesudah impor Excel dengan sebutan kategori yang belum ada aliasnya;
+     * resolver baru menjalankannya lagi saat backend start berikutnya. Ditampilkan supaya
+     * penyusutan datanya kelihatan, bukan raib diam-diam. */
+    tanpa_kategori: number;
+  };
 };
 
 export type TrenMaterialKandidat = {

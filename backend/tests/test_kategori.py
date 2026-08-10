@@ -231,8 +231,16 @@ def test_kategori_norm_sql_menolak_yang_bukan_nama_kolom():
             kategori_norm_sql(jahat)
 
 
-def test_analitik_memakai_ekspresi_normalisasi_yang_sama():
-    """Satu definisi, dua pemakai. Kalau analitik menyalin sendiri, keduanya akan berpisah."""
-    from app.services import analitik
+def test_bentuk_ekspresi_normalisasi_dipaku():
+    """Ekspresinya dipaku ke bentuk literal, bukan sekadar "ada".
 
-    assert analitik._KATEGORI_NORM == kategori_norm_sql("kategori_pekerjaan")
+    83 alias di database sudah tersimpan sebagai hasil normalisasi ini. Merapikan
+    ekspresinya -- menambah `lower()`, mengganti `btrim` jadi `trim`, apa pun -- akan
+    membuat sebagian alias berhenti cocok, dan tidak ada yang error: `kategori_id` cuma
+    jadi NULL dan barisnya raib dari analitik. Jadi kalau tes ini merah, jawabannya
+    hampir pasti bukan "perbarui ekspektasinya".
+    """
+    assert kategori_norm_sql() == (
+        "upper(btrim(regexp_replace(replace(kategori_pekerjaan, chr(160), ' '), "
+        "'\\s+', ' ', 'g')))"
+    )
