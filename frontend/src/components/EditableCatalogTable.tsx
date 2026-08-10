@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ClipboardPaste, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import {
   api,
+  formatMoneyRingkas,
   formatRp,
   type CatalogRow,
   type CatalogRowInput,
@@ -41,19 +42,6 @@ const emptyDraft: CatalogRowInput = {
   volume_satuan: "-",
   harga_satuan: 0,
 };
-
-/** Format harga khusus untuk peringatan penafsiran. Beda dari `formatRp` yang membulatkan
- * ke rupiah penuh: di sini desimalnya justru yang perlu terlihat, karena peringatannya
- * ada untuk memperlihatkan persis angka apa yang akan tersimpan. Tapi desimal cuma
- * ditampilkan kalau memang ada -- "Rp 150.000,00" bikin catatannya terbaca seolah ada
- * yang berubah padahal tidak. */
-const formatHargaTafsir = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(n);
 
 /** Hasil baca satu baris tempelan: draftnya, plus bagaimana kolom Harga dibaca.
  *
@@ -234,7 +222,7 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
         return;
       }
       if (harga.ditafsirkan) {
-        warnings.push(`Baris ${i + 1}: "${harga.mentah}" dibaca sebagai ${formatHargaTafsir(d.harga_satuan)}`);
+        warnings.push(`Baris ${i + 1}: "${harga.mentah}" dibaca sebagai ${formatMoneyRingkas(d.harga_satuan, "IDR")}`);
       }
       drafts.push(d);
     });

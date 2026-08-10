@@ -617,3 +617,18 @@ export function formatMoney(n: number, currency: string) {
     maximumFractionDigits: 2,
   }).format(n);
 }
+
+/** Sama seperti `formatMoney`, tapi desimalnya cuma muncul kalau memang ada.
+ *
+ * Dipakai di peringatan yang memberitahu pengguna bagaimana sel harganya dibaca. Di situ
+ * `formatRp` tidak bisa dipakai karena membulatkan ke rupiah penuh -- desimalnya hilang
+ * justru pada saat paling perlu dilihat -- dan `formatMoney` juga tidak, karena dua desimal
+ * yang selalu ada bikin "Rp 150.000,00" terbaca seolah ada yang berubah padahal tidak. */
+export function formatMoneyRingkas(n: number, currency: string) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: currency || "IDR",
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
