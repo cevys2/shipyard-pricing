@@ -7,7 +7,7 @@ import {
   type CatalogRowInput,
   type FilterOptions,
 } from "../lib/api";
-import { parseTsv } from "../lib/tsv";
+import { bacaAngkaUang, parseTsv } from "../lib/tsv";
 
 const PAGE_SIZE = 50;
 
@@ -42,18 +42,48 @@ const emptyDraft: CatalogRowInput = {
   harga_satuan: 0,
 };
 
-function cellsToDraft(cells: string[]): CatalogRowInput {
+/** Format harga khusus untuk peringatan penafsiran. Beda dari `formatRp` yang membulatkan
+ * ke rupiah penuh: di sini desimalnya justru yang perlu terlihat, karena peringatannya
+ * ada untuk memperlihatkan persis angka apa yang akan tersimpan. Tapi desimal cuma
+ * ditampilkan kalau memang ada -- "Rp 150.000,00" bikin catatannya terbaca seolah ada
+ * yang berubah padahal tidak. */
+const formatHargaTafsir = (n: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+
+/** Hasil baca satu baris tempelan: draftnya, plus bagaimana kolom Harga dibaca.
+ *
+ * Angkanya saja tidak cukup. Kolom Harga dulu dibaca dengan membuang semua karakter
+ * selain angka dan titik, jadi "150.000" tersimpan sebagai 150 -- salah 1000x, tapi
+ * angkanya tetap masuk akal sekilas dan lolos tanpa jejak. Sekarang pembacaannya benar,
+ * tapi yang membuatnya aman bukan cuma itu: sel mentahnya ikut dibawa keluar supaya
+ * pemanggil bisa menunjukkan penafsirannya sebelum apa pun disimpan. */
+type HasilBarisTempel = {
+  draft: CatalogRowInput;
+  harga: { mentah: string; ditafsirkan: boolean; dikenali: boolean };
+};
+
+function cellsToDraft(cells: string[]): HasilBarisTempel {
   const get = (i: number) => (cells[i] ?? "").trim();
   const tipeRaw = get(2);
+  const hargaMentah = get(7);
+  const harga = bacaAngkaUang(hargaMentah);
   return {
-    nama_perusahaan: get(0),
-    nama_kapal: get(1),
-    tipe_perjanjian: tipeRaw === "Addendum" ? "Addendum" : "Induk",
-    tahun: get(3),
-    kategori_pekerjaan: get(4) || "-",
-    uraian_pekerjaan: get(5),
-    volume_satuan: get(6) || "-",
-    harga_satuan: Number(get(7).replace(/[^\d.-]/g, "")) || 0,
+    draft: {
+      nama_perusahaan: get(0),
+      nama_kapal: get(1),
+      tipe_perjanjian: tipeRaw === "Addendum" ? "Addendum" : "Induk",
+      tahun: get(3),
+      kategori_pekerjaan: get(4) || "-",
+      uraian_pekerjaan: get(5),
+      volume_satuan: get(6) || "-",
+      harga_satuan: harga.nilai,
+    },
+    harga: { mentah: hargaMentah, ditafsirkan: harga.ditafsirkan, dikenali: harga.dikenali },
   };
 }
 
@@ -191,10 +221,20 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
     const warnings: string[] = [];
     const drafts: CatalogRowInput[] = [];
     parsedRows.forEach((cells, i) => {
-      const d = cellsToDraft(cells);
+      const { draft: d, harga } = cellsToDraft(cells);
       if (!d.nama_kapal || !d.tahun || !d.uraian_pekerjaan) {
         warnings.push(`Baris ${i + 1}: Kapal/Tahun/Uraian kosong, dilewati`);
         return;
+      }
+      // Sel harga yang terisi tapi tidak terbaca beda dari sel harga yang kosong.
+      // Menyimpannya sebagai 0 berarti memasukkan angka yang tidak pernah ditulis
+      // siapa pun ke katalog, jadi barisnya dilewati seperti baris yang datanya kurang.
+      if (harga.mentah !== "" && !harga.dikenali) {
+        warnings.push(`Baris ${i + 1}: harga "${harga.mentah}" tidak terbaca sebagai angka, dilewati`);
+        return;
+      }
+      if (harga.ditafsirkan) {
+        warnings.push(`Baris ${i + 1}: "${harga.mentah}" dibaca sebagai ${formatHargaTafsir(d.harga_satuan)}`);
       }
       drafts.push(d);
     });
@@ -301,7 +341,9 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
 
   function pasteBulkEditFromText(text: string) {
     const parsedRows = parseTsv(text);
-    setBulkEditRows((prev) => prev.map((r, i) => (parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i]) } : r)));
+    setBulkEditRows((prev) =>
+      prev.map((r, i) => (parsedRows[i] ? { id: r.id, data: cellsToDraft(parsedRows[i]).draft } : r)),
+    );
   }
 
   function updateBulkEditCell(rowIdx: number, field: keyof CatalogRowInput, value: string | number) {
