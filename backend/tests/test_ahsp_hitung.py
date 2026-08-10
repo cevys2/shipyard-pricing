@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from app.database import engine, ensure_ahsp_tables, ensure_material_tables
+from app.database import engine, ensure_ahsp_tables, ensure_kategori_table, ensure_material_tables
 from app.schemas.ahsp import AhspCreate, KomponenInput
 from app.schemas.material import BulkMaterialCreate, BulkPatchMaterialRequest, MaterialItemCreate
 from app.services import ahsp as svc
@@ -20,6 +20,8 @@ from app.services import material as material_svc
 @pytest.fixture(autouse=True)
 def tabel_ahsp_bersih():
     ensure_material_tables()
+    # Urutan yang sama dengan lifespan: ahsp.kategori_id menunjuk ke kategori(id).
+    ensure_kategori_table()
     ensure_ahsp_tables()
     with engine.begin() as conn:
         conn.execute(

@@ -14,7 +14,9 @@ import pytest
 from sqlalchemy import text
 
 from app.database import (
+    ensure_ahsp_tables,
     ensure_kategori_table,
+    ensure_material_tables,
     engine,
     kategori_norm_sql,
     selaraskan_kategori,
@@ -26,7 +28,20 @@ FINAL_PETA = Path(__file__).resolve().parents[2] / "docs" / "final_peta.json"
 
 @pytest.fixture(scope="module", autouse=True)
 def kategori_siap():
+    # ahsp_komponen punya foreign key ke sumber_daya, jadi tabel material harus ada dulu.
+    ensure_material_tables()
     ensure_kategori_table()
+
+
+def _kategori_ahsp(ahsp_id: int) -> str | None:
+    with engine.connect() as c:
+        return c.execute(
+            text(
+                "SELECT k.nama FROM ahsp a LEFT JOIN kategori k ON k.id = a.kategori_id "
+                "WHERE a.id = :id"
+            ),
+            {"id": ahsp_id},
+        ).scalar()
 
 
 def _tulis(rows: list[dict[str, str]]) -> None:
@@ -229,6 +244,108 @@ def test_kategori_norm_sql_menolak_yang_bukan_nama_kolom():
     for jahat in ("kategori_pekerjaan); DROP TABLE kategori; --", "a b", "", "1kolom"):
         with pytest.raises(ValueError):
             kategori_norm_sql(jahat)
+
+
+def test_ahsp_menerjemahkan_kategori_teks_jadi_kategori_id():
+    """Dropdown mengirim nama kanonik; teks lama yang berantakan juga harus tetap kena."""
+    from app.schemas.ahsp import AhspCreate
+    from app.services import ahsp as ahsp_service
+
+    ensure_ahsp_tables()
+    with engine.begin() as c:
+        c.execute(text("TRUNCATE ahsp CASCADE"))
+
+    id_rapi = ahsp_service.create_ahsp(
+        AhspCreate(uraian="Sandblasting SA 2.5", satuan="m2", kategori="PERAWATAN LAMBUNG"),
+        aktor="tes",
+    )
+    id_lama = ahsp_service.create_ahsp(
+        AhspCreate(uraian="Ganti pipa dinas", satuan="m", kategori="pipa-pipa"),
+        aktor="tes",
+    )
+    id_kosong = ahsp_service.create_ahsp(
+        AhspCreate(uraian="Tanpa kategori", satuan="ls"), aktor="tes"
+    )
+
+    assert _kategori_ahsp(id_rapi) == "PERAWATAN LAMBUNG"
+    assert _kategori_ahsp(id_lama) == "PIPA - PIPA"
+    assert _kategori_ahsp(id_kosong) is None
+
+
+def test_ahsp_kategori_id_ikut_berubah_saat_kategori_diperbarui():
+    """Kalau teksnya berubah tapi id-nya tidak, analitik membaca kategori lama tanpa error."""
+    from app.schemas.ahsp import AhspCreate, AhspUpdate
+    from app.services import ahsp as ahsp_service
+
+    ensure_ahsp_tables()
+    with engine.begin() as c:
+        c.execute(text("TRUNCATE ahsp CASCADE"))
+
+    ahsp_id = ahsp_service.create_ahsp(
+        AhspCreate(uraian="Pindah kategori", satuan="ls", kategori="KONSTRUKSI"), aktor="tes"
+    )
+    assert _kategori_ahsp(ahsp_id) == "KONSTRUKSI"
+
+    ahsp_service.update_ahsp(ahsp_id, AhspUpdate(kategori="REPLATING"), aktor="tes")
+    assert _kategori_ahsp(ahsp_id) == "REPLATING"
+
+    # Mengubah kolom lain tidak boleh menyentuh kategorinya.
+    ahsp_service.update_ahsp(ahsp_id, AhspUpdate(satuan="kg"), aktor="tes")
+    assert _kategori_ahsp(ahsp_id) == "REPLATING"
+
+
+def test_backfill_ahsp_tidak_menimpa_pilihan_yang_sudah_ada():
+    """Sesudah dropdown ada, pilihan pengguna bisa beda dari teks lamanya.
+
+    Backfill yang jalan tiap app start dan mengisi ulang dari teks akan menarik pilihan itu
+    balik -- diam-diam, tiap deploy. Karena itu backfill hanya menyentuh yang masih NULL.
+    """
+    from app.schemas.ahsp import AhspCreate
+    from app.services import ahsp as ahsp_service
+
+    ensure_ahsp_tables()
+    with engine.begin() as c:
+        c.execute(text("TRUNCATE ahsp CASCADE"))
+
+    ahsp_id = ahsp_service.create_ahsp(
+        AhspCreate(uraian="Beda teks dan pilihan", satuan="ls", kategori="KONSTRUKSI"),
+        aktor="tes",
+    )
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "UPDATE ahsp SET kategori_id = (SELECT id FROM kategori WHERE nama = 'TANGKI') "
+                "WHERE id = :id"
+            ),
+            {"id": ahsp_id},
+        )
+
+    ensure_ahsp_tables()
+    ensure_ahsp_tables()
+    assert _kategori_ahsp(ahsp_id) == "TANGKI"
+
+
+def test_endpoint_kategori_terpasang_dan_urut():
+    """Dropdown di frontend mati diam-diam kalau router-nya lupa di-include di main.py."""
+    import time
+
+    from fastapi.testclient import TestClient
+    from jose import jwt
+
+    from app.config import settings
+    from app.main import app
+
+    token = jwt.encode(
+        {"sub": "tes@contoh.com", "role": "admin", "exp": int(time.time()) + 600},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    with TestClient(app) as klien:
+        resp = klien.get("/kategori", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    nama = [r["nama"] for r in resp.json()]
+    assert nama == list(PETA), "urutannya harus ikut kolom `urutan`, bukan abjad"
 
 
 def test_bentuk_ekspresi_normalisasi_dipaku():

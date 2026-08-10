@@ -264,6 +264,12 @@ export const api = {
   trenJasaKategori(token: string) {
     return request<string[]>("/analitik/tren-jasa/kategori", {}, token);
   },
+  /** Master kategori, buat mengisi dropdown. Beda dari `trenJasaKategori`, yang cuma memuat
+   * kategori dengan data cukup untuk digambar grafiknya -- kategori yang belum punya satu
+   * baris pun tetap harus bisa dipilih waktu mengisi, kalau tidak tidak akan pernah ada isinya. */
+  kategoriMaster(token: string) {
+    return request<Kategori[]>("/kategori", {}, token);
+  },
   trenMaterial(token: string) {
     return request<TrenMaterial>("/analitik/tren-material", {}, token);
   },
@@ -301,6 +307,8 @@ export type PriceHistoryRow = {
   catatan: string | null;
   dibuat_pada: string;
 };
+
+export type Kategori = { id: number; nama: string };
 
 export type TrenJasaPoint = {
   kategori: string;

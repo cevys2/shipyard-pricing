@@ -10,6 +10,7 @@ import {
   type AhspRow,
   type AuthUser,
   type JenisSumberDaya,
+  type Kategori,
   type MaterialRow,
 } from "../lib/api";
 
@@ -310,8 +311,22 @@ function FormAhspBaru({
   const [satuan, setSatuan] = useState("");
   const [jenisJual, setJenisJual] = useState<"JASA" | "MATERIAL">("JASA");
   const [kategori, setKategori] = useState("");
+  const [kategoriOpts, setKategoriOpts] = useState<Kategori[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Daftarnya diambil sekali saat form dibuka. Gagal memuat tidak memblokir apa pun --
+  // kategori memang boleh kosong, jadi pilihannya cuma jadi kosong, bukan formnya mati.
+  useEffect(() => {
+    let batal = false;
+    api
+      .kategoriMaster(token)
+      .then((d) => !batal && setKategoriOpts(d))
+      .catch(() => undefined);
+    return () => {
+      batal = true;
+    };
+  }, [token]);
 
   async function simpan() {
     if (!uraian.trim() || !satuan.trim()) {
@@ -353,7 +368,21 @@ function FormAhspBaru({
             <option value="MATERIAL">Material</option>
           </select>
         </label>
-        <Isian label="Kategori" value={kategori} onChange={setKategori} placeholder="opsional" />
+        <label className="block text-xs font-medium text-slate-600">
+          Kategori
+          <select
+            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+            value={kategori}
+            onChange={(e) => setKategori(e.target.value)}
+          >
+            <option value="">(belum dipilih)</option>
+            {kategoriOpts.map((k) => (
+              <option key={k.id} value={k.nama}>
+                {k.nama}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <div className="mt-3">

@@ -18,6 +18,7 @@ from app.database import (
 from app.routers.ahsp import router as ahsp_router
 from app.routers.analitik import router as analitik_router
 from app.routers.catalog import router as catalog_router
+from app.routers.kategori import router as kategori_router
 from app.routers.material import router as material_router
 
 
@@ -54,6 +55,7 @@ app.include_router(catalog_router)
 app.include_router(material_router)
 app.include_router(analitik_router)
 app.include_router(ahsp_router)
+app.include_router(kategori_router)
 
 logger = logging.getLogger(__name__)
 

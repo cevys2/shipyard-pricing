@@ -85,7 +85,11 @@ class AhspOut(BaseModel):
     uraian: str
     satuan: str
     jenis_jual: str
+    # `kategori` teks apa adanya waktu baris ini dibuat; `kategori_id` kategori kanoniknya.
+    # Keduanya disimpan dengan alasan yang sama seperti di katalog jasa: yang teks catatan
+    # sejarah, yang id data kerja.
     kategori: str | None = None
+    kategori_id: int | None = None
     catatan: str | None = None
     parameter: dict[str, Any] = Field(default_factory=dict)
     aktif: bool

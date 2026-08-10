@@ -93,8 +93,9 @@ export default function AnalitikPanel({ auth }: Props) {
   }, [load]);
 
   /** Recharts butuh satu baris per titik sumbu-X dengan tiap seri sebagai kolom.
-   * Kategori yang ditampilkan dibatasi MAKS_SERI teratas berdasar jumlah baris data --
-   * 77 kategori di satu grafik cuma jadi benang kusut. */
+   * Kategori yang ditampilkan dibatasi MAKS_SERI teratas berdasar jumlah baris data.
+   * Sejak kategori kanonik dipakai, jumlahnya 11 dan bukan lagi 78, jadi batas ini
+   * jarang tersentuh -- tetap dipertahankan karena master kategori boleh bertambah. */
   const { dataChart, seriTampil } = useMemo(() => {
     if (!jasa) return { dataChart: [], seriTampil: [] as string[] };
 
@@ -408,9 +409,15 @@ export default function AnalitikPanel({ auth }: Props) {
             </>
           )}
           , jadi naik-turunnya garis bisa sekadar efek berubahnya campuran kapal — bukan bukti harga
-          naik. Selain itu kategori masih mengandung duplikat penulisan (mis. &ldquo;DOCKING DAN
-          UNDOCKING&rdquo; vs &ldquo;DOCKING AND UNDOCKING&rdquo;) karena pemetaan kategori kanonik
-          belum dikerjakan.
+          naik.
+          {jasa && jasa.cakupan.tanpa_kategori > 0 && (
+            <>
+              {" "}
+              Selain itu {jasa.cakupan.tanpa_kategori.toLocaleString("id-ID")} baris belum punya
+              kategori kanonik dan sama sekali tidak masuk grafik ini — biasanya karena impor
+              terakhir memakai sebutan kategori yang belum ada padanannya.
+            </>
+          )}
         </Peringatan>
 
         {dataChart.length < 2 ? (

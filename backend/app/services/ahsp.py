@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import engine
+from app.database import engine, kategori_norm_sql
 from app.schemas.ahsp import (
     KELOMPOK,
     AhspCreate,
@@ -20,6 +20,17 @@ from app.schemas.ahsp import (
     KomponenInput,
 )
 from app.services import audit
+
+# Kategori masuk dari API sebagai teks (dropdown mengirim nama kanoniknya), lalu diterjemahkan
+# ke `kategori_id` di sini lewat tabel alias yang sama dengan katalog jasa. Sebelas nama
+# kanonik itu terdaftar sebagai alias bagi dirinya sendiri, jadi satu jalur ini melayani dua
+# hal sekaligus: pilihan dropdown yang rapi, dan teks lama peninggalan sebelum dropdown ada.
+#
+# Kalau tidak dikenali hasilnya NULL, bukan error -- kategori AHSP memang boleh kosong.
+_KATEGORI_ID_SQL = (
+    f"(SELECT al.kategori_id FROM kategori_alias al "
+    f"WHERE al.alias = {kategori_norm_sql(':kategori')})"
+)
 
 
 def hitung_harga_jual(subtotal: dict[str, Decimal], parameter: dict) -> Decimal | None:
@@ -142,10 +153,11 @@ def create_ahsp(data: AhspCreate, *, aktor: str) -> int:
     with engine.begin() as conn:
         new_id = conn.execute(
             text(
-                """
-                INSERT INTO ahsp (uraian, satuan, jenis_jual, kategori, catatan, parameter)
-                VALUES (:uraian, :satuan, :jenis_jual, :kategori, :catatan,
-                        CAST(:parameter AS JSONB))
+                f"""
+                INSERT INTO ahsp (uraian, satuan, jenis_jual, kategori, kategori_id,
+                                  catatan, parameter)
+                VALUES (:uraian, :satuan, :jenis_jual, :kategori, {_KATEGORI_ID_SQL},
+                        :catatan, CAST(:parameter AS JSONB))
                 RETURNING id
                 """
             ),
@@ -183,6 +195,11 @@ def update_ahsp(ahsp_id: int, data: AhspUpdate, *, aktor: str) -> bool:
         else:
             set_parts.append(f"{kolom} = :{kolom}")
             params[kolom] = nilai
+    # Teks dan id-nya harus berubah bersama. Kalau `kategori` diperbarui sendirian,
+    # `kategori_id` akan tetap menunjuk kategori lama dan analitik membaca yang lama --
+    # tanpa error, karena kedua kolomnya sama-sama terisi dan terlihat wajar.
+    if "kategori" in isi:
+        set_parts.append(f"kategori_id = {_KATEGORI_ID_SQL}")
     set_parts.append("diubah_pada = now()")
 
     with engine.begin() as conn:

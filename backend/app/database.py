@@ -12,11 +12,11 @@ from app.services import pencarian
 
 logger = logging.getLogger(__name__)
 
-# Nama kolom yang boleh masuk ke kategori_norm_sql(). Argumennya ikut ke dalam SQL sebagai
-# identifier, jadi tidak bisa di-parameterize -- yang dijaga adalah bentuknya: huruf,
-# angka, garis bawah, dan titik untuk alias tabel. Semua pemanggilnya literal di kode ini,
-# tidak ada yang datang dari request.
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+# Yang boleh masuk ke kategori_norm_sql(): nama kolom (`kategori`, `t.kategori_pekerjaan`)
+# atau penanda bind parameter (`:kategori`). Keduanya ikut ke dalam SQL apa adanya dan tidak
+# bisa di-parameterize, jadi yang dijaga adalah bentuknya. Semua pemanggilnya literal di
+# kode, tidak ada yang datang dari request.
+_ARGUMEN_NORM = re.compile(r"^:?[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 
 def normalize_db_url(db_url: str) -> str:
@@ -287,8 +287,8 @@ def _dedup_sumber_daya(conn) -> None:
 # tidak ada error yang muncul -- resolver cuma diam-diam tidak menemukan pasangan, dan
 # `kategori_id` tinggal NULL. Itu kegagalan yang paling mahal di sini karena tak bersuara.
 def kategori_norm_sql(kolom: str = "kategori_pekerjaan") -> str:
-    if not _IDENTIFIER.match(kolom):
-        raise ValueError(f"Bukan nama kolom yang sah: {kolom!r}")
+    if not _ARGUMEN_NORM.match(kolom):
+        raise ValueError(f"Bukan nama kolom atau bind parameter yang sah: {kolom!r}")
     return f"upper(btrim(regexp_replace(replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')))"
 
 
@@ -414,6 +414,12 @@ def selaraskan_kategori() -> int:
 def ensure_ahsp_tables() -> None:
     """Langkah 3 Sesi 3.1: ahsp + ahsp_komponen (tab Struktur Biaya).
 
+    WAJIB dipanggil sesudah `ensure_material_tables()` DAN `ensure_kategori_table()`:
+    `ahsp_komponen` punya foreign key ke `sumber_daya`, dan `ahsp.kategori_id` ke `kategori`.
+    Urutannya dijaga di `main.py`. Sengaja tidak dibungkus penjaga "kalau tabelnya belum ada,
+    lewati saja" -- itu cuma menunda kegagalannya sampai baris AHSP pertama disimpan, dengan
+    pesan yang jauh lebih sulit dibaca.
+
     Berdiri sendiri: `tabel_katalog_harga` tidak disentuh, dan CHECK constraint
     `sumber_daya.jenis` tidak diubah -- empat jenis yang sudah ada sudah menampung
     semua komponen (bagian 2 docs/rencana-langkah-3-struktur-biaya.md).
@@ -470,6 +476,55 @@ def ensure_ahsp_tables() -> None:
             )
         )
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ak_ahsp ON ahsp_komponen(ahsp_id)"))
+
+    _ikat_kategori_ahsp()
+
+
+def _ikat_kategori_ahsp() -> None:
+    """Sesi K3A: `ahsp.kategori` yang teks bebas dapat pasangan `kategori_id`.
+
+    Kolom `kategori` lama sengaja TIDAK di-drop. Dia jadi catatan apa yang diketik waktu
+    baris itu dibuat, sama peranannya dengan `kategori_pekerjaan` di katalog jasa.
+
+    Backfill-nya hanya menyentuh baris yang `kategori_id`-nya masih NULL. Bukan sekadar
+    hemat: sesudah form pakai dropdown, pengguna bisa memilih kategori yang berbeda dari
+    teks lama, dan mengisi ulang tiap app start akan menarik pilihannya balik ke teks itu
+    -- diam-diam, tiap deploy.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE ahsp ADD COLUMN IF NOT EXISTS kategori_id INT REFERENCES kategori(id)")
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ahsp_kategori ON ahsp(kategori_id)"))
+        terisi = conn.execute(
+            text(
+                f"""
+                UPDATE ahsp a
+                SET    kategori_id = al.kategori_id
+                FROM   kategori_alias al
+                WHERE  a.kategori_id IS NULL
+                  AND  {kategori_norm_sql("a.kategori")} = al.alias
+                """
+            )
+        ).rowcount
+        # Yang gagal tidak ditebak dan tidak dikosongkan -- cuma dilaporkan. Kategori AHSP
+        # boleh kosong, jadi yang menarik hanya baris yang PUNYA teks tapi tidak dikenali.
+        gagal = conn.execute(
+            text(
+                "SELECT DISTINCT kategori FROM ahsp "
+                "WHERE kategori_id IS NULL AND btrim(coalesce(kategori, '')) <> '' "
+                "ORDER BY kategori"
+            )
+        ).scalars().all()
+
+    if terisi:
+        logger.info("Backfill kategori AHSP: %d baris terisi.", terisi)
+    if gagal:
+        logger.warning(
+            "Backfill kategori AHSP: %d sebutan tidak dikenali, barisnya dibiarkan kosong: %s",
+            len(gagal),
+            ", ".join(repr(g) for g in gagal),
+        )
 
 
 def ensure_partno_unique() -> None:

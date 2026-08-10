@@ -9,7 +9,13 @@ menyimpulkan datanya belum diinput, lalu menginput ulang barang yang sudah ada.
 import pytest
 from sqlalchemy import text
 
-from app.database import engine, ensure_ahsp_tables, ensure_material_tables, ensure_pencarian_index
+from app.database import (
+    engine,
+    ensure_ahsp_tables,
+    ensure_kategori_table,
+    ensure_material_tables,
+    ensure_pencarian_index,
+)
 from app.schemas.material import BulkMaterialCreate, MaterialItemCreate
 from app.services import material as svc
 from app.services import pencarian
@@ -18,6 +24,8 @@ from app.services import pencarian
 @pytest.fixture(autouse=True)
 def tabel_material_bersih():
     ensure_material_tables()
+    # Urutan yang sama dengan lifespan: ahsp.kategori_id menunjuk ke kategori(id).
+    ensure_kategori_table()
     ensure_ahsp_tables()
     # Menyalakan pg_trgm juga di DB tes -- kalau ekstensinya tidak ada, cabang fuzzy mati
     # sendiri dan tes yang membutuhkannya di-skip, bukan gagal.
