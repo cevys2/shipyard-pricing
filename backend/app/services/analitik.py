@@ -11,20 +11,15 @@ from typing import Any
 from sqlalchemy import text
 
 from app.config import settings
-from app.database import engine
+from app.database import engine, kategori_norm_sql
 
 TABLE = settings.catalog_table
 
-# Kategori di Excel sumbernya berantakan: "DOCKING\n  dan UNDOCKING" dan "Docking dan
-# Undocking" itu kategori yang sama. Dirapikan saat dibaca -- newline/spasi beruntun jadi
-# satu spasi, lalu huruf besar semua.
-#
-# chr(160) = non-breaking space, sering ikut kebawa dari sel Excel. `trim()` dan `\s`
-# versi POSIX TIDAK menganggapnya spasi, jadi tanpa replace ini "DOCKING DAN UNDOCKING"
-# dan "DOCKING DAN UNDOCKING<nbsp>" tetap terhitung dua kategori berbeda.
-_KATEGORI_NORM = (
-    "upper(btrim(regexp_replace(replace(kategori_pekerjaan, chr(160), ' '), '\\s+', ' ', 'g')))"
-)
+# Definisinya pindah ke `database.kategori_norm_sql()` -- ekspresi yang sama juga dipakai
+# resolver untuk mencocokkan teks kategori ke `kategori_alias`, dan alias di database
+# disimpan dalam bentuk hasil normalisasi ini. Dua salinan yang harus identik cepat atau
+# lambat berpisah, dan bedanya tidak akan bersuara: pemetaan gagal tanpa error.
+_KATEGORI_NORM = kategori_norm_sql()
 
 
 def tren_harga_jasa(*, kategori: str | None = None, min_sampel: int = 3) -> dict[str, Any]:

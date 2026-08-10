@@ -1,14 +1,22 @@
 import logging
 import os
+import re
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
+from app.seed_kategori import baris_alias, baris_kategori
 from app.services import pencarian
 
 logger = logging.getLogger(__name__)
+
+# Nama kolom yang boleh masuk ke kategori_norm_sql(). Argumennya ikut ke dalam SQL sebagai
+# identifier, jadi tidak bisa di-parameterize -- yang dijaga adalah bentuknya: huruf,
+# angka, garis bawah, dan titik untuk alias tabel. Semua pemanggilnya literal di kode ini,
+# tidak ada yang datang dari request.
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 
 def normalize_db_url(db_url: str) -> str:
@@ -263,6 +271,144 @@ def _dedup_sumber_daya(conn) -> None:
     conn.execute(
         text(f"CREATE UNIQUE INDEX IF NOT EXISTS uq_sd_identitas ON sumber_daya ({identitas})")
     )
+
+
+# Kategori di Excel sumbernya berantakan: "DOCKING\n  dan UNDOCKING" dan "Docking dan
+# Undocking" itu kategori yang sama. Dirapikan saat dibaca -- newline/spasi beruntun jadi
+# satu spasi, lalu huruf besar semua.
+#
+# chr(160) = non-breaking space, sering ikut kebawa dari sel Excel. `trim()` dan `\s` versi
+# POSIX TIDAK menganggapnya spasi, jadi tanpa replace ini "DOCKING DAN UNDOCKING" dan
+# "DOCKING DAN UNDOCKING<nbsp>" tetap terhitung dua kategori berbeda.
+#
+# Definisinya di sini, satu tempat, karena dipakai DUA pihak yang harus sepakat persis:
+# analitik (mengelompokkan saat membaca) dan alias di tabel `kategori_alias` (yang isinya
+# disimpan dalam bentuk hasil normalisasi ini). Kalau keduanya beda satu karakter saja,
+# tidak ada error yang muncul -- resolver cuma diam-diam tidak menemukan pasangan, dan
+# `kategori_id` tinggal NULL. Itu kegagalan yang paling mahal di sini karena tak bersuara.
+def kategori_norm_sql(kolom: str = "kategori_pekerjaan") -> str:
+    if not _IDENTIFIER.match(kolom):
+        raise ValueError(f"Bukan nama kolom yang sah: {kolom!r}")
+    return f"upper(btrim(regexp_replace(replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')))"
+
+
+def ensure_kategori_table() -> None:
+    """Master kategori pekerjaan kanonik + alias, lalu isi `tabel_katalog_harga.kategori_id`.
+
+    Dua lapis, sengaja dipisah: `kategori_alias` yang memetakan otomatis, dan kolom
+    `kategori_id` tempat hasilnya mendarat. Manusia boleh menimpa hasilnya dengan menyetel
+    `kategori_sumber = 'manual'`, dan resolver tidak pernah menyentuh baris bertanda itu.
+
+    Isi `kategori_pekerjaan` TIDAK PERNAH ditulis ulang -- itu catatan apa yang benar-benar
+    tertulis di laporan asli. Koreksi mendarat di `kategori_id`, bukan dengan mengedit
+    teks aslinya (keputusan K-6, docs/bundel-kategori-claude-code.md).
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS kategori (
+                    id     SERIAL PRIMARY KEY,
+                    nama   TEXT NOT NULL UNIQUE,
+                    urutan INT  NOT NULL DEFAULT 0,
+                    aktif  BOOLEAN NOT NULL DEFAULT TRUE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS kategori_alias (
+                    id          SERIAL PRIMARY KEY,
+                    kategori_id INT  NOT NULL REFERENCES kategori(id) ON DELETE CASCADE,
+                    alias       TEXT NOT NULL UNIQUE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO kategori (nama, urutan) VALUES (:nama, :urutan) "
+                "ON CONFLICT (nama) DO UPDATE SET urutan = EXCLUDED.urutan "
+                "WHERE kategori.urutan IS DISTINCT FROM EXCLUDED.urutan"
+            ),
+            baris_kategori(),
+        )
+        # DO UPDATE, bukan DO NOTHING seperti di arsip docs/seed_kategori.sql: dengan
+        # DO NOTHING, memindahkan sebuah alias ke kategori lain tidak akan pernah berlaku
+        # di database yang sudah terisi -- diam, tanpa error. Asumsi K-A1 ("ubah 1 baris
+        # alias") mensyaratkan perubahan itu benar-benar sampai. `IS DISTINCT FROM` bikin
+        # jalan yang lazim (tidak ada yang berubah) tetap jadi no-op, bukan menulis ulang
+        # 83 baris tiap kali app start.
+        conn.execute(
+            text(
+                "INSERT INTO kategori_alias (kategori_id, alias) "
+                "SELECT id, :alias FROM kategori WHERE nama = :nama "
+                "ON CONFLICT (alias) DO UPDATE SET kategori_id = EXCLUDED.kategori_id "
+                "WHERE kategori_alias.kategori_id IS DISTINCT FROM EXCLUDED.kategori_id"
+            ),
+            baris_alias(),
+        )
+
+    # `tabel_katalog_harga` tidak dibuat di repo ini -- dia sudah ada sebelum aplikasi ini
+    # lahir. Di database kosong (mis. dev baru) tabelnya belum tentu ada, dan itu tidak
+    # boleh menjatuhkan startup: master kategorinya sendiri sudah berhasil dibuat di atas.
+    with engine.begin() as conn:
+        ada = conn.execute(
+            text("SELECT to_regclass(:t)"), {"t": f"public.{settings.catalog_table}"}
+        ).scalar()
+        if ada is None:
+            logger.warning(
+                "%s belum ada -- kolom kategori_id dilewati.", settings.catalog_table
+            )
+            return
+        # Penambahan kolom nullable. Kolom yang sudah ada tidak disentuh sama sekali.
+        # CHECK-nya menempel di ADD COLUMN IF NOT EXISTS, jadi ikut dilewati kalau kolomnya
+        # sudah ada -- tidak perlu guard pg_constraint seperti `chk_sdh_mata_uang`, yang
+        # dibutuhkan justru karena constraint di sana dipasang lewat ADD CONSTRAINT terpisah.
+        conn.execute(
+            text(
+                f"""
+                ALTER TABLE {settings.catalog_table}
+                  ADD COLUMN IF NOT EXISTS kategori_id     INT REFERENCES kategori(id),
+                  ADD COLUMN IF NOT EXISTS kategori_sumber TEXT NOT NULL DEFAULT 'alias'
+                                           CHECK (kategori_sumber IN ('alias','manual'))
+                """
+            )
+        )
+        conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS idx_tkh_kategori "
+                f"ON {settings.catalog_table}(kategori_id)"
+            )
+        )
+    selaraskan_kategori()
+
+
+def selaraskan_kategori() -> int:
+    """Isi `kategori_id` dari `kategori_alias`. Mengembalikan jumlah baris yang berubah.
+
+    Hanya menyentuh baris `kategori_sumber = 'alias'` -- koreksi manusia (`'manual'`) kebal,
+    termasuk kalau ada baris lain berteks kategori sama yang tetap ikut resolver.
+
+    `IS DISTINCT FROM` di akhir bikin pemanggilan kedua jadi nol baris, bukan menulis ulang
+    isi yang sama. Jadi aman dipanggil tiap app start.
+    """
+    with engine.begin() as conn:
+        hasil = conn.execute(
+            text(
+                f"""
+                UPDATE {settings.catalog_table} t
+                SET    kategori_id = a.kategori_id
+                FROM   kategori_alias a
+                WHERE  t.kategori_sumber = 'alias'
+                  AND  {kategori_norm_sql("t.kategori_pekerjaan")} = a.alias
+                  AND  t.kategori_id IS DISTINCT FROM a.kategori_id
+                """
+            )
+        )
+    return hasil.rowcount
 
 
 def ensure_ahsp_tables() -> None:

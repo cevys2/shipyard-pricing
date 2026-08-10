@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import (
     ensure_ahsp_tables,
     ensure_audit_table,
+    ensure_kategori_table,
     ensure_material_tables,
     ensure_partno_unique,
     ensure_pencarian_index,
@@ -24,6 +25,8 @@ from app.routers.material import router as material_router
 async def lifespan(_: FastAPI):
     ensure_material_tables()
     ensure_partno_unique()
+    # Sebelum ahsp: master kategori dipakai bersama katalog jasa dan (nanti) ahsp.
+    ensure_kategori_table()
     # Setelah material: ahsp_komponen punya foreign key ke sumber_daya.
     ensure_ahsp_tables()
     ensure_audit_table()
