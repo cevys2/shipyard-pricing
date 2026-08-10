@@ -35,6 +35,9 @@ const POLOS = /^-?\d+(\.\d+)?$/;
  * -- salah 1000x, tapi angkanya tetap masuk akal sekilas, jadi lolos tanpa jejak. Dan
  * "Rp.150.000" gagal jadi 0 di ketiga-tiganya.
  *
+ * Sekarang semua jalur tempel harga lewat sini. `parse` di NumberInput masih ada dan
+ * memang tidak dilebur: itu jalur MENGETIK, yang sengaja tidak menebak titik ribuan.
+ *
  * Yang dikembalikan bukan cuma angkanya:
  *
  * - `ditafsirkan` menandai bahwa fungsi ini MENAFSIRKAN, bukan mengambil apa adanya:
@@ -71,16 +74,4 @@ export function bacaAngkaUang(raw: string): { nilai: number; ditafsirkan: boolea
   if (DESIMAL_KOMA.test(t)) return jadi(Number(t.replace(",", ".")), false);
   if (POLOS.test(t)) return jadi(Number(t), false);
   return { nilai: 0, ditafsirkan: false, dikenali: false };
-}
-
-/** Pembungkus tipis di atas `bacaAngkaUang`, dipertahankan supaya pemanggil lama tidak
- * perlu disentuh sama sekali di sesi yang sama dengan perubahan logikanya. Tanda tangannya
- * sengaja tidak berubah; yang memanggilnya dipindahkan satu per satu belakangan, supaya
- * tiap diff-nya bisa diperiksa sendiri-sendiri.
- *
- * Efek sampingnya: pemanggil `angkaTempel` belum bisa membedakan "abc" dari "0", karena
- * `dikenali` tidak ikut diteruskan. Itu yang jadi alasan pemindahannya nanti. */
-export function angkaTempel(raw: string): { nilai: number; ditafsirkan: boolean } {
-  const r = bacaAngkaUang(raw);
-  return { nilai: r.nilai, ditafsirkan: r.ditafsirkan };
 }
