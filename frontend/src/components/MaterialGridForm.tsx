@@ -12,7 +12,7 @@ import {
   type MaterialItemInput,
   type PastePreview,
 } from "../lib/api";
-import { angkaTempel } from "../lib/tsv";
+import { bacaAngkaUang } from "../lib/tsv";
 import NumberInput from "./NumberInput";
 
 /** Jalan tengah antara menempel seluruh tabel Excel dan mengisi satu baris manual.
@@ -106,7 +106,8 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
     if (grid.length === 0) return;
 
     const mulaiKolom = kolomGrid.indexOf(kolom);
-    let nRibuan = 0;
+    let nTafsir = 0;
+    let nGagal = 0;
     setBaris((prev) => {
       const next = [...prev];
       while (next.length < mulaiBaris + grid.length) next.push({ ...barisKosong });
@@ -117,9 +118,15 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
           if (!k) return; // tempelan lebih lebar dari kolom yang ada -- sisanya diabaikan
           const bersih = nilai.trim();
           if (k === "harga_satuan") {
-            const { nilai, ditafsirkan } = angkaTempel(bersih);
-            target.harga_satuan = nilai;
-            if (ditafsirkan) nRibuan++;
+            const r = bacaAngkaUang(bersih);
+            // Sel yang tidak terbaca tetap dijadikan 0, tidak dibiarkan memakai harga
+            // lama baris itu. Nama dan spesifikasinya sudah tertimpa tempelan baru, jadi
+            // harga lama yang bertahan berarti barang baru berpasangan dengan harga
+            // barang lama -- salah yang tidak kelihatan. 0 salah yang kelihatan, dan
+            // baris berharga 0 memang tidak ikut tersimpan.
+            target.harga_satuan = r.nilai;
+            if (bersih !== "" && !r.dikenali) nGagal++;
+            else if (r.ditafsirkan) nTafsir++;
           }
           else if (k === "nama") target.nama = bersih;
           else if (k === "spesifikasi") target.spesifikasi = bersih;
@@ -130,12 +137,22 @@ export default function MaterialGridForm({ token, jenis, onSaved, onClose }: Pro
       return next;
     });
     setDampak(null);
-    setCatatanTempel(
-      nRibuan > 0
-        ? `${grid.length} baris ditempel. ${nRibuan} harga ditulis dengan titik ribuan ` +
-          `(mis. "150.000") dan dibaca sebagai ribuan — periksa kolom Harga sebelum menyimpan.`
-        : `${grid.length} baris ditempel.`,
-    );
+    // Dua hal yang berbeda, jadi dikatakan terpisah: yang ditafsirkan tetap masuk dan cuma
+    // perlu diperiksa, yang gagal dibaca tidak akan tersimpan sama sekali kalau dibiarkan.
+    const catatan = [`${grid.length} baris ditempel.`];
+    if (nTafsir > 0) {
+      catatan.push(
+        `${nTafsir} harga ditulis dengan format uang (mis. "Rp.150.000" atau "150.000") dan ` +
+          `ditafsirkan — periksa kolom Harga sebelum menyimpan.`,
+      );
+    }
+    if (nGagal > 0) {
+      catatan.push(
+        `${nGagal} harga tidak terbaca sebagai angka dan dikosongkan — baris berharga 0 ` +
+          `tidak ikut tersimpan, jadi perbaiki dulu.`,
+      );
+    }
+    setCatatanTempel(catatan.join(" "));
   }
 
   /** Isi nilai satu kolom ke semua baris di bawahnya. Satuan sering sama sekelompok
