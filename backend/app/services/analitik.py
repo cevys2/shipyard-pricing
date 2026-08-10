@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import text
 
 from app.config import settings
-from app.database import engine
+from app.database import engine, urutan_harga_sql
 
 TABLE = settings.catalog_table
 
@@ -178,7 +178,7 @@ def tren_material() -> dict[str, Any]:
         # persennya dihitung di DB, bukan disusun ulang di frontend dari daftar titik.
         kandidat = conn.execute(
             text(
-                """
+                f"""
                 SELECT sd.id, sd.nama, sd.spesifikasi, sd.satuan,
                        COUNT(h.id)                 AS n_harga,
                        MIN(h.berlaku_dari)         AS dari,
@@ -187,10 +187,10 @@ def tren_material() -> dict[str, Any]:
                        MIN(h.mata_uang)            AS mata_uang,
                        (SELECT a.harga_satuan FROM sumber_daya_harga a
                         WHERE a.sumber_daya_id = sd.id
-                        ORDER BY a.berlaku_dari ASC, a.id ASC LIMIT 1)  AS harga_awal,
+                        ORDER BY {urutan_harga_sql("a", terbaru_dulu=False)} LIMIT 1) AS harga_awal,
                        (SELECT z.harga_satuan FROM sumber_daya_harga z
                         WHERE z.sumber_daya_id = sd.id
-                        ORDER BY z.berlaku_dari DESC, z.id DESC LIMIT 1) AS harga_akhir
+                        ORDER BY {urutan_harga_sql("z")} LIMIT 1) AS harga_akhir
                 FROM   sumber_daya sd
                 JOIN   sumber_daya_harga h ON h.sumber_daya_id = sd.id
                 WHERE  sd.jenis = 'BAHAN' AND sd.aktif
@@ -205,13 +205,13 @@ def tren_material() -> dict[str, Any]:
         if kandidat:
             titik = conn.execute(
                 text(
-                    """
+                    f"""
                     SELECT h.sumber_daya_id, h.berlaku_dari, h.harga_satuan, h.mata_uang,
                            h.nama_kapal, sup.nama AS supplier_nama
                     FROM   sumber_daya_harga h
                     LEFT   JOIN supplier sup ON sup.id = h.supplier_id
                     WHERE  h.sumber_daya_id = ANY(:ids)
-                    ORDER  BY h.sumber_daya_id, h.berlaku_dari, h.id
+                    ORDER  BY h.sumber_daya_id, {urutan_harga_sql("h", terbaru_dulu=False)}
                     """
                 ),
                 {"ids": [k["id"] for k in kandidat]},

@@ -175,13 +175,13 @@ def ensure_material_tables() -> None:
         conn.execute(text("DROP VIEW IF EXISTS v_harga_terkini"))
         conn.execute(
             text(
-                """
+                f"""
                 CREATE VIEW v_harga_terkini AS
                 SELECT DISTINCT ON (sumber_daya_id)
                        sumber_daya_id, supplier_id, harga_satuan, mata_uang, nama_kapal,
                        tahun_pembelian, berlaku_dari, no_dokumen
                 FROM   sumber_daya_harga
-                ORDER  BY sumber_daya_id, berlaku_dari DESC, id DESC
+                ORDER  BY sumber_daya_id, {urutan_harga_sql()}
                 """
             )
         )
@@ -200,6 +200,26 @@ def sd_identitas_sql(alias: str = "") -> str:
         f"lower(trim({p}satuan)), "
         f"{p}jenis"
     )
+
+
+# Urutan "titik harga mana yang paling baru". SATU definisi, dipakai enam tempat.
+#
+# `tahun_pembelian` yang menentukan, bukan `berlaku_dari`. Sebabnya: `berlaku_dari` boleh
+# dikosongkan di tempelan, dan kalau kosong dia jatuh ke `date.today()` -- jadi sering dia
+# bukan fakta soal pembeliannya, melainkan fakta soal kapan orang sempat menginput. Waktu
+# kolom itu yang mengurutkan, faktur 2023 yang baru diinput hari ini mengalahkan pembelian
+# 2025 yang diinput minggu lalu, lalu ikut terbawa ke harga komponen AHSP yang hidup
+# mengikuti `v_harga_terkini`. Di cadangan 9 Agustus, 9 dari 68 baris harga punya
+# `berlaku_dari` di tahun yang berbeda dari `tahun_pembelian`.
+#
+# `berlaku_dari` tetap ikut sebagai pemecah seri: dia tanggal penuh, jadi lebih presisi
+# untuk membedakan dua pembelian di tahun yang sama -- selama memang diisi.
+def urutan_harga_sql(alias: str = "", *, terbaru_dulu: bool = True) -> str:
+    if alias and not _ARGUMEN_NORM.match(alias):
+        raise ValueError(f"Bukan alias tabel yang sah: {alias!r}")
+    p = f"{alias}." if alias else ""
+    arah = "DESC" if terbaru_dulu else "ASC"
+    return f"{p}tahun_pembelian {arah}, {p}berlaku_dari {arah}, {p}id {arah}"
 
 
 def _dedup_sumber_daya(conn) -> None:

@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import KOLOM_CARI_MATERIAL, engine, sd_identitas_sql
+from app.database import KOLOM_CARI_MATERIAL, engine, sd_identitas_sql, urutan_harga_sql
 from app.schemas.material import (
     JENIS_SUMBER_DAYA,
     BulkMaterialCreate,
@@ -32,7 +32,7 @@ _KOLOM_CARI = tuple(f"sd.{k}" for k in KOLOM_CARI_MATERIAL)
 #
 # CAST eksplisit dipakai karena pg8000 tidak bisa menyimpulkan tipe parameter yang hanya
 # muncul di dalam "IS NULL".
-_LATERAL_HARGA = """
+_LATERAL_HARGA = f"""
     LEFT JOIN LATERAL (
         SELECT h.id, h.harga_satuan, h.mata_uang, h.nama_kapal, h.tahun_pembelian,
                h.berlaku_dari, sup.nama AS supplier_nama
@@ -42,7 +42,7 @@ _LATERAL_HARGA = """
           AND  (CAST(:kapal    AS TEXT) IS NULL OR h.nama_kapal      = :kapal)
           AND  (CAST(:supplier AS TEXT) IS NULL OR sup.nama          = :supplier)
           AND  (CAST(:tahun    AS INT)  IS NULL OR h.tahun_pembelian = :tahun)
-        ORDER  BY h.berlaku_dari DESC, h.id DESC
+        ORDER  BY {urutan_harga_sql("h")}
         LIMIT  1
     ) h ON TRUE
 """
@@ -392,13 +392,23 @@ def _resolve_sumber_daya(
 
 def _tanda_harga(row: dict[str, Any]) -> tuple:
     """Sidik jari satu titik harga. Dua baris dengan sidik jari sama = kejadian harga
-    yang sama ke-input dua kali, bukan perubahan harga."""
+    yang sama ke-input dua kali, bukan perubahan harga.
+
+    `berlaku_dari` sengaja TIDAK ikut. Dia boleh dikosongkan di tempelan dan kalau kosong
+    jatuh ke `date.today()`, jadi memasukkannya bikin sidik jari ini berubah tiap ganti
+    hari: faktur yang sama ditempel besoknya lolos sebagai "harga baru", padahal harganya
+    tidak bergerak sesenpun. Penangkal duplikatnya cuma bekerja dalam satu hari.
+
+    Yang tersisa sudah cukup menjawab "pembelian yang sama atau bukan": material, harga,
+    mata uang, supplier, tahun pembelian, dan kapalnya. Dua pembelian berbeda di tahun yang
+    sama dengan enam hal itu identik memang tidak dapat dibedakan -- dan memang tidak perlu,
+    karena titik harganya persis sama.
+    """
     return (
         row["sumber_daya_id"],
         float(row["harga_satuan"]),
         row["mata_uang"],
         row["supplier_id"],
-        row["berlaku_dari"],
         row["tahun_pembelian"],
         row["nama_kapal"] or "",
     )
@@ -513,11 +523,11 @@ def _harga_berubah(conn: Connection, sumber_daya_id: int, item: PriceCreate, sup
     """
     row = conn.execute(
         text(
-            """
+            f"""
             SELECT harga_satuan, mata_uang, supplier_id, berlaku_dari, tahun_pembelian, nama_kapal
             FROM   sumber_daya_harga
             WHERE  sumber_daya_id = :id
-            ORDER  BY berlaku_dari DESC, id DESC
+            ORDER  BY {urutan_harga_sql()}
             LIMIT  1
             """
         ),
@@ -653,12 +663,12 @@ def preview_bulk(payload: BulkMaterialCreate, *, jenis: str = "BAHAN") -> dict[s
         if ada_ids:
             for r in conn.execute(
                 text(
-                    """
+                    f"""
                     SELECT sumber_daya_id, harga_satuan, mata_uang, supplier_id,
                            berlaku_dari, tahun_pembelian, nama_kapal
                     FROM   sumber_daya_harga
                     WHERE  sumber_daya_id = ANY(:ids)
-                    ORDER  BY sumber_daya_id, berlaku_dari DESC, id DESC
+                    ORDER  BY sumber_daya_id, {urutan_harga_sql()}
                     """
                 ),
                 {"ids": ada_ids},
@@ -699,7 +709,6 @@ def preview_bulk(payload: BulkMaterialCreate, *, jenis: str = "BAHAN") -> dict[s
                     "supplier_id": sup_map.get(item.supplier_nama.strip())
                     if item.supplier_nama.strip()
                     else None,
-                    "berlaku_dari": item.berlaku_dari or date.today(),
                     "tahun_pembelian": item.tahun_pembelian,
                     "nama_kapal": item.nama_kapal or None,
                 }
@@ -730,9 +739,10 @@ def preview_bulk(payload: BulkMaterialCreate, *, jenis: str = "BAHAN") -> dict[s
             # membuat masternya, sisanya menempel ke master yang sama -- jadi harus
             # dinilai seperti material yang sudah ada, bukan "material baru" dua kali.
             key = _identitas_key(item.nama, item.spesifikasi, item.satuan)
+            # Bentuknya harus sejalan dengan _tanda_harga(): tanpa berlaku_dari, karena
+            # tanggal yang dikosongkan jatuh ke hari ini dan bikin duplikat lolos besoknya.
             tanda = ("baru", key, item.harga_satuan, item.mata_uang,
-                     item.berlaku_dari or date.today(), item.tahun_pembelian,
-                     item.nama_kapal or "")
+                     item.tahun_pembelian, item.nama_kapal or "")
             if key in baru_di_batch:
                 row["status"] = "dilewati" if tanda in tanda_batch else "harga_baru"
             else:
@@ -763,14 +773,14 @@ def price_history(sumber_daya_id: int) -> list[PriceHistoryRow]:
     with engine.connect() as conn:
         rows = conn.execute(
             text(
-                """
+                f"""
                 SELECT h.id, h.harga_satuan, h.mata_uang, h.berlaku_dari, h.tahun_pembelian,
                        h.nama_kapal, h.sumber, h.no_dokumen, h.catatan, h.dibuat_pada,
                        sup.nama AS supplier_nama
                 FROM   sumber_daya_harga h
                 LEFT   JOIN supplier sup ON sup.id = h.supplier_id
                 WHERE  h.sumber_daya_id = :id
-                ORDER  BY h.berlaku_dari ASC, h.id ASC
+                ORDER  BY {urutan_harga_sql("h", terbaru_dulu=False)}
                 """
             ),
             {"id": sumber_daya_id},
