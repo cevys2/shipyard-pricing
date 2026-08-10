@@ -24,14 +24,15 @@ Terakhir diperbarui: Agustus 2026.
 
 ```
 backend/app/
-  main.py         -- startup memanggil semua ensure_*(), lalu include 4 router
-  database.py     -- SEMUA DDL ada di sini (lihat "Perubahan skema" di bawah)
-  auth.py         -- verifikasi JWT saja
-  config.py       -- settings, termasuk catalog_table = "tabel_katalog_harga"
-  routers/        -- ahsp, analitik, catalog, material
-  services/       -- ahsp, analitik, audit, catalog, docking_parser, material
-  schemas/        -- pydantic
-backend/tests/    -- 43 tes, harus tetap lulus setelah perubahan apa pun
+  main.py           -- startup memanggil semua ensure_*(), lalu include 5 router
+  database.py       -- SEMUA DDL ada di sini (lihat "Perubahan skema" di bawah)
+  auth.py           -- verifikasi JWT saja
+  config.py         -- settings, termasuk catalog_table = "tabel_katalog_harga"
+  seed_kategori.py  -- 11 kategori + 83 alias, dipakai ensure_kategori_table()
+  routers/          -- ahsp, analitik, catalog, kategori, material
+  services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian
+  schemas/          -- pydantic
+backend/tests/      -- 80 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -43,8 +44,13 @@ Contoh pola yang paling bersih untuk ditiru: **`ensure_audit_table()`**.
 Contoh penambahan kolom ke tabel yang sudah berisi data: lihat `tahun_pembelian` di
 `ensure_material_tables()` — tambah nullable, backfill, baru `SET NOT NULL`.
 
-Fungsi yang ada sekarang: `ensure_material_tables()`, `ensure_ahsp_tables()`,
-`ensure_partno_unique()`, `ensure_audit_table()`.
+Fungsi yang ada sekarang, dalam urutan pemanggilan di `main.py`:
+`ensure_material_tables()`, `ensure_partno_unique()`, `ensure_kategori_table()`,
+`ensure_ahsp_tables()`, `ensure_audit_table()`, `ensure_pencarian_index()`.
+
+Urutannya bukan selera: `ahsp_komponen` punya FK ke `sumber_daya`, `ahsp.kategori_id` ke
+`kategori`, dan index pencarian menempel ke tabel yang harus sudah ada. Dipanggil di luar
+urutan itu, DDL-nya gagal.
 
 Postgres tidak punya `ADD CONSTRAINT IF NOT EXISTS` — pakai guard `DO $$ ... pg_constraint ... $$`
 seperti `chk_sdh_mata_uang`.
@@ -54,7 +60,7 @@ seperti `chk_sdh_mata_uang`.
 | Tabel | Isi |
 |---|---|
 | `tabel_katalog_harga` | Harga realisasi docking, ±4.900 baris. Diisi `services/docking_parser.py` dari Excel "REALISASI BIAYA DOCKING". |
-| `kategori`, `kategori_alias` | Master kategori pekerjaan kanonik + pemetaan sebutan lama. |
+| `kategori`, `kategori_alias` | Master kategori pekerjaan kanonik (11) + pemetaan sebutan lama (83 alias). Teks kategori dicocokkan lewat `database.kategori_norm_sql()` — **jangan ubah ekspresinya**, alias di DB tersimpan sebagai hasil normalisasi itu. |
 | `supplier`, `sumber_daya`, `sumber_daya_harga` | Katalog material + riwayat harga. View `v_harga_terkini`. |
 | `ahsp`, `ahsp_komponen` | Analisa harga satuan. |
 | `audit_log` | Append-only, siapa mengubah apa. |
@@ -80,12 +86,18 @@ kategori ditulis ke `kategori_id`, bukan dengan mengedit teks aslinya.
 
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 AHSP (Langkah 3 — **sudah selesai dan teruji**, tapi belum satu koefisien pun diisi dan
-belum pernah dibuka di peramban).
+belum pernah dibuka di peramban), dan kategori pekerjaan kanonik (K0–K3 selesai dan
+sudah di produksi; 4.914 baris terpetakan, nol sisa).
 
 Diketahui terbatas: aplikasi belum menghasilkan keluaran apa pun (penawaran masih dibuat
 manual di Excel). `uq_sd_identitas` cuma menolak nama yang persis sama.
 
-Sedang dikerjakan: kategori pekerjaan kanonik — lihat `docs/bundel-kategori-claude-code.md`.
+Yang masih menggantung di katalog material — `berlaku_dari` jatuh ke `date.today()` kalau
+tempelan tidak menyertakan tanggal, padahal SEMUA keputusan "harga mana yang terkini"
+(`v_harga_terkini`, `_harga_berubah`, tren material) mengurut lewat kolom itu. Akibatnya
+(a) faktur yang sama ditempel di dua hari berbeda jadi dua titik harga, dan (b) pembelian
+lama yang baru diinput bisa mengalahkan pembelian yang lebih baru. `tahun_pembelian` sudah
+ada tapi cuma dipakai sebagai filter, tidak pernah untuk mengurutkan.
 
 ## Dokumen
 
