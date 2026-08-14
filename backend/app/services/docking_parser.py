@@ -138,7 +138,14 @@ def col_for_sub(group_labels, sub_labels, group_start_col, want_sub):
 
 def find_label_value(values, label_keys, max_row=25, max_scan=8):
     """Cari sel yang mengandung salah satu label (mis. 'nama kapal'), lalu ambil
-    sel non-kosong pertama di sebelah kanannya (skip tanda ':')."""
+    sel non-kosong pertama di sebelah kanannya (skip tanda ':').
+
+    Sel angka dibulatkan dulu kalau isinya bilangan bulat. Tahun docking di berkas ini
+    tersimpan sebagai angka, jadi tanpa pembulatan `str(2026.0)` -> "2026.0", dan nilai
+    itu mengisi kolom Tahun di form impor (DockingImportPanel) lalu ikut jadi prefix ID
+    baris: KMP._MISHIMA-2026.0-001. Sama persis dengan yang terjadi di
+    `catalog.parse_spreadsheet`, cuma di sini sumbernya openpyxl/xlrd, bukan pandas.
+    """
     for row in values[:max_row]:
         for ci, cell in enumerate(row):
             if cell is None:
@@ -148,6 +155,8 @@ def find_label_value(values, label_keys, max_row=25, max_scan=8):
                 for cj in range(ci + 1, min(ci + max_scan, len(row))):
                     v = row[cj]
                     if v is not None and str(v).strip() not in (':', ''):
+                        if isinstance(v, float) and float(v).is_integer():
+                            v = int(v)
                         return str(v).strip()
     return ""
 

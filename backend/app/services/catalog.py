@@ -392,6 +392,14 @@ def parse_spreadsheet(file_bytes: bytes, filename: str) -> tuple[BulkCatalogCrea
         col = find_col(keys)
         if col and len(df[col].dropna()) > 0:
             val = df[col].dropna().iloc[0]
+            # Kolom angka yang punya SATU sel kosong saja (baris total, baris pemisah)
+            # dibaca pandas sebagai float64, jadi str(2026.0) -> "2026.0". Tahun ikut
+            # membentuk prefix ID baris (lihat _bulk_create), jadi ".0" itu menempel
+            # permanen di primary key dan memecah filter "Tahun" jadi dua nilai. Format
+            # sel di Excel tidak menolong -- ini inferensi tipe di pandas. np.float64
+            # turunan float bawaan, jadi isinstance() di bawah ikut menangkapnya.
+            if isinstance(val, float) and float(val).is_integer():
+                val = int(val)
             header[field] = str(val).strip()
 
     items: list[CatalogItemBase] = []
