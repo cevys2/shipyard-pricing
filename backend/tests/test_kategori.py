@@ -82,7 +82,7 @@ def test_peta_python_sama_dengan_final_peta_json():
 
 def test_jumlah_kategori_dan_alias():
     assert len(PETA) == 11
-    assert len(baris_alias()) == 83
+    assert len(baris_alias()) == 90
 
 
 def test_alias_tersimpan_dalam_bentuk_hasil_normalisasi():
@@ -108,7 +108,7 @@ def test_seed_idempoten():
     ensure_kategori_table()
     with engine.connect() as c:
         assert c.execute(text("SELECT count(*) FROM kategori")).scalar() == 11
-        assert c.execute(text("SELECT count(*) FROM kategori_alias")).scalar() == 83
+        assert c.execute(text("SELECT count(*) FROM kategori_alias")).scalar() == 90
         assert c.execute(
             text("SELECT count(DISTINCT urutan) FROM kategori")
         ).scalar() == 11
@@ -193,13 +193,17 @@ def test_resolver_idempoten():
     assert _kategori_dari("I2") == "KONSTRUKSI"
 
 
-def test_semua_83_alias_benar_benar_terpetakan():
+def test_semua_alias_benar_benar_terpetakan():
     """Setiap alias di seed dimasukkan sebagai baris katalog, lalu dicek mendarat di kategorinya.
 
     Ini pengganti lokal untuk verifikasi produksi "nol baris tanpa kategori_id". Yang bisa
     dibuktikan di sini: tidak ada alias yang mati. Yang TIDAK bisa dibuktikan di sini: apakah
-    83 alias ini menutup semua teks kategori yang benar-benar ada di produksi -- itu hanya
+    alias-alias ini menutup semua teks kategori yang benar-benar ada di produksi -- itu hanya
     ketahuan dengan menghitung di database produksi.
+
+    Dan pada 18 Agustus 2026 hitungan itu memang meleset: cadangan produksi menunjukkan 549
+    baris berteks kategori yang belum punya alias sama sekali, jadi jumlahnya naik 83 -> 90.
+    Jumlah di sini sengaja tetap hardcoded supaya penambahan alias berikutnya juga terasa.
     """
     baris = [
         {"id": f"S{i}", "kategori": r["alias"]} for i, r in enumerate(baris_alias())

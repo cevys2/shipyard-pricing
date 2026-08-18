@@ -89,7 +89,7 @@ kategori ditulis ke `kategori_id`, bukan dengan mengedit teks aslinya.
 
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
-baru langsung dari layar AHSP), dan kategori pekerjaan kanonik (11 kategori, 83 alias).
+baru langsung dari layar AHSP), dan kategori pekerjaan kanonik (11 kategori, 90 alias).
 
 Diketahui terbatas:
 
@@ -99,16 +99,16 @@ Diketahui terbatas:
   di seluruh baris; cuma `qty` yang dipakai.
 - `uq_sd_identitas` cuma menolak nama yang persis sama, jadi penjaga duplikat di layar
   sengaja dibuat lebih longgar daripada index-nya.
-- **Cakupan kategori bukan lagi 100%.** Per cadangan 17 Agustus 2026: 6.017 dari 6.673 baris
-  punya `kategori_id` (90,2%), 656 kosong. Sebabnya `selaraskan_kategori()` cuma jalan saat
-  app start (di ujung `ensure_kategori_table()`), **belum di jalur impor Excel** — jadi baris
-  hasil impor menunggu deploy berikutnya. Angkanya kelihatan di tab Analitik
-  (`cakupan.tanpa_kategori`).
-  Dari 656 itu, 107 teksnya cocok alias dan pulih sendiri begitu di-deploy. Sisanya 549
-  **tidak akan pulih**: tujuh sebutan yang belum punya alias sama sekali — PERPIPAAN (368),
-  PEKERJAAN PIPA DAN VALVE (126), PEKERJAAN PROPULSI (27), PEKERJAAN KONTRUKSI (14),
-  PELAYANAN UMUM/GENERAL SERVICES (9), SEA CHEST & SEA VALVES (4), PEKERJAAN MEKANIK (1).
-  Menambahkannya = menambah baris di `seed_kategori.py`; upsert-nya sudah idempoten.
+- **Cakupan kategori: 90,2% di produksi saat ini, 100% begitu di-deploy.** Per cadangan
+  17 Agustus 2026, 6.017 dari 6.673 baris punya `kategori_id`; 656 kosong. Sebabnya
+  `selaraskan_kategori()` cuma jalan saat app start (di ujung `ensure_kategori_table()`),
+  **belum di jalur impor Excel** — jadi baris hasil impor menunggu deploy berikutnya. Angkanya
+  kelihatan di tab Analitik (`cakupan.tanpa_kategori`).
+  Dari 656 itu, 107 sudah cocok alias lama. Sisanya 549 memakai tujuh sebutan yang belum punya
+  alias; ketujuhnya ditambahkan 18 Agustus 2026, jadi alias 83 → 90. Dihitung ulang terhadap
+  cadangan yang sama: 6.673/6.673 = **100,00%**, nol sisa.
+  Catatan jujur: selama jalur impor belum memanggil resolver, angka ini akan turun lagi tiap
+  impor baru dan pulih lagi tiap deploy.
 - Baris kembar identik di `tabel_katalog_harga` sengaja tidak didedup — tabelnya tidak punya
   kolom kuantitas, jadi tidak ada cara memastikan itu salah input atau dua pekerjaan sungguhan.
 

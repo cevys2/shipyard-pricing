@@ -1,6 +1,8 @@
 """Master kategori pekerjaan kanonik + pemetaan sebutan lama.
 
-11 kategori (10 jenis pekerjaan + LAIN-LAIN) dan 83 alias, disepakati VP marketing 2026.
+11 kategori (10 jenis pekerjaan + LAIN-LAIN) dan 90 alias. Yang 83 pertama disepakati VP
+marketing 2026; 7 sisanya ditambahkan 18 Agustus 2026 setelah menghitung cadangan produksi
+17 Agustus menemukan 549 baris berteks kategori yang belum punya alias sama sekali.
 Catatan lengkap keputusannya ada di `docs/bundel-kategori-claude-code.md`; peta yang sama
 tersimpan sebagai data mentah di `docs/final_peta.json`, dan `tests/test_kategori.py`
 menjaga keduanya tidak berpisah diam-diam.
@@ -21,8 +23,10 @@ terpisah -- dua daftar yang harus sejalan cepat atau lambat akan berpisah.
 PETA: dict[str, tuple[str, ...]] = {
     "PIPA - PIPA": (
         "PEKERJAAN PIPA",
+        "PEKERJAAN PIPA DAN VALVE",
         "PEKERJAAN PIPA-PIPA",
         "PEKERJAAN TAMBAHAN PIPA- PIPA",
+        "PERPIPAAN",
         "PIPA",
         "PIPA - PIPA",
         "PIPA - PIPA (PIPA YARD SUPPLY)",
@@ -43,6 +47,7 @@ PETA: dict[str, tuple[str, ...]] = {
         "PELAYANAN UMUM ( GENERAL SERVICES )",
         "PELAYANAN UMUM (GENERAL SERVICES)",
         "PELAYANAN UMUM KAPAL ( GENERAL SERVICES )",
+        "PELAYANAN UMUM/GENERAL SERVICES",
         "UMUM",
     ),
     "PERAWATAN LAMBUNG": (
@@ -62,6 +67,7 @@ PETA: dict[str, tuple[str, ...]] = {
         "KEMUDI, PROPELLER, TAIL SHAFT",
         "KEMUDI, PROPELLER, TAIL SHAFT DAN STERN TUBE",
         "KEMUDI, PROPELLER, TAIL SHAFT, STERN TUBE",
+        "PEKERJAAN PROPULSI",
         "PROPELLER & SHAFTING",
         "PROPELLER SHAFTING, RUDDER & RAMPDOOR",
         "PROPULSION SYSTEM",
@@ -75,6 +81,7 @@ PETA: dict[str, tuple[str, ...]] = {
         "KRAN-KRAN",
         "SEA CHEST",
         "SEA CHEST & SEA VALVE",
+        "SEA CHEST & SEA VALVES",
         "SEA CHEST & VALVE",
         "SEA CHEST DAN SEA VALVE",
         "SEA CHEST, SEA VALVE & OVER BOARD",
@@ -88,6 +95,9 @@ PETA: dict[str, tuple[str, ...]] = {
     "KONSTRUKSI": (
         "KONSTRUKSI",
         "PEKERJAAN KONSTRUKSI",
+        # Salah ketik di laporan asli. Justru ini gunanya tabel alias:
+        # teks aslinya tidak disentuh, koreksinya di kategori_id.
+        "PEKERJAAN KONTRUKSI",
     ),
     "JANGKAR & RANTAI JANGKAR": (
         "JANGKAR & RANTAI JANGKAR",
@@ -124,6 +134,7 @@ PETA: dict[str, tuple[str, ...]] = {
         "PEKERJAAN DI KAMAR MESIN (NON REPLATING)",
         "PEKERJAAN DI RAMPDOOR",
         "PEKERJAAN LISTRIK",
+        "PEKERJAAN MEKANIK",
         "PEKERJAAN NAVIGATION DECK (NON REPLATING)",
         "PEKERJAAN TAMBAHAN",
         "PEKERJAAN TOP DECK (NON REPLATING)",
