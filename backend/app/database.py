@@ -202,7 +202,7 @@ def sd_identitas_sql(alias: str = "") -> str:
     )
 
 
-# Urutan "titik harga mana yang paling baru". SATU definisi, dipakai enam tempat.
+# Urutan "titik harga mana yang paling baru". SATU definisi, dipakai delapan tempat.
 #
 # `tahun_pembelian` yang menentukan, bukan `berlaku_dari`. Sebabnya: `berlaku_dari` boleh
 # dikosongkan di tempelan, dan kalau kosong dia jatuh ke `date.today()` -- jadi sering dia

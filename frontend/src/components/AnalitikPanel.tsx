@@ -128,7 +128,7 @@ export default function AnalitikPanel({ auth }: Props) {
 
     const namaPer = new Map(kandidatTampil.map((k) => [k.id, k.nama]));
     const idTampil = new Set(kandidatTampil.map((k) => k.id));
-    const perMataUang = new Map<string, Map<string, Record<string, string | number>>>();
+    const perMataUang = new Map<string, Map<number, Record<string, string | number>>>();
     const seriPer = new Map<string, Set<string>>();
 
     material.titik.forEach((t) => {
@@ -140,19 +140,23 @@ export default function AnalitikPanel({ auth }: Props) {
         perMataUang.set(t.mata_uang, new Map());
         seriPer.set(t.mata_uang, new Set());
       }
-      const perTanggal = perMataUang.get(t.mata_uang)!;
-      const baris = perTanggal.get(t.berlaku_dari) ?? { tanggal: t.berlaku_dari };
+      const perTahun = perMataUang.get(t.mata_uang)!;
+      // Sumbu-X memakai tahun pembelian, bukan `berlaku_dari`: kolom itu boleh dikosongkan
+      // waktu menempel dan kalau kosong jatuh ke hari ini, jadi sering dia fakta soal kapan
+      // orang sempat menginput, bukan soal pembeliannya. Titik dikirim backend terurut
+      // menaik, jadi kalau ada beberapa pembelian di tahun yang sama, yang tertulis terakhir
+      // adalah yang paling baru di tahun itu -- definisi "terkini" yang sama dengan
+      // `urutan_harga_sql()` dan `v_harga_terkini`.
+      const baris = perTahun.get(t.tahun_pembelian) ?? { tahun: t.tahun_pembelian };
       baris[nama] = t.harga_satuan;
-      perTanggal.set(t.berlaku_dari, baris);
+      perTahun.set(t.tahun_pembelian, baris);
       seriPer.get(t.mata_uang)!.add(nama);
     });
 
-    return [...perMataUang.entries()].map(([mataUang, perTanggal]) => ({
+    return [...perMataUang.entries()].map(([mataUang, perTahun]) => ({
       mataUang,
       seri: [...seriPer.get(mataUang)!],
-      data: [...perTanggal.values()].sort((a, b) =>
-        String(a.tanggal).localeCompare(String(b.tanggal)),
-      ),
+      data: [...perTahun.values()].sort((a, b) => Number(a.tahun) - Number(b.tahun)),
     }));
   }, [material, kandidatTampil, supplierMat]);
 
@@ -272,7 +276,7 @@ export default function AnalitikPanel({ auth }: Props) {
                     <ResponsiveContainer width="100%" height={300}>
                       <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                        <XAxis dataKey="tanggal" tick={{ fontSize: 12, fill: "#64748b" }} tickMargin={8} />
+                        <XAxis dataKey="tahun" tick={{ fontSize: 12, fill: "#64748b" }} tickMargin={8} />
                         <YAxis
                           tick={{ fontSize: 12, fill: "#64748b" }}
                           width={64}
@@ -313,7 +317,7 @@ export default function AnalitikPanel({ auth }: Props) {
                         <th className="px-4 py-2.5 text-right">Harga Awal</th>
                         <th className="px-4 py-2.5 text-right">Harga Akhir</th>
                         <th className="px-4 py-2.5 text-right">Perubahan</th>
-                        <th className="px-4 py-2.5">Rentang</th>
+                        <th className="px-4 py-2.5">Rentang Beli</th>
                       </tr>
                     </thead>
                     <tbody>

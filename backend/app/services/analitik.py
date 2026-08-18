@@ -181,8 +181,8 @@ def tren_material() -> dict[str, Any]:
                 f"""
                 SELECT sd.id, sd.nama, sd.spesifikasi, sd.satuan,
                        COUNT(h.id)                 AS n_harga,
-                       MIN(h.berlaku_dari)         AS dari,
-                       MAX(h.berlaku_dari)         AS sampai,
+                       MIN(h.tahun_pembelian)      AS dari,
+                       MAX(h.tahun_pembelian)      AS sampai,
                        COUNT(DISTINCT h.mata_uang) AS n_mata_uang,
                        MIN(h.mata_uang)            AS mata_uang,
                        (SELECT a.harga_satuan FROM sumber_daya_harga a
@@ -206,7 +206,7 @@ def tren_material() -> dict[str, Any]:
             titik = conn.execute(
                 text(
                     f"""
-                    SELECT h.sumber_daya_id, h.berlaku_dari, h.harga_satuan, h.mata_uang,
+                    SELECT h.sumber_daya_id, h.tahun_pembelian, h.harga_satuan, h.mata_uang,
                            h.nama_kapal, sup.nama AS supplier_nama
                     FROM   sumber_daya_harga h
                     LEFT   JOIN supplier sup ON sup.id = h.supplier_id

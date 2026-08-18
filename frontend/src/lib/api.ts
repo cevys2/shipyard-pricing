@@ -344,8 +344,8 @@ export type TrenMaterialKandidat = {
   spesifikasi: string | null;
   satuan: string;
   n_harga: number;
-  dari: string;
-  sampai: string;
+  dari: number;
+  sampai: number;
   n_mata_uang: number;
   mata_uang: string;
   harga_awal: number;
@@ -356,7 +356,7 @@ export type TrenMaterialKandidat = {
 
 export type TrenMaterialTitik = {
   sumber_daya_id: number;
-  berlaku_dari: string;
+  tahun_pembelian: number;
   harga_satuan: number;
   mata_uang: string;
   nama_kapal: string | null;
