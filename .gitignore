@@ -17,3 +17,9 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# 5. Knowledge graph hasil /graphify (dibangun ulang, isinya path absolut mesin lokal)
+graphify-out/
+
+# 6. Setelan Claude Code per-mesin (permission Bash), bukan keputusan proyek
+.claude/settings.local.json
