@@ -26,7 +26,18 @@ os.environ.setdefault("JWT_SECRET", "rahasia-tes-saja")
 
 from sqlalchemy import text  # noqa: E402
 
-from app.database import engine  # noqa: E402
+from app.database import engine, ensure_katalog_kolom_rincian  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def kolom_rincian_siap():
+    """Kolom nullable tambahan di `tabel_katalog_harga`, sekali per sesi tes.
+
+    Sama persis dengan yang dilakukan `main.py` waktu app start. Tanpa ini, database tes
+    lokal tertinggal dari kode -- setiap INSERT katalog akan gagal di kolom yang belum
+    ada, dan errornya menuding tesnya, bukan setup DB-nya.
+    """
+    ensure_katalog_kolom_rincian()
 
 
 @pytest.fixture(autouse=True)

@@ -82,7 +82,7 @@ def test_peta_python_sama_dengan_final_peta_json():
 
 def test_jumlah_kategori_dan_alias():
     assert len(PETA) == 11
-    assert len(baris_alias()) == 90
+    assert len(baris_alias()) == 100
 
 
 def test_alias_tersimpan_dalam_bentuk_hasil_normalisasi():
@@ -108,7 +108,7 @@ def test_seed_idempoten():
     ensure_kategori_table()
     with engine.connect() as c:
         assert c.execute(text("SELECT count(*) FROM kategori")).scalar() == 11
-        assert c.execute(text("SELECT count(*) FROM kategori_alias")).scalar() == 90
+        assert c.execute(text("SELECT count(*) FROM kategori_alias")).scalar() == 100
         assert c.execute(
             text("SELECT count(DISTINCT urutan) FROM kategori")
         ).scalar() == 11
@@ -203,6 +203,9 @@ def test_semua_alias_benar_benar_terpetakan():
 
     Dan pada 18 Agustus 2026 hitungan itu memang meleset: cadangan produksi menunjukkan 549
     baris berteks kategori yang belum punya alias sama sekali, jadi jumlahnya naik 83 -> 90.
+    Meleset lagi 24 Agustus 2026 dari arah yang lain: repair list memakai sebutan seksi yang
+    tidak pernah muncul di laporan realisasi, dan 374 dari 385 barisnya masuk tanpa kategori
+    -- 90 -> 97.
     Jumlah di sini sengaja tetap hardcoded supaya penambahan alias berikutnya juga terasa.
     """
     baris = [

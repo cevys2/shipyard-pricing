@@ -10,6 +10,7 @@ import {
 } from "../lib/api";
 import EditableCatalogTable from "../components/EditableCatalogTable";
 import DockingImportPanel from "../components/DockingImportPanel";
+import RepairListImportPanel from "../components/RepairListImportPanel";
 import MaterialCatalogPanel from "../components/MaterialCatalogPanel";
 import AhspPanel from "../components/AhspPanel";
 // recharts itu dependensi terbesar di app ini (~100 kB gzip). Tab Analitik bukan
@@ -39,7 +40,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   const [stats, setStats] = useState<CatalogStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [importMsg, setImportMsg] = useState("");
-  const [importMode, setImportMode] = useState<"docking" | "flat">("docking");
+  const [importMode, setImportMode] = useState<"docking" | "repair" | "flat">("docking");
 
   const queryParams = useMemo(
     () => ({
@@ -270,6 +271,13 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setImportMode("repair")}
+                  className={`btn btn-sm ${importMode === "repair" ? "btn-primary" : "btn-secondary"}`}
+                >
+                  Repair List / Rincian Negosiasi
+                </button>
+                <button
+                  type="button"
                   onClick={() => setImportMode("flat")}
                   className={`btn btn-sm ${importMode === "flat" ? "btn-primary" : "btn-secondary"}`}
                 >
@@ -291,6 +299,24 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                     <DockingImportPanel token={auth.token} onImported={refresh} />
                   </div>
                 </>
+              ) : importMode === "repair" ? (
+                <>
+                  <h3 className="font-display text-lg font-bold text-slate-900">
+                    Import file "REPAIR LIST" / "RINCIAN"
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Dokumen kesepakatan di <strong>awal</strong> pekerjaan — beda dari Laporan Docking yang
+                    lahir di akhir. Seksi angka romawi jadi kategori, baris induk yang tidak berharga jadi
+                    konteks, dan jumlah semua baris dicocokkan otomatis dengan angka{" "}
+                    <strong>JUMLAH</strong> di berkas sebelum apa pun disimpan.
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Tahun tidak ada di berkas repair list — isi manual di layar pratinjau.
+                  </p>
+                  <div className="mt-6">
+                    <RepairListImportPanel token={auth.token} onImported={refresh} />
+                  </div>
+                </>
               ) : (
                 <>
                   <h3 className="font-display text-lg font-bold text-slate-900">
@@ -299,6 +325,11 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                   <p className="mt-2 text-sm text-slate-600">
                     Kolom wajib: <strong>Uraian Pekerjaan</strong>, plus <strong>Nama Kapal</strong> dan{" "}
                     <strong>Tahun</strong> (boleh diisi sama di setiap baris).
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Satu berkas = <strong>satu kapal, satu tahun</strong>. Berkas yang memuat lebih dari satu
+                    akan ditolak dengan menyebut kapalnya — sebelumnya berkas seperti itu tetap diproses dan
+                    semua barisnya tercatat atas nama kapal yang kebetulan muncul paling atas.
                   </p>
                   <input
                     type="file"

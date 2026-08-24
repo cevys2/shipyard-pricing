@@ -22,7 +22,8 @@ TABLE = settings.catalog_table
 
 _COLUMNS = (
     "id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun, "
-    "kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan"
+    "kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan, "
+    "volume, satuan, induk_uraian, keterangan"
 )
 
 _FILTER_COLS = {
@@ -139,8 +140,11 @@ def filter_options(
     return result
 
 
-_INSERT_CHUNK = 500  # 500 x 9 kolom = 4.500 parameter; batas Postgres 65.535
-_INSERT_COLS = ("id", "pt", "kpl", "tipe", "thn", "kat", "urai", "sat", "hrg")
+_INSERT_CHUNK = 500  # 500 x 13 kolom = 6.500 parameter; batas Postgres 65.535
+_INSERT_COLS = (
+    "id", "pt", "kpl", "tipe", "thn", "kat", "urai", "sat", "hrg",
+    "vol", "satn", "induk", "ket",
+)
 
 
 def _insert_rows(conn: Connection, rows: list[dict[str, Any]]) -> None:
@@ -169,7 +173,8 @@ def _insert_rows(conn: Connection, rows: list[dict[str, Any]]) -> None:
                 f"""
                 INSERT INTO {TABLE}
                 (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
-                 kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan)
+                 kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan,
+                 volume, satuan, induk_uraian, keterangan)
                 VALUES {", ".join(placeholders)}
                 """
             ),
@@ -263,6 +268,10 @@ def _bulk_create(
                 "urai": item.uraian_pekerjaan,
                 "sat": item.volume_satuan or "-",
                 "hrg": float(item.harga_satuan),
+                "vol": item.volume,
+                "satn": item.satuan,
+                "induk": item.induk_uraian,
+                "ket": item.keterangan,
             }
             for new_id, item in zip(ids, payload.items, strict=True)
         ],
@@ -303,6 +312,12 @@ def bulk_patch(body: BulkPatchRequest, *, aktor: str) -> dict[str, int]:
             )
 
         if body.updates:
+            # `volume`, `satuan`, `induk_uraian`, dan `keterangan` SENGAJA tidak ikut
+            # di-UPDATE. Layar edit katalog cuma mengirim delapan kolom lama, jadi kalau
+            # keempatnya ikut di sini, menyunting satu sel apa pun akan menimpanya jadi
+            # NULL -- data provenance impor hilang tanpa jejak, persis kelas kegagalan
+            # yang paling mahal karena tidak bersuara. Kalau suatu saat keempatnya perlu
+            # bisa disunting, kirimkan nilainya dari layar dulu, jangan tambahkan di sini.
             upd_q = text(
                 f"""
                 UPDATE {TABLE}
@@ -340,6 +355,40 @@ def bulk_patch(body: BulkPatchRequest, *, aktor: str) -> dict[str, int]:
     return {"deleted": deleted, "updated": updated}
 
 
+_HEADER_WAJIB_TUNGGAL = ("nama_kapal", "tahun")
+_HEADER_SEBUTAN = {
+    "nama_kapal": "kapal",
+    "tahun": "tahun",
+    "nama_perusahaan": "perusahaan",
+    "tipe_perjanjian": "tipe perjanjian",
+}
+
+
+def _nilai_unik(kolom) -> list[str]:
+    """Nilai berbeda di satu kolom header, urut kemunculan pertama.
+
+    Yang pertama tetap yang dipakai kalau kolomnya seragam, jadi berkas yang selama ini
+    benar tidak berubah perilakunya sama sekali.
+
+    Pembulatan float-nya bukan kosmetik: kolom angka yang punya SATU sel kosong saja
+    (baris total, baris pemisah) dibaca pandas sebagai float64, jadi str(2026.0) ->
+    "2026.0". Tahun ikut membentuk prefix ID baris (lihat _bulk_create), jadi ".0" itu
+    menempel permanen di primary key dan memecah filter "Tahun" jadi dua nilai. Format
+    sel di Excel tidak menolong -- ini inferensi tipe di pandas. np.float64 turunan float
+    bawaan, jadi isinstance() di bawah ikut menangkapnya. Tanpa pembulatan ini, 2026 dan
+    2026.0 di satu kolom juga akan terhitung sebagai dua tahun berbeda dan berkas yang
+    sah ikut tertolak palang di atas.
+    """
+    urut: list[str] = []
+    for val in kolom.dropna():
+        if isinstance(val, float) and float(val).is_integer():
+            val = int(val)
+        teks = str(val).strip()
+        if teks and teks not in urut:
+            urut.append(teks)
+    return urut
+
+
 def parse_spreadsheet(file_bytes: bytes, filename: str) -> tuple[BulkCatalogCreate | None, list[str]]:
     """
     Otomatis: upload Excel/CSV → Pydantic validasi per baris.
@@ -362,6 +411,13 @@ def parse_spreadsheet(file_bytes: bytes, filename: str) -> tuple[BulkCatalogCrea
         "uraian_pekerjaan": ["uraian", "uraian pekerjaan", "uraian_pekerjaan"],
         "volume_satuan": ["satuan", "volume", "volume_satuan", "satuan (volume)"],
         "harga_satuan": ["harga", "harga satuan", "harga_satuan"],
+        # Empat kolom baru. Sebutannya sengaja TIDAK memakai "volume" dan "satuan" polos:
+        # keduanya sudah dipetakan ke `volume_satuan` di atas, dan mengubah itu akan
+        # memindahkan isi berkas yang selama ini sudah benar ke kolom lain.
+        "volume": ["vol", "vol."],
+        "satuan": ["sat", "sat."],
+        "induk_uraian": ["induk", "induk uraian", "induk_uraian", "uraian induk"],
+        "keterangan": ["ket", "keterangan"],
     }
 
     def find_col(keys: list[str]) -> str | None:
@@ -390,17 +446,32 @@ def parse_spreadsheet(file_bytes: bytes, filename: str) -> tuple[BulkCatalogCrea
     header: dict[str, str] = {}
     for field, keys in header_cols.items():
         col = find_col(keys)
-        if col and len(df[col].dropna()) > 0:
-            val = df[col].dropna().iloc[0]
-            # Kolom angka yang punya SATU sel kosong saja (baris total, baris pemisah)
-            # dibaca pandas sebagai float64, jadi str(2026.0) -> "2026.0". Tahun ikut
-            # membentuk prefix ID baris (lihat _bulk_create), jadi ".0" itu menempel
-            # permanen di primary key dan memecah filter "Tahun" jadi dua nilai. Format
-            # sel di Excel tidak menolong -- ini inferensi tipe di pandas. np.float64
-            # turunan float bawaan, jadi isinstance() di bawah ikut menangkapnya.
-            if isinstance(val, float) and float(val).is_integer():
-                val = int(val)
-            header[field] = str(val).strip()
+        if not col:
+            continue
+        nilai = _nilai_unik(df[col])
+        if not nilai:
+            continue
+        if len(nilai) > 1:
+            # Satu berkas = satu kapal + satu tahun. Sebelum palang ini, berkas berisi
+            # tiga kapal tetap diproses: SELURUH barisnya tercatat atas nama kapal yang
+            # kebetulan muncul paling atas, tanpa peringatan apa pun. Salahnya permanen
+            # -- kapal dan tahun ikut membentuk prefix ID baris -- dan baru ketahuan
+            # berbulan-bulan kemudian waktu ada yang membandingkan harga antar kapal.
+            if field in _HEADER_WAJIB_TUNGGAL:
+                contoh = ", ".join(nilai[:5]) + (", ..." if len(nilai) > 5 else "")
+                return None, [
+                    f"Berkas ini memuat {len(nilai)} {_HEADER_SEBUTAN[field]} ({contoh}). "
+                    f"Satu berkas cuma boleh satu kapal dan satu tahun -- isi kolom "
+                    f"'{col}' harus sama di setiap baris. Pisahkan berkasnya dulu."
+                ]
+            # Perusahaan dan tipe tidak menolak berkasnya: keduanya tidak ikut ke prefix
+            # ID, jadi salahnya masih bisa diperbaiki lewat layar edit. Tapi tetap
+            # dikatakan terang-terangan, bukan dipilih diam-diam seperti dulu.
+            errors.append(
+                f"Kolom '{col}' punya {len(nilai)} nilai berbeda ({', '.join(nilai[:5])}); "
+                f"seluruh berkas disimpan memakai '{nilai[0]}'."
+            )
+        header[field] = nilai[0]
 
     items: list[CatalogItemBase] = []
     for idx, row in df.iterrows():

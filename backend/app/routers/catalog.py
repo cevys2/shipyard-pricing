@@ -11,10 +11,12 @@ from app.schemas.catalog import (
     CatalogStats,
     DockingImportCommit,
     DockingImportPreview,
+    RepairListCommit,
+    RepairListPreview,
     TipePerjanjian,
 )
 from app.services import catalog as catalog_service
-from app.services import docking_parser
+from app.services import docking_parser, repair_list_parser
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -165,6 +167,44 @@ def import_docking_commit(
                 sumber="import-docking",
                 conn=conn,
             )
+    return {"saved": saved}
+
+
+@router.post("/import/repair-list-preview", response_model=RepairListPreview)
+async def import_repair_list_preview(
+    _: Annotated[dict, Depends(get_current_user)],
+    file: UploadFile = File(...),
+):
+    content = await file.read()
+    try:
+        return repair_list_parser.parse_repair_list_file(content, file.filename or "upload.xlsx")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
+
+
+@router.post("/import/repair-list-commit")
+def import_repair_list_commit(
+    body: RepairListCommit,
+    user: Annotated[dict, Depends(get_current_user)],
+):
+    """Simpan hasil repair list yang sudah diperiksa manusia di layar pratinjau.
+
+    `tipe_perjanjian` = Induk. Repair list adalah lingkup kesepakatan awal, bukan
+    pekerjaan tambahan di tengah jalan, jadi Addendum jelas salah dan Induk yang paling
+    dekat. Yang membedakannya dari baris laporan realisasi tetap terekam: `audit_log`
+    menyimpan `sumber = "import-repair-list"` untuk setiap impor lewat jalur ini.
+    """
+    saved = catalog_service.bulk_create(
+        BulkCatalogCreate(
+            nama_perusahaan=body.nama_perusahaan,
+            nama_kapal=body.nama_kapal,
+            tahun=body.tahun,
+            tipe_perjanjian=TipePerjanjian.induk,
+            items=body.items,
+        ),
+        aktor=user["username"],
+        sumber="import-repair-list",
+    )
     return {"saved": saved}
 
 

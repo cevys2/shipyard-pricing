@@ -312,6 +312,54 @@ def kategori_norm_sql(kolom: str = "kategori_pekerjaan") -> str:
     return f"upper(btrim(regexp_replace(replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')))"
 
 
+def ensure_katalog_kolom_rincian() -> None:
+    """Empat kolom nullable di `tabel_katalog_harga` untuk rincian yang selama ini hilang.
+
+    Semuanya PENAMBAHAN kolom nullable -- tidak ada kolom lama yang diubah, dihapus, atau
+    ditimpa isinya. `volume_satuan` sengaja dibiarkan apa adanya: dia catatan apa yang
+    tertulis di berkas asli, aturannya sama dengan `kategori_pekerjaan`.
+
+    - `volume` + `satuan`: VOL dan SAT yang di repair list memang dua kolom terpisah, dan
+      selama ini diperas jadi satu teks. Tanpa angkanya, aplikasi tidak bisa menghitung
+      nilai satu baris (volume x harga_satuan) sehingga tidak bisa memeriksa impornya
+      sendiri terhadap angka JUMLAH di dokumen.
+    - `induk_uraian`: konteks baris induk yang tidak berharga. Di ANTAREJA 233 ada tiga
+      baris yang uraiannya persis sama ("Gasket Cylinder Head Cover P/N 51.03905-0186");
+      yang membedakan cuma baris induknya -- Main Engine Tengah / M/E Kiri / M/E Kanan --
+      dan harganya memang beda. Digabung ke `uraian_pekerjaan` teksnya jadi kotor; dibuang
+      barisnya jadi ambigu selamanya. Jadi disimpan terpisah.
+    - `keterangan`: kolom KETERANGAN ada di ketiga repair list dan sering berisi catatan
+      yang menjelaskan harganya, mis. "Dilaksanakan oleh Kantor Kesehatan Pelabuhan".
+
+    Tidak ada backfill: untuk 6.673 baris lama nilainya memang tidak diketahui, dan NULL
+    mengatakan itu dengan jujur. Menebaknya dari `volume_satuan` akan mengarang angka.
+
+    Sama seperti `ensure_kategori_table()`, tabelnya tidak dibuat di sini -- dia sudah ada
+    sebelum aplikasi ini lahir. Di database kosong tabelnya belum tentu ada, dan itu tidak
+    boleh menjatuhkan startup.
+    """
+    with engine.begin() as conn:
+        ada = conn.execute(
+            text("SELECT to_regclass(:t)"), {"t": f"public.{settings.catalog_table}"}
+        ).scalar()
+        if ada is None:
+            logger.warning(
+                "%s belum ada -- kolom rincian dilewati.", settings.catalog_table
+            )
+            return
+        conn.execute(
+            text(
+                f"""
+                ALTER TABLE {settings.catalog_table}
+                  ADD COLUMN IF NOT EXISTS volume       NUMERIC,
+                  ADD COLUMN IF NOT EXISTS satuan       TEXT,
+                  ADD COLUMN IF NOT EXISTS induk_uraian TEXT,
+                  ADD COLUMN IF NOT EXISTS keterangan   TEXT
+                """
+            )
+        )
+
+
 def ensure_kategori_table() -> None:
     """Master kategori pekerjaan kanonik + alias, lalu isi `tabel_katalog_harga.kategori_id`.
 

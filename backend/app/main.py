@@ -11,6 +11,7 @@ from app.database import (
     ensure_ahsp_tables,
     ensure_audit_table,
     ensure_kategori_table,
+    ensure_katalog_kolom_rincian,
     ensure_material_tables,
     ensure_partno_unique,
     ensure_pencarian_index,
@@ -26,6 +27,10 @@ from app.routers.material import router as material_router
 async def lifespan(_: FastAPI):
     ensure_material_tables()
     ensure_partno_unique()
+    # Sebelum ensure_kategori_table(): keduanya meng-ALTER tabel yang sama, dan yang ini
+    # tidak bergantung pada apa pun. Ditaruh lebih dulu supaya semua kolom tambahan
+    # tabel_katalog_harga sudah ada sebelum resolver kategori menyentuh tabelnya.
+    ensure_katalog_kolom_rincian()
     # Sebelum ahsp: master kategori dipakai bersama katalog jasa dan (nanti) ahsp.
     ensure_kategori_table()
     # Setelah material: ahsp_komponen punya foreign key ke sumber_daya.

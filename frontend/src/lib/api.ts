@@ -61,6 +61,23 @@ const PESAN_TIMEOUT =
   "Permintaan dihentikan karena terlalu lama. Penyimpanan belum tentu gagal — " +
   "muat ulang halaman dan cek tabelnya dulu sebelum mencoba menyimpan lagi.";
 
+/** Ubah `detail` dari FastAPI jadi kalimat yang bisa dibaca orang.
+ *
+ * Jalur impor mengirim `{ message, errors: [...] }`, dan sebelumnya seluruh objek itu
+ * di-JSON.stringify apa adanya -- pengguna melihat kurung kurawal, bukan alasannya.
+ * Yang paling terasa di palang "satu berkas = satu kapal": pesannya sudah menyebut nama
+ * kapal-kapalnya, tapi terkubur di dalam tanda kutip berlapis. */
+function pesanError(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    const d = detail as { message?: unknown; errors?: unknown };
+    const errors = Array.isArray(d.errors) ? d.errors.map(String).filter(Boolean) : [];
+    if (errors.length) return errors.join(" ");
+    if (typeof d.message === "string") return d.message;
+  }
+  return detail ? JSON.stringify(detail) : fallback;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -83,7 +100,7 @@ async function request<T>(
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: ac?.signal });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail));
+      throw new Error(pesanError(err.detail, res.statusText));
     }
     return (await res.json()) as T;
   } catch (e) {
@@ -156,6 +173,24 @@ export const api = {
       "/catalog/import/docking-preview",
       { method: "POST", body: fd },
       token,
+    );
+  },
+  repairListPreview(token: string, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<RepairListPreview>(
+      "/catalog/import/repair-list-preview",
+      { method: "POST", body: fd },
+      token,
+    );
+  },
+  repairListCommit(token: string, body: RepairListCommit) {
+    // Batas waktunya sama dengan dockingCommit: sama-sama menulis ratusan baris sekaligus.
+    return request<{ saved: number }>(
+      "/catalog/import/repair-list-commit",
+      { method: "POST", body: JSON.stringify(body) },
+      token,
+      5 * 60 * 1000,
     );
   },
   dockingCommit(token: string, body: DockingImportCommit) {
@@ -412,6 +447,59 @@ export type CatalogItemInput = {
 
 export type CatalogRowInput = CatalogHeader & CatalogItemInput;
 
+/** Empat kolom nullable yang diisi jalur impor Repair List.
+ *
+ * Sengaja tipe terpisah, bukan menambah lapangan opsional ke `CatalogItemInput`: yang
+ * terakhir itu juga dipakai `patchCatalog`, dan layar edit katalog memang TIDAK mengirim
+ * keempatnya (backend juga sengaja tidak meng-UPDATE-nya). Menyatukan keduanya bikin
+ * pemanggil mengira suntingan ikut membawa nilai-nilai ini. */
+export type CatalogItemRincian = CatalogItemInput & {
+  volume?: number | null;
+  satuan?: string | null;
+  induk_uraian?: string | null;
+  keterangan?: string | null;
+};
+
+export type RepairListParsedItem = {
+  row: number;
+  kategori: string | null;
+  induk_uraian: string | null;
+  uraian: string;
+  volume: number | null;
+  satuan: string | null;
+  harga: number;
+  total_berkas: number | null;
+  keterangan: string;
+};
+
+export type RepairListRekonsiliasi = {
+  jumlah_dokumen: number | null;
+  ppn_dokumen: number | null;
+  total_dokumen: number | null;
+  jumlah_terbaca: number;
+  selisih: number | null;
+  cocok: boolean;
+};
+
+export type RepairListPreview = {
+  sheet_name: string;
+  detected_nama_kapal: string;
+  detected_nama_perusahaan: string;
+  detected_tahun: string;
+  detected_jenis_dokumen: string;
+  detected_judul: string;
+  items: RepairListParsedItem[];
+  rekonsiliasi: RepairListRekonsiliasi;
+  warnings: string[];
+};
+
+export type RepairListCommit = {
+  nama_perusahaan: string;
+  nama_kapal: string;
+  tahun: string;
+  items: CatalogItemRincian[];
+};
+
 export type DockingParsedItem = {
   row: number;
   kategori: string | null;
@@ -419,6 +507,10 @@ export type DockingParsedItem = {
   volume_satuan: string;
   keterangan: string;
   harga: number;
+  // Qty dan Sat dari berkas. `volume_satuan` isinya satuan saja ("Ls", "Hari") — kuantitasnya
+  // dulu dibaca lalu dibuang setelah dipakai membagi kolom Jumlah jadi harga satuan.
+  volume: number | null;
+  satuan: string | null;
 };
 
 export type DockingImportPreview = {
@@ -435,8 +527,8 @@ export type DockingImportCommit = {
   nama_perusahaan: string;
   nama_kapal: string;
   tahun: string;
-  induk_items: CatalogItemInput[];
-  addendum_items: CatalogItemInput[];
+  induk_items: CatalogItemRincian[];
+  addendum_items: CatalogItemRincian[];
 };
 
 export type CatalogRow = {
@@ -449,6 +541,10 @@ export type CatalogRow = {
   uraian_pekerjaan: string;
   volume_satuan: string;
   harga_satuan: number;
+  volume: number | null;
+  satuan: string | null;
+  induk_uraian: string | null;
+  keterangan: string | null;
 };
 
 export type CatalogStats = {

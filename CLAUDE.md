@@ -3,7 +3,7 @@
 Aplikasi internal PT Dukuh Raya (galangan kapal, Lombok). Katalog harga jasa, katalog
 material, dan analisa harga satuan (AHSP). Pengguna aktif: satu orang. Dikerjakan solo.
 
-Terakhir diperbarui: 18 Agustus 2026.
+Terakhir diperbarui: 24 Agustus 2026.
 
 ## Stack
 
@@ -31,11 +31,12 @@ backend/app/
   database.py       -- SEMUA DDL ada di sini (lihat "Perubahan skema" di bawah)
   auth.py           -- verifikasi JWT saja
   config.py         -- settings, termasuk catalog_table = "tabel_katalog_harga"
-  seed_kategori.py  -- 11 kategori + 83 alias, dipakai ensure_kategori_table()
+  seed_kategori.py  -- 11 kategori + 100 alias, dipakai ensure_kategori_table()
   routers/          -- ahsp, analitik, catalog, kategori, material
-  services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian
+  services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian,
+                       repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 88 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 201 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -48,8 +49,9 @@ Contoh penambahan kolom ke tabel yang sudah berisi data: lihat `tahun_pembelian`
 `ensure_material_tables()` — tambah nullable, backfill, baru `SET NOT NULL`.
 
 Fungsi yang ada sekarang, dalam urutan pemanggilan di `main.py`:
-`ensure_material_tables()`, `ensure_partno_unique()`, `ensure_kategori_table()`,
-`ensure_ahsp_tables()`, `ensure_audit_table()`, `ensure_pencarian_index()`.
+`ensure_material_tables()`, `ensure_partno_unique()`, `ensure_katalog_kolom_rincian()`,
+`ensure_kategori_table()`, `ensure_ahsp_tables()`, `ensure_audit_table()`,
+`ensure_pencarian_index()`.
 
 Urutannya bukan selera: `ahsp_komponen` punya FK ke `sumber_daya`, `ahsp.kategori_id` ke
 `kategori`, dan index pencarian menempel ke tabel yang harus sudah ada. Dipanggil di luar
@@ -62,7 +64,7 @@ seperti `chk_sdh_mata_uang`.
 
 | Tabel | Isi |
 |---|---|
-| `tabel_katalog_harga` | Harga realisasi docking, 6.673 baris (cadangan 17 Agustus 2026). Diisi `services/docking_parser.py` dari Excel "REALISASI BIAYA DOCKING". |
+| `tabel_katalog_harga` | Harga realisasi docking, 6.673 baris (cadangan 17 Agustus 2026). Diisi `services/docking_parser.py` dari Excel "REALISASI BIAYA DOCKING" dan `services/repair_list_parser.py` dari Excel "REPAIR LIST"/"RINCIAN". |
 | `kategori`, `kategori_alias` | Master kategori pekerjaan kanonik (11) + pemetaan sebutan lama (83 alias). Teks kategori dicocokkan lewat `database.kategori_norm_sql()` — **jangan ubah ekspresinya**, alias di DB tersimpan sebagai hasil normalisasi itu. |
 | `supplier`, `sumber_daya`, `sumber_daya_harga` | Katalog material + riwayat harga. View `v_harga_terkini`. |
 | `ahsp`, `ahsp_komponen` | Analisa harga satuan. |
@@ -74,6 +76,16 @@ seperti `chk_sdh_mata_uang`.
 **Tidak boleh:** mengubah atau menghapus kolom yang sudah ada, dan **tidak boleh menimpa isi
 `kategori_pekerjaan`** — itu catatan apa yang benar-benar tertulis di laporan asli. Koreksi
 kategori ditulis ke `kategori_id`, bukan dengan mengedit teks aslinya.
+
+Kolom nullable yang sudah ditambahkan (`ensure_katalog_kolom_rincian()`, 24 Agustus 2026):
+`volume` NUMERIC, `satuan` TEXT, `induk_uraian` TEXT, `keterangan` TEXT. Tidak ada backfill —
+untuk 6.673 baris lama nilainya memang tidak diketahui, dan NULL mengatakan itu dengan jujur.
+`volume_satuan` yang lama tidak disentuh dan tetap berlaku.
+
+**Keempatnya sengaja TIDAK ikut di-UPDATE oleh `bulk_patch()`.** Layar edit katalog cuma
+mengirim delapan kolom lama; kalau keempatnya ikut, menyunting satu sel apa pun akan
+menimpanya jadi NULL tanpa error apa pun. Kalau suatu saat perlu bisa disunting, kirim
+nilainya dari layar dulu — jangan cukup menambahkannya di SQL.
 
 ## Keputusan yang sudah final — jangan ditawar ulang
 
@@ -89,7 +101,8 @@ kategori ditulis ke `kategori_id`, bukan dengan mengedit teks aslinya.
 
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
-baru langsung dari layar AHSP), dan kategori pekerjaan kanonik (11 kategori, 90 alias).
+baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 100 alias), dan
+impor Repair List (mode ketiga di tab Import Excel).
 
 Diketahui terbatas:
 
@@ -109,8 +122,114 @@ Diketahui terbatas:
   cadangan yang sama: 6.673/6.673 = **100,00%**, nol sisa.
   Catatan jujur: selama jalur impor belum memanggil resolver, angka ini akan turun lagi tiap
   impor baru dan pulih lagi tiap deploy.
+  Tujuh alias lagi ditambahkan 24 Agustus 2026 (90 → 97) untuk sebutan seksi di berkas
+  REPAIR LIST, yang bentuknya memang beda dari laporan realisasi. Tanpa ketujuhnya, 374 dari
+  385 baris tiga repair list Basarnas masuk tanpa kategori sama sekali; dengan ketujuhnya,
+  385/385 terpetakan. Satu di antaranya keputusan, bukan kepastian: `DOCKING/ GENERAL SERVICE`
+  dipetakan ke PELAYANAN UMUM, padahal sebutannya menggabung dua kategori yang di repo ini
+  terpisah. Kalau yang dimaksud biaya naik-turun dok, pindahkan satu baris alias itu ke
+  DOCKING & UNDOCKING.
+- **Pencarian belum mencakup `induk_uraian`.** `KOLOM_CARI_KATALOG` masih dua kolom, jadi
+  mengetik "Main Engine Tengah" tidak menemukan baris part yang konteksnya ada di kolom itu;
+  mencari nama partnya sendiri tetap jalan. Menambahkannya bukan sekadar mengubah satu tuple:
+  ekspresi index harus persis sama dengan ekspresi query, dan `CREATE INDEX IF NOT EXISTS`
+  tidak akan membangun ulang index yang namanya sudah ada — index lamanya tetap terpasang
+  tapi tidak pernah tersentuh lagi. Perlu nama index baru + DROP yang lama.
 - Baris kembar identik di `tabel_katalog_harga` sengaja tidak didedup — tabelnya tidak punya
   kolom kuantitas, jadi tidak ada cara memastikan itu salah input atau dua pekerjaan sungguhan.
+
+### Kuantitas: `volume`, dan kenapa dia tidak pernah ada sebelumnya
+
+Dugaan yang lazim adalah `volume_satuan` menyimpan `"269 m²"`. Tidak — isinya **satuan saja**
+("Ls", "Hari", "Kali"). Kuantitasnya tidak pernah tersimpan dari jalur mana pun. Di
+`docking_parser` angkanya bahkan sudah dibaca sejak awal (`qty_numeric`), tapi cuma dipakai
+membagi kolom Jumlah jadi harga satuan, lalu dibuang.
+
+Sekarang ketiga jalur impor mengisi `volume` + `satuan`: Repair List, Laporan Docking, dan
+Format Rapi (lewat kolom opsional `Vol`/`Sat`). Diverifikasi: di dua berkas docking di root
+repo, 414 baris punya Qty DAN kolom Jumlah, dan `volume × harga_satuan = Jumlah` di
+keempat-ratus-empat-belasnya.
+
+**Jalur docking sengaja TIDAK diberi palang rekonsiliasi** seperti Repair List. Sebabnya
+nyata, bukan kehati-hatian kosong: ada baris "tarif" (Keel block, Bottom share, Side Block,
+"Repair Propeller Blade jika terjadi kerusakan") yang punya harga satuan tapi kolom Jumlah-nya
+kosong, dan memang tidak ikut TOTAL BIAYA di berkasnya. Menjumlahkan `volume × harga` seluruh
+baris melebihi TOTAL BIAYA sekitar 0,4% (Rp 5,5 juta di MISHIMA, Rp 7,0 juta di GILIMANUK II).
+Itu bukan baris yang jatuh — itu tarif bersyarat. Palang yang berbunyi merah padahal impornya
+benar akan cepat diabaikan, dan begitu diabaikan dia tidak menjaga apa pun.
+
+Baris repair list tidak punya masalah itu: di ketiga berkas Basarnas semua baris berharga
+punya VOL, dan selisihnya nol.
+
+### Blok tanda tangan pernah jadi baris harga (diperbaiki 24 Agustus 2026)
+
+Di baris `Diketahui dan Disetujui oleh :` ada sel tanggal di kolom harga satuan, dan xlrd
+mengembalikannya sebagai **nomor seri Excel**. Jadi tiap berkas docking menyumbang satu baris
+katalog palsu seharga 46.197 (MISHIMA) atau 45.903 (GILIMANUK II) — angka yang cukup masuk
+akal sebagai harga sehingga tidak pernah ada yang curiga. `NOISE_EXACT` sekarang memuat
+`diketahui`, `disetujui`, `mengetahui`, `dibuat oleh`.
+
+Kemungkinan ada baris seperti ini di produksi, satu per berkas docking yang pernah diimpor.
+Belum dihitung — butuh cadangan produksi. Cara mencarinya:
+`WHERE uraian_pekerjaan ILIKE '%disetujui%' OR uraian_pekerjaan ILIKE '%diketahui%'`.
+
+Sengaja TIDAK memakai aturan "berhenti membaca begitu ketemu TOTAL": kalau ada berkas yang
+punya baris Total per seksi di tengah tabel, aturan itu memotong sisa berkasnya diam-diam —
+kegagalan yang jauh lebih mahal daripada satu baris sampah.
+
+### Template laporan docking tidak seragam
+
+Empat berkas di arsip pernah terbaca **nol baris tanpa error** karena judul kolomnya beda.
+Semuanya sudah ditangani, dan tiap kasusnya dijaga `tests/test_docking_format_lain.py`:
+
+| Yang beda | Contoh berkas | Kalau tidak ditangani |
+|---|---|---|
+| Kolom uraian bernama `Nama Barang` | Lampiran Perjanjian KMP. Portlink II 2026 | 141 baris hilang |
+| Kolom harga bernama `INDUK (Rp.)` | Realisasi LCT. ARJHUNA 2025 | 214 baris hilang |
+| Tanpa label `NAMA KAPAL`, nama kapal ada di baris `Lokasi` | Lampiran Perjanjian Marina Segunda / Prima Nusantara | kapal kosong, baris tidak bisa disimpan |
+| `PERIODE DOCKING : Nopember` dan `2025` di dua sel terpisah | Realisasi MV. Bali Hai II | tahun terisi "Nopember", lalu ikut jadi prefix ID |
+
+Kegagalan jenis ini paling mahal karena tidak bersuara: berkas yang "berhasil diimpor 0 baris"
+terlihat sama persis dengan berkas yang memang kosong.
+
+### Konteks baris induk di jalur docking
+
+`docking_parser` mengisi `induk_uraian` juga, dan kedalamannya dibaca dari **kolom**, bukan
+tanda baca: berkas docking menggeser teks satu kolom ke kanan tiap turun satu tingkat, dengan
+tanda hubung menempati sel tersendiri di kolom sebelumnya.
+
+Gunanya bukan menghapus perbedaan harga — perbedaan itu data yang sah — melainkan menyimpan
+**alasannya**. Di KMP. GILIMANUK 2026 ada 15 baris berbunyi persis `Elbow` seharga Rp 300.000
+sampai Rp 2.100.000; sesudah ini tiap baris menyebut jalur pipanya (`Pipa isap BBM`,
+`Pipa outboard got`, `Pipa tekan OWS di Car Deck`).
+
+Batasnya jujur: rantai induk TIDAK memisahkan ukuran pipa, karena ukurannya ada di baris
+saudara tepat di atasnya (`- Pipa Sch. 40 uk 1,5"`), bukan di baris induk. Dua Elbow di jalur
+pipa yang sama tetap terlihat serupa.
+
+### Repair List — dokumen awal pekerjaan, beda dari laporan realisasi
+
+`services/repair_list_parser.py` membaca "REPAIR LIST"/"RINCIAN": dokumen kesepakatan di
+**awal** pekerjaan, yang jadi dasar penagihan. `docking_parser.py` membaca "REALISASI BIAYA
+DOCKING", laporan di **akhir**. Keduanya tidak bisa dibaca parser yang sama — yang paling
+menentukan, di repair list kolom harga satuan berjudul **"SATUAN"**, bukan "HARGA", sehingga
+docking_parser membacanya nol baris tanpa error apa pun.
+
+Barisnya masuk sebagai `tipe_perjanjian = "Induk"`; yang membedakannya dari baris laporan
+realisasi cuma `audit_log.detail->>'sumber' = 'import-repair-list'`. Ini keputusan sadar
+(24 Agustus 2026): Basarnas tidak menegosiasikan ulang repair list-nya, jadi memisahkannya
+jadi tipe ketiga belum berbayar. Kalau nanti ada klien yang harga kesepakatannya benar-benar
+beda dari harga realisasi, tipe ketiga jadi perlu.
+
+**Palang rekonsiliasi.** Jumlah semua baris yang diambil (`volume × harga_satuan`) harus persis
+sama dengan angka JUMLAH di berkas, dan selisihnya ditampilkan di layar pratinjau sebelum apa
+pun disimpan — dihitung ulang tiap kali tabelnya disunting. Inilah alasan sebenarnya kolom
+`volume` ditambahkan: tanpa angkanya, palang ini mustahil dipasang. Diverifikasi terhadap tiga
+berkas Basarnas (KN SAR 207, ANTAREJA 233, WIDURA 225): 385 baris, Rp 7.933.170.000, selisih
+Rp 0 di ketiganya.
+
+PPN tidak ikut disimpan — PPN di aplikasi ini ada di tingkat dokumen penawaran, bukan per baris
+katalog (keputusan yang sudah final di atas).
 
 ### Waktu harga material — `tahun_pembelian`, bukan `berlaku_dari`
 

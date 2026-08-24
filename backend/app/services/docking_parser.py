@@ -5,6 +5,8 @@ Aturan ekstraksi (ditetapkan bareng user):
   2. Baris masuk Induk kalau kolom Harga Utama > 0 - berlaku juga untuk status
      "pengembangan", "batal", "included", atau kosong.
   3. Uraian Pekerjaan digabung dari kolom setelah NO. sampai sebelum kolom Qty/Volume.
+  3b. Qty dan Sat ikut dikeluarkan sebagai `volume` + `satuan` (angka dan teks terpisah),
+     selain tetap mengisi `volume_satuan` yang lama apa adanya.
   4. Kategori Pekerjaan diambil dari baris header section (bertanda angka romawi di
      kolom NO.), dengan prefix angka romawi dibuang dari teksnya.
   5. Hanya baris dengan harga > 0 (bukan blank/"-") yang diekstrak.
@@ -19,10 +21,26 @@ import openpyxl
 ROMAN_TOKEN_RE = re.compile(r'^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$', re.IGNORECASE)
 YEAR_RE = re.compile(r'\b(20\d{2})\b')
 
+# Label baris yang bukan pekerjaan. Empat yang terakhir label blok tanda tangan, dan
+# ketiadaannya sempat mahal: di baris "Diketahui dan Disetujui oleh :" ada sel tanggal di
+# kolom harga satuan, dan xlrd mengembalikannya sebagai NOMOR SERI Excel, bukan tanggal.
+# Jadi tiap berkas docking menyumbang satu baris katalog palsu seharga 46.197 -- angka yang
+# cukup masuk akal sebagai harga sehingga tidak pernah ada yang curiga. ('di t.tangani oleh'
+# sudah lebih dulu ada di sini persis karena alasan yang sama.)
+#
+# Sengaja TIDAK diganti "berhenti membaca begitu ketemu TOTAL": kalau suatu saat ada berkas
+# yang punya baris Total per seksi di tengah tabel, aturan itu akan memotong sisa berkasnya
+# diam-diam -- kegagalan yang jauh lebih mahal daripada satu baris sampah.
+# Pemisah rantai baris induk. Didefinisikan di sini, bukan di repair_list_parser,
+# karena modul itu sudah mengimpor dari sini -- kalau arahnya dibalik, keduanya saling
+# impor dan aplikasi gagal start di baris import, jauh sebelum ada berkas yang dibaca.
+PEMISAH_INDUK = " › "
+
+
 NOISE_EXACT = {
     'realisasi', 'mulai', 'selesai', 'keterangan', 'kontrak induk', 'catatan',
     'total', 'tanda tangan', 'jabatan', 'nomor', 'tanggal', 'perihal', 'lampiran',
-    'di t.tangani oleh',
+    'di t.tangani oleh', 'diketahui', 'disetujui', 'mengetahui', 'dibuat oleh',
 }
 
 
@@ -47,11 +65,18 @@ def strip_roman_prefix(text: str) -> str:
     return text.strip()
 
 
+# Sebutan kolom uraian yang dipakai di berbagai template laporan. "nama barang" muncul di
+# Lampiran Perjanjian KMP. Portlink II 2026; tanpa dia, seluruh berkas terbaca nol baris.
+JUDUL_URAIAN = ('uraian', 'namabarang', 'namapekerjaan', 'deskripsi', 'description')
+
+
 def find_header_idx(values):
     for i, row in enumerate(values):
         texts = [norm_nospace(c) for c in row if c]
         joined = ' '.join(texts)
-        if 'uraian' in joined and any(k in joined for k in ('volume', 'qty', 'harga')):
+        if any(u in joined for u in JUDUL_URAIAN) and any(
+            k in joined for k in ('volume', 'qty', 'harga')
+        ):
             return i
     return None
 
@@ -161,12 +186,83 @@ def find_label_value(values, label_keys, max_row=25, max_scan=8):
     return ""
 
 
-def guess_header(values, filename):
-    nama_kapal = find_label_value(values, ['namakapal'])
+# Awalan nama kapal Indonesia. Dipakai kalau berkasnya tidak punya label "NAMA KAPAL"
+# sama sekali -- berkas "Lampiran Perjanjian" menaruh namanya di baris `Lokasi`, dan tanpa
+# ini seluruh berkas terbaca tanpa kapal lalu barisnya tidak bisa disimpan.
+KAPAL_RE = re.compile(
+    r"(?<![A-Za-z])((?:KMP|KLM|LCT|MV|MT|TB|KM|KN)\.?\s*[A-Z][A-Za-z0-9.' -]{2,40})"
+)
+# Nama kapal di baris `Lokasi` biasanya diikuti keterangan tempat: "KMP. Marina Segunda di
+# galangan ...". Potong di kata sambungnya, bukan di panjang tetap.
+_EKOR_KAPAL = re.compile(r"\s+(?:di|pada|dalam|tahun|thn|milik)(?:\s.*)?$", re.IGNORECASE)
+
+
+def _bersihkan_nama_kapal(teks: str) -> str:
+    teks = _EKOR_KAPAL.sub("", str(teks)).strip(" .,-")
+    return re.sub(r"\s+", " ", teks)
+
+
+def tebak_nama_kapal(values, sheet_name: str, filename: str) -> str:
+    """Nama kapal, dicari berlapis dari yang paling dapat dipercaya.
+
+    Label "NAMA KAPAL" dulu; kalau tidak ada, pola nama kapal di kepala berkas; baru
+    nama sheet dan nama berkas. Semuanya tetap ditampilkan di layar pratinjau untuk
+    diperiksa manusia sebelum disimpan -- ini menebak, dan menebak boleh salah.
+    """
+    nama = find_label_value(values, ['namakapal'])
+    if nama:
+        return nama
+    for row in values[:20]:
+        for cell in row:
+            if cell is None:
+                continue
+            m = KAPAL_RE.search(str(cell))
+            if m:
+                return _bersihkan_nama_kapal(m.group(1))
+    for teks in (sheet_name or "", filename or ""):
+        m = KAPAL_RE.search(teks)
+        if m:
+            return _bersihkan_nama_kapal(m.group(1))
+    return ""
+
+
+def _tahun_sebaris(values, label_keys, max_row=25) -> str:
+    """Tahun empat digit di baris yang memuat salah satu label, di sel mana pun."""
+    for row in values[:max_row]:
+        if not any(
+            c is not None and any(k in norm_nospace(c) for k in label_keys) for c in row
+        ):
+            continue
+        for cell in row:
+            if cell is None:
+                continue
+            nilai = int(cell) if isinstance(cell, float) and float(cell).is_integer() else cell
+            m = YEAR_RE.search(str(nilai))
+            if m:
+                return m.group(1)
+    return ""
+
+
+def guess_header(values, filename, sheet_name=""):
+    nama_kapal = tebak_nama_kapal(values, sheet_name, filename)
     nama_perusahaan = find_label_value(values, ['pemilik'])
     tahun = find_label_value(values, ['periodedocking', 'dockingtahun', 'tahundocking'])
+    # "PERIODE DOCKING : Nopember 2025" kadang ditulis di DUA sel terpisah, dan sel pertama
+    # cuma berisi bulannya. Kalau nilai yang terambil tidak memuat tahun sama sekali,
+    # sisir sisa baris itu -- angkanya biasanya menempel di sel sebelahnya.
+    if tahun and not YEAR_RE.search(tahun):
+        sebaris = _tahun_sebaris(values, ['periodedocking', 'dockingtahun', 'tahundocking'])
+        tahun = sebaris or tahun
     if not tahun:
-        m = YEAR_RE.search(filename)
+        # Berkas perjanjian tidak menyebut periode docking, tapi menyebut tanggal
+        # perjanjiannya. Itu lebih dekat ke waktu pekerjaan daripada tahun di nama berkas,
+        # yang cuma tahun terbit dokumen.
+        tanggal = find_label_value(values, ['tanggal'])
+        m = YEAR_RE.search(tanggal or "")
+        if m:
+            tahun = m.group(1)
+    if not tahun:
+        m = YEAR_RE.search(sheet_name or "") or YEAR_RE.search(filename)
         if m:
             tahun = m.group(1)
     return nama_kapal, nama_perusahaan, tahun
@@ -182,7 +278,9 @@ def parse_sheet(values, sheet_name):
     group_labels = build_group_labels(header_row)
     sub_labels = {ci: (str(v).strip() if v else None) for ci, v in enumerate(sub_row)}
 
-    uraian_col = find_group_start(group_labels, ['uraian'])
+    uraian_col = next(
+        (c for u in JUDUL_URAIAN if (c := find_group_start(group_labels, [u])) is not None), None
+    )
     if uraian_col is None:
         uraian_col = 1
 
@@ -191,7 +289,19 @@ def parse_sheet(values, sheet_name):
         volume_col = find_group_start(group_labels, ['qty'])
     keterangan_col = find_group_start(group_labels, ['keterangan'])
 
-    harga_utama_start = find_harga_group_start(group_labels, ['harga'], must_not_have=['batal', 'tambahan', 'realisasi'], after=volume_col or uraian_col)
+    # Template laporan tidak sepakat menamai kolom harga pokoknya. Yang lazim "HARGA (Rp.)",
+    # tapi laporan realisasi (mis. LCT. ARJHUNA 2025) memakai "INDUK (Rp.)" berdampingan
+    # dengan BATAL / TAMBAHAN / REALISASI. Tanpa alternatif ini, kolom harganya tidak
+    # ketemu sama sekali dan berkasnya terbaca nol baris -- gagal tanpa suara.
+    harga_utama_start = None
+    for kata in (['harga'], ['induk']):
+        harga_utama_start = find_harga_group_start(
+            group_labels, kata,
+            must_not_have=['batal', 'tambahan', 'realisasi'],
+            after=volume_col or uraian_col,
+        )
+        if harga_utama_start is not None:
+            break
     tambahan_start = find_harga_group_start(group_labels, ['tambahan'])
 
     harga_utama_satuan_col = col_for_sub(group_labels, sub_labels, harga_utama_start, 'satuan')
@@ -212,6 +322,8 @@ def parse_sheet(values, sheet_name):
 
     induk, addendum, warnings = [], [], []
     current_category = None
+    # Rantai baris induk yang sedang berlaku, dikunci per kedalaman. Lihat _kedalaman_kolom().
+    induk_konteks: dict[int, str] = {}
     seen_uraian_price_rows = {}
 
     for ri in range(data_start, len(values)):
@@ -225,6 +337,7 @@ def parse_sheet(values, sheet_name):
             cat_text = str(row[uraian_col]).strip() if len(row) > uraian_col and row[uraian_col] else ""
             cat_text = strip_roman_prefix(cat_text) or cat_text
             current_category = cat_text or current_category
+            induk_konteks = {}
             continue
 
         first_text = None
@@ -235,15 +348,33 @@ def parse_sheet(values, sheet_name):
         if first_text and (first_text in NOISE_EXACT or any(first_text.startswith(k) for k in NOISE_EXACT)):
             continue
 
-        frag = []
-        for ci in range(uraian_col, end_col):
-            if ci < len(row) and row[ci] is not None:
-                v = str(row[ci]).strip()
-                if v and v != '-':
-                    frag.append(v)
-        uraian_text = ' '.join(frag).strip()
+        # Kolom mana saja yang benar-benar berisi teks. Penanda '-' sengaja dilewati --
+        # di berkas ini tanda hubung menempati SEL TERSENDIRI di kolom sebelum teksnya,
+        # jadi dia bagian dari tata letak, bukan bagian dari uraian.
+        kolom_isi = [
+            ci for ci in range(uraian_col, end_col)
+            if ci < len(row) and row[ci] is not None and str(row[ci]).strip() not in ('', '-')
+        ]
+        uraian_text = ' '.join(str(row[ci]).strip() for ci in kolom_isi).strip()
         if not uraian_text:
             continue
+
+        # Kedalaman baris dibaca dari KOLOM tempat teksnya mulai, bukan dari tanda baca.
+        # Berkas docking menggeser teks satu kolom ke kanan tiap turun satu tingkat:
+        #
+        #     kol 1: Pipa isap BBM (material pipa Blacksteel sch 40)
+        #     kol 1: '-'   kol 2: Pipa Sch. 40 uk 1,5"
+        #     kol 1: '-'   kol 2: Elbow
+        #
+        # Tanpa ini, "Elbow" tersimpan tanpa jejak apa pun bahwa dia bagian dari pipa isap
+        # BBM di kamar mesin kanan. Di KMP. GILIMANUK 2026 ada 15 baris berbunyi persis
+        # "Elbow" dengan harga Rp 300.000 sampai Rp 2.100.000, dan katalog tidak punya cara
+        # membedakannya.
+        kedalaman = kolom_isi[0] * 2 + (0 if col_a_str else 1)
+        for lebih_dalam in [k for k in induk_konteks if k >= kedalaman]:
+            del induk_konteks[lebih_dalam]
+        rantai_induk = PEMISAH_INDUK.join(induk_konteks[k] for k in sorted(induk_konteks))
+        induk_konteks[kedalaman] = uraian_text
 
         def get_num(ci):
             if ci is None or ci >= len(row):
@@ -286,6 +417,20 @@ def parse_sheet(values, sheet_name):
             'uraian': uraian_text,
             'volume_satuan': volume_satuan,
             'keterangan': keterangan_val,
+            # Qty-nya SUDAH dibaca di atas -- selama ini cuma dipakai membagi kolom Jumlah
+            # jadi harga satuan, lalu dibuang. Sejak ada kolom `volume`, angkanya ikut
+            # disimpan: tanpa dia, "berapa nilai pekerjaan pengecatan untuk kapal ini"
+            # tidak bisa dijawab, dan membandingkan harga antar kapal jadi menyesatkan --
+            # Rp 200.000/m2 di kapal yang 269 m2 dan yang 230 m2 terlihat sama persis.
+            # Diverifikasi di dua berkas docking yang ada di repo: 414 baris punya Qty
+            # DAN kolom Jumlah, dan qty x harga = Jumlah di keempat-ratus-empat-belasnya.
+            'induk_uraian': rantai_induk or None,
+            'volume': qty_numeric,
+            # `volume_satuan` memang sudah berisi satuannya saja ("Ls", "Hari", "Kali") --
+            # bukan "269 m2" seperti yang sering diduga; kuantitasnya tidak pernah ikut
+            # tersimpan sama sekali. Kolom baru ini kembarannya yang memakai NULL, bukan
+            # "-", supaya kolom baru cuma punya satu cara mengatakan "tidak tahu".
+            'satuan': volume_satuan if volume_satuan != "-" else None,
         }
 
         if is_tambahan:
@@ -335,7 +480,7 @@ def _load_values(file_bytes: bytes, filename: str):
 def parse_docking_file(file_bytes: bytes, filename: str) -> dict:
     values, sheetname = _load_values(file_bytes, filename)
     induk, addendum, warnings = parse_sheet(values, sheetname)
-    nama_kapal, nama_perusahaan, tahun = guess_header(values, filename)
+    nama_kapal, nama_perusahaan, tahun = guess_header(values, filename, sheetname)
     return {
         "sheet_name": sheetname,
         "detected_nama_kapal": nama_kapal,

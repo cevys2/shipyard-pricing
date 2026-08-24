@@ -756,8 +756,24 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                           </td>
                           <td className="px-4 py-2">{r.tahun}</td>
                           <td className="px-4 py-2">{r.kategori_pekerjaan}</td>
-                          <td className="px-4 py-2">{r.uraian_pekerjaan}</td>
-                          <td className="px-4 py-2">{r.volume_satuan}</td>
+                          <td className="px-4 py-2">
+                            {/* Induk di atas uraian. Tanpanya, tiga baris "Excentric P/N
+                                51.06501-0339" dari satu repair list terlihat identik padahal
+                                masing-masing untuk mesin yang berbeda dan harganya beda. */}
+                            {r.induk_uraian && (
+                              <span className="block text-[11px] leading-tight text-slate-400">
+                                {r.induk_uraian}
+                              </span>
+                            )}
+                            {r.uraian_pekerjaan}
+                          </td>
+                          <td className="px-4 py-2">
+                            {/* Angka volume kalau ada; kalau tidak, teks lama apa adanya.
+                                6.673 baris lama memang cuma punya yang teks. */}
+                            {r.volume !== null && r.volume !== undefined
+                              ? `${r.volume}${r.satuan ? ` ${r.satuan}` : ""}`
+                              : r.volume_satuan}
+                          </td>
                           <td className="px-4 py-2 text-right font-medium">{formatRp(r.harga_satuan)}</td>
                           {editMode && (
                             <td className="px-4 py-2">

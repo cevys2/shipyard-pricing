@@ -1,8 +1,12 @@
 """Master kategori pekerjaan kanonik + pemetaan sebutan lama.
 
-11 kategori (10 jenis pekerjaan + LAIN-LAIN) dan 90 alias. Yang 83 pertama disepakati VP
-marketing 2026; 7 sisanya ditambahkan 18 Agustus 2026 setelah menghitung cadangan produksi
-17 Agustus menemukan 549 baris berteks kategori yang belum punya alias sama sekali.
+11 kategori (10 jenis pekerjaan + LAIN-LAIN) dan 100 alias. Yang 83 pertama disepakati VP
+marketing 2026; 7 berikutnya ditambahkan 18 Agustus 2026 setelah menghitung cadangan
+produksi 17 Agustus menemukan 549 baris berteks kategori yang belum punya alias sama
+sekali; 7 terakhir ditambahkan 24 Agustus 2026 untuk sebutan seksi di berkas REPAIR LIST,
+yang bentuknya memang beda dari laporan realisasi docking (tanpa alias itu, 374 dari 385
+baris tiga repair list Basarnas masuk tanpa kategori sama sekali); 3 terakhir muncul waktu
+seluruh arsip 20 berkas dibaca sekaligus, 24 Agustus 2026.
 Catatan lengkap keputusannya ada di `docs/bundel-kategori-claude-code.md`; peta yang sama
 tersimpan sebagai data mentah di `docs/final_peta.json`, dan `tests/test_kategori.py`
 menjaga keduanya tidak berpisah diam-diam.
@@ -34,6 +38,10 @@ PETA: dict[str, tuple[str, ...]] = {
         "PIPA-PIPA",
         "PIPA-PIPA DIKAMAR MESIN DAN DECK (BERDASARKAN RL YANG DIKIRIM)",
         "PIPING",
+        # Seksi VI di ketiga repair list Basarnas. Pompanya ikut ke sini bersama
+        # perpipaannya karena begitulah dokumennya menyatukan mereka; memecahnya butuh
+        # kategori "POMPA" tersendiri, dan itu keputusan yang lebih besar dari ini.
+        "POMPA DAN PERPIPAAN",
     ),
     "REPLATING": (
         "PEKERJAAN REPLATING",
@@ -41,6 +49,13 @@ PETA: dict[str, tuple[str, ...]] = {
         "REPLATING",
     ),
     "PELAYANAN UMUM": (
+        # Seksi I repair list: satu baris lump sum Rp 100 juta. Sebutannya menggabung dua
+        # kategori yang di repo ini terpisah, jadi ini memang pilihan, bukan kepastian --
+        # dan yang lebih dekat adalah PELAYANAN UMUM, sejalan dengan alias
+        # "PELAYANAN UMUM/GENERAL SERVICES" yang bentuknya sama persis. Kalau ternyata
+        # yang dimaksud biaya naik-turun dok, pindahkan satu baris ini ke
+        # "DOCKING & UNDOCKING".
+        "DOCKING/ GENERAL SERVICE",
         "GENERAL SERVICE",
         "GENERAL SERVICES",
         "PELAYANAN UMUM",
@@ -55,6 +70,10 @@ PETA: dict[str, tuple[str, ...]] = {
         "BAGIAN LAMBUNG",
         "HULL CLEANING & PAINTING",
         "HULL MAINTENANCE",
+        "PERAWATAN LAMBUNG KAPAL (BGA) & (AGA)",
+        # Seksi II repair list. Sub-seksinya (di bawah/di atas garis air, main deck, top
+        # deck) tidak jadi kategori -- mereka mendarat di `induk_uraian`.
+        "LAMBUNG KAPAL",
         "PERAWATAN LAMBUNG",
         "PERAWATAN LAMBUNG ( BGA )",
         "PERAWATAN LAMBUNG ( BGA ) DAN SUPERSTRUKTUR",
@@ -102,6 +121,7 @@ PETA: dict[str, tuple[str, ...]] = {
     "JANGKAR & RANTAI JANGKAR": (
         "JANGKAR & RANTAI JANGKAR",
         "JANGKAR, RANTAI JANGKAR & CERUK JANGKAR",
+        "PEKERJAAN JANGKAR, RANTAI JANGKAR DAN WIRE",
         "JANGKAR, RANTAI JANGKAR DAN CERUK JANGKAR",
         "JANGKAR, RANTAI JANGKAR DAN CERUK JANGKAR "
         "( RANTAI = 40 MM , KANAN = 8 SEGEL, KIRI = 7 SEGEL )",
@@ -121,12 +141,16 @@ PETA: dict[str, tuple[str, ...]] = {
         # yang bikin LAIN-LAIN lahir di 13,8%. Disengaja, bukan bug: untuk baris-baris itu
         # jenis pekerjaannya memang tidak tercatat di kolom kategori.
         "ADDITIONAL WORK",
+        # Sebutan seksi mesin di laporan realisasi; sejalan dengan MEKANIK/PERMESINAN.
+        "ENGINE (SESUAI RL YANG DIKIRIM)",
         "KAMAR MESIN",
         "LAIN - LAIN",
+        "LAIN LAIN",
         "LAIN- LAIN",
         "LAIN-LAIN",
         "MEKANIK",
         "MEKANIKAL",
+        "NAVIGASI DAN KOMUNIKASI",
         "OTHERS",
         "PEKERJAAN ACCOMODATION PASSANGER DECK (NON REPLATING)",
         "PEKERJAAN BENGKEL",
@@ -138,6 +162,13 @@ PETA: dict[str, tuple[str, ...]] = {
         "PEKERJAAN NAVIGATION DECK (NON REPLATING)",
         "PEKERJAAN TAMBAHAN",
         "PEKERJAAN TOP DECK (NON REPLATING)",
+        # Dua seksi repair list yang tidak punya padanan di 11 kategori kanonik.
+        # PERMESINAN yang paling terasa: 160 dari 385 baris ada di sana. Ikut jejak
+        # "MEKANIK"/"MEKANIKAL"/"KAMAR MESIN" yang sudah lebih dulu di LAIN-LAIN --
+        # bukan karena itu memuaskan, tapi karena kategori "PERMESINAN" tersendiri adalah
+        # keputusan master data, bukan keputusan impor.
+        "PERLENGKAPAN LAMBUNG, PEMADAM,INTERIOR DAN KELISTRIKAN KAPAL",
+        "PERMESINAN",
         "ULTRASONIC TEST DAN NDT",
     ),
 }

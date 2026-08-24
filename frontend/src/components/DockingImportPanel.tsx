@@ -11,8 +11,10 @@ type EditRow = {
   key: string;
   kategori: string;
   uraian: string;
-  volume_satuan: string;
+  volume: number | null;
+  satuan: string;
   harga: number;
+  keterangan: string;
 };
 
 let counter = 0;
@@ -26,12 +28,25 @@ function fromParsed(items: DockingImportPreview["induk"]): EditRow[] {
     key: `p-${it.row}`,
     kategori: it.kategori || "-",
     uraian: it.uraian,
-    volume_satuan: it.volume_satuan,
+    volume: it.volume,
+    satuan: it.satuan ?? (it.volume_satuan === "-" ? "" : it.volume_satuan),
     harga: it.harga,
+    keterangan: it.keterangan || "",
   }));
 }
 
-const emptyRow = (): EditRow => ({ key: newKey(), kategori: "-", uraian: "", volume_satuan: "-", harga: 0 });
+const emptyRow = (): EditRow => ({
+  key: newKey(),
+  kategori: "-",
+  uraian: "",
+  volume: 1,
+  satuan: "",
+  harga: 0,
+  keterangan: "",
+});
+
+/** Nilai satu baris. Volume kosong dihitung 1 x harga, sama dengan sisi backend. */
+const nilaiBaris = (r: EditRow) => (r.volume ?? 1) * (r.harga || 0);
 
 export default function DockingImportPanel({ token, onImported }: Props) {
   const [sheetName, setSheetName] = useState("");
@@ -71,7 +86,7 @@ export default function DockingImportPanel({ token, onImported }: Props) {
     }
   }
 
-  function updateRow(list: "induk" | "addendum", key: string, field: keyof EditRow, value: string | number) {
+  function updateRow(list: "induk" | "addendum", key: string, field: keyof EditRow, value: string | number | null) {
     const setter = list === "induk" ? setInduk : setAddendum;
     setter((prev) => (prev ? prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)) : prev));
   }
@@ -122,8 +137,13 @@ export default function DockingImportPanel({ token, onImported }: Props) {
         rows.map((r) => ({
           kategori_pekerjaan: r.kategori || "-",
           uraian_pekerjaan: r.uraian,
-          volume_satuan: r.volume_satuan,
+          // Kolom lama tetap diisi satuannya saja, persis seperti sebelum ada kolom
+          // `volume` -- baris lama dan baris baru harus terlihat sama di layar katalog.
+          volume_satuan: r.satuan || "-",
           harga_satuan: r.harga,
+          volume: r.volume,
+          satuan: r.satuan || null,
+          keterangan: r.keterangan || null,
         }));
       const res = await api.dockingCommit(token, {
         nama_perusahaan: header.nama_perusahaan,
@@ -269,7 +289,7 @@ function EditTable({
 }: {
   title: string;
   rows: EditRow[];
-  onUpdate: (key: string, field: keyof EditRow, value: string | number) => void;
+  onUpdate: (key: string, field: keyof EditRow, value: string | number | null) => void;
   onDelete: (key: string) => void;
   onMove: (key: string) => void;
   onAdd: () => void;
@@ -298,8 +318,11 @@ function EditTable({
               <tr>
                 <th className="px-2 py-2">Kategori</th>
                 <th className="px-2 py-2">Uraian</th>
-                <th className="px-2 py-2">Volume</th>
-                <th className="px-2 py-2 text-right">Harga</th>
+                <th className="px-2 py-2 w-16">Vol</th>
+                <th className="px-2 py-2 w-20">Sat</th>
+                <th className="px-2 py-2 text-right">Harga Satuan</th>
+                <th className="px-2 py-2 text-right">Nilai</th>
+                <th className="px-2 py-2">Keterangan</th>
                 <th className="px-2 py-2"></th>
               </tr>
             </thead>
@@ -313,7 +336,15 @@ function EditTable({
                     <input className="cell-input" value={r.uraian} onChange={(e) => onUpdate(r.key, "uraian", e.target.value)} />
                   </td>
                   <td className="px-1 py-1">
-                    <input className="cell-input" value={r.volume_satuan} onChange={(e) => onUpdate(r.key, "volume_satuan", e.target.value)} />
+                    <input
+                      type="number"
+                      className="cell-input text-right"
+                      value={r.volume ?? ""}
+                      onChange={(e) => onUpdate(r.key, "volume", e.target.value === "" ? null : Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-1 py-1">
+                    <input className="cell-input" value={r.satuan} onChange={(e) => onUpdate(r.key, "satuan", e.target.value)} />
                   </td>
                   <td className="px-1 py-1">
                     <input
@@ -323,6 +354,14 @@ function EditTable({
                       onChange={(e) => onUpdate(r.key, "harga", Number(e.target.value) || 0)}
                     />
                     {r.harga <= 0 && <span className="block text-[10px] text-red-500">harga wajib &gt; 0</span>}
+                  </td>
+                  <td className="px-2 py-2 text-right font-medium text-slate-700">{formatRp(nilaiBaris(r))}</td>
+                  <td className="px-1 py-1">
+                    <input
+                      className="cell-input"
+                      value={r.keterangan}
+                      onChange={(e) => onUpdate(r.key, "keterangan", e.target.value)}
+                    />
                   </td>
                   <td className="whitespace-nowrap px-1 py-1">
                     <button type="button" onClick={() => onMove(r.key)} className="btn btn-secondary mr-1 px-1.5 py-1 text-[10px]">
@@ -338,8 +377,11 @@ function EditTable({
               ))}
             </tbody>
           </table>
+          {/* Yang dijumlahkan sekarang volume x harga, bukan harga satuannya saja.
+              Menjumlahkan harga satuan berarti menambahkan Rp/m2 ke Rp/hari ke Rp/kali --
+              angka yang selalu tampil tapi tidak pernah berarti apa-apa. */}
           <p className="border-t border-slate-100 px-2 py-2 text-right text-xs font-semibold text-slate-600">
-            Total: {formatRp(rows.reduce((s, r) => s + (r.harga || 0), 0))}
+            Nilai (Σ vol × harga): {formatRp(rows.reduce((s, r) => s + nilaiBaris(r), 0))}
           </p>
         </div>
       )}

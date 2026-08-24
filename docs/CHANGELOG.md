@@ -8,6 +8,82 @@ langsung di GitHub.
 
 ---
 
+## 24 Agustus 2026 — repair list masuk sendiri, dan impornya memeriksa dirinya sendiri
+
+**Mode impor ketiga: Repair List / Rincian Negosiasi.** Berkas "REPAIR LIST" atau "RINCIAN"
+sekarang bisa diunggah langsung. Seksi angka romawi jadi kategori, sub-seksi huruf dan baris
+induk yang tidak berharga jadi konteks, dan baris berharga di kedalaman mana pun ikut terambil.
+Sebelumnya cuma ada parser untuk "REALISASI BIAYA DOCKING" — dokumen yang lahir di akhir
+pekerjaan. Repair list lahir di awal dan justru jadi dasar penagihan, dan memasukkannya berarti
+mengekstraksi manual di luar aplikasi.
+
+**Impornya sekarang memeriksa dirinya sendiri.** Sebelum apa pun disimpan, layar pratinjau
+menunjukkan tiga angka berdampingan: nilai yang terbaca, angka **JUMLAH** yang tertulis di
+berkas, dan selisihnya. Hijau kalau nol, merah kalau tidak. Angkanya dihitung ulang tiap kali
+tabelnya disunting, jadi menghapus satu baris langsung terlihat. Sebelumnya satu-satunya cara
+tahu ada baris yang jatuh adalah menjumlahkan sendiri di luar aplikasi — dan kalau tidak
+dilakukan, tidak ada yang memberi tahu.
+
+**Volume disimpan sebagai angka — di ketiga jalur impor, bukan cuma yang baru.** Kolom baru
+`volume` dan `satuan` mendampingi `volume_satuan` yang lama (yang tidak disentuh sama sekali).
+Tanpa angkanya, "berapa nilai pekerjaan pengecatan untuk kapal ini" tidak bisa dijawab, dan
+membandingkan harga antar kapal jadi menyesatkan: pengecatan di dua kapal sama-sama Rp 200.000
+per m², tapi satu 269 m² dan satu 230 m².
+
+Yang mungkin mengejutkan: `volume_satuan` selama ini **tidak pernah** berisi "269 m²" — isinya
+satuan saja ("Ls", "Hari", "Kali"). Kuantitasnya tidak pernah tersimpan. Di impor Laporan
+Docking angkanya bahkan sudah dibaca sejak dulu, cuma dipakai membagi kolom Jumlah jadi harga
+satuan, lalu dibuang. Sekarang ikut tersimpan, dan tabel pratinjau docking punya kolom Vol,
+Sat, Nilai, dan Keterangan sendiri.
+
+**Angka "Total" di pratinjau docking sekarang berarti sesuatu.** Sebelumnya yang dijumlahkan
+harga satuannya saja — menambahkan Rp/m² ke Rp/hari ke Rp/kali. Sekarang yang dijumlahkan
+volume × harga.
+
+**Blok tanda tangan berhenti jadi baris harga.** Di baris "Diketahui dan Disetujui oleh :"
+ada sel tanggal yang mendarat di kolom harga satuan, dan pembaca .xls mengembalikannya sebagai
+nomor seri Excel. Jadi tiap berkas Laporan Docking menyumbang satu baris katalog palsu seharga
+Rp 46.197 — cukup masuk akal sebagai harga sehingga tidak pernah ada yang curiga. Kalau kamu
+pernah mengimpor laporan docking, baris seperti itu kemungkinan ada di katalog: cari uraian
+yang mengandung "Disetujui" atau "Diketahui".
+
+**Baris beruraian sama tidak lagi ambigu.** Kolom baru `induk_uraian` menyimpan konteks baris
+induknya. Di satu repair list ada tiga baris berbunyi persis "Excentric P/N 51.06501-0339" —
+yang membedakan cuma baris induk yang tidak berharga di atasnya (Main Engine Tengah / M/E Kiri
+/ M/E Kanan), dan harganya memang beda: Rp 12,5 juta untuk yang tengah, Rp 15 juta untuk kiri
+dan kanan. Di tabel katalog, induknya muncul sebagai baris kecil di atas uraiannya. Dari tiga
+berkas: 44 kelompok baris yang tadinya tidak terbedakan jadi nol.
+
+**Kolom Keterangan ikut tersimpan.** Ada di ketiga berkas dan sering berisi catatan yang
+menjelaskan harganya, mis. "Dilaksanakan oleh Kantor Kesehatan Pelabuhan".
+
+**Impor "Format Rapi" menolak berkas berisi lebih dari satu kapal.** Sebelumnya berkas seperti
+itu tetap diproses sampai selesai: seluruh barisnya tercatat atas nama kapal yang kebetulan
+muncul paling atas, tanpa peringatan apa pun — dan karena kapal dan tahun ikut membentuk ID
+baris, salahnya permanen. Sekarang ditolak dengan menyebut kapal-kapalnya. Perusahaan dan tipe
+yang bercampur cuma memperingatkan, karena keduanya masih bisa dibetulkan lewat layar edit.
+
+**Empat template laporan docking yang dulu gagal diam-diam sekarang terbaca.** Berkas yang
+menamai kolomnya "Nama Barang" alih-alih "Uraian", atau "INDUK (Rp.)" alih-alih "Harga",
+sebelumnya menghasilkan **nol baris tanpa pesan error apa pun** — tidak ada bedanya dengan
+berkas kosong. Begitu juga berkas yang tidak menulis "Nama Kapal" tapi menyebut kapalnya di
+baris "Lokasi". Total 714 baris yang selama ini tidak bisa masuk.
+
+**Baris anak di laporan docking membawa konteks induknya.** Di satu laporan ada 15 baris
+berbunyi persis "Elbow" dengan harga Rp 300.000 sampai Rp 2.100.000. Harganya memang beda —
+jalur pipanya beda — tapi katalog tidak menyimpan alasannya. Sekarang tiap baris menyebut
+jalur pipanya sendiri.
+
+**Sepuluh kategori baru dikenali.** Sebutan seksi di repair list bentuknya beda dari laporan
+realisasi. Tanpa alias barunya, 374 dari 385 baris masuk tanpa kategori sama sekali; sekarang
+385 dari 385 terpetakan.
+
+Satu hal yang sengaja belum dikerjakan: kotak pencarian belum mencari ke dalam kolom induk,
+jadi mengetik "Main Engine Tengah" belum menemukan baris part-nya. Mencari nama partnya sendiri
+tetap jalan.
+
+---
+
 ## 4 Agustus 2026 — mengisi Upah dan Alat tidak lagi satu-satu
 
 **Tempel satu kolom sekaligus.** Salin daftar nama dari mana pun, tempel di kotak Nama baris
