@@ -116,13 +116,20 @@ Palang rekonsiliasi menjaga **saat impor**, bukan sesudahnya. Baris yang terhapu
 katalog tetap hilang tanpa cara memulihkannya; `audit_log` mencatat bahwa penghapusan terjadi,
 bukan isi barisnya.
 
-### B4. Kuantitas cuma ada di baris baru
+### B4. Kuantitas ada di 31% baris, sisanya tidak akan pernah ada
 
-Empat kolom baru terisi untuk impor sejak 24 Agustus 2026. Untuk 7.058 baris lama semuanya
-`NULL`. Dari 22 berkas Excel di arsip, sekitar **2.000 baris (28%)** bisa diisi otomatis
-dengan pencocokan aman; **68%** berkas sumbernya sudah tidak ada dan tidak bisa dikembalikan.
+Backfill **sudah dijalankan** 25 Agustus 2026 dari 20 berkas Excel di arsip: 2.127 baris
+lama terisi `volume`/`satuan`/`induk_uraian`/`keterangan`, plus 83 baris dari dua kapal baru.
 
-Backfill-nya **belum dijalankan** dan bukan bagian dari commit `d3f3ef4`.
+Keadaan sekarang: `volume` 2.210 dari 7.142 baris (31%). Sisanya tetap `NULL`, dan itu
+permanen kecuali berkas sumbernya ketemu:
+
+- **420 baris** dilewati karena berkasnya memberi lebih dari satu volume untuk kunci yang
+  sama — sengaja tidak ditebak.
+- **4.511 baris** tidak punya berkas sumber sama sekali.
+
+Cadangan keadaan sebelum backfill (2.127 baris lengkap) ada di `backfill-rollback.csv`,
+di luar repo. Diverifikasi sesudahnya: nol baris hilang, nol kolom lama berubah.
 
 ---
 
@@ -153,10 +160,9 @@ sub-item — yang belum punya tempat untuk menyimpan pembedanya.
 berkasnya tidak diarsipkan per kapal per tahun, dan ini satu-satunya bagian yang tidak bisa
 diperbaiki belakangan.
 
-### C4. Dua kapal di arsip belum masuk katalog
+### C4. ~~Dua kapal di arsip belum masuk katalog~~ — selesai 25 Agustus 2026
 
-`MV. AQUA BLU` (49 baris) dan `KLM. ILIKE` (35 baris) ada berkasnya di arsip tapi belum pernah
-diimpor. Sisa 18 berkas lainnya sudah ada di produksi.
+`MV. AQUA BLU` (49 baris) dan `KLM. ILIKE` (35 baris) sudah masuk. Katalog kini 7.142 baris.
 
 ### C5. Aplikasi belum menghasilkan keluaran apa pun
 
@@ -185,7 +191,7 @@ Tiga kelompok yang dipakai:
 
 ---
 
-Terakhir diperbarui: **24 Agustus 2026**, commit `d3f3ef4`.
+Terakhir diperbarui: **25 Agustus 2026**, sesudah backfill dan impor dua kapal baru.
 
 Terakhir dikosongkan: **18 Agustus 2026**, bersamaan dengan terbitnya PDF edisi 18 Agustus 2026.
 
