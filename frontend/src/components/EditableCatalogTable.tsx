@@ -698,8 +698,9 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                   <th className="px-4 py-3">Tahun</th>
                   <th className="px-4 py-3">Kategori</th>
                   <th className="px-4 py-3">Uraian</th>
-                  <th className="px-4 py-3">Satuan</th>
-                  <th className="px-4 py-3 text-right">Harga</th>
+                  <th className="px-4 py-3">Volume</th>
+                  <th className="px-4 py-3 text-right">Harga Satuan</th>
+                  <th className="px-4 py-3 text-right">Nilai</th>
                   {editMode && <th className="px-4 py-3"></th>}
                 </tr>
               </thead>
@@ -730,6 +731,15 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                           <Cell align="right">
                             <input type="number" className="cell-input text-right" value={draft.harga_satuan} onChange={(e) => setDraft((d) => ({ ...d, harga_satuan: Number(e.target.value) || 0 }))} />
                           </Cell>
+                          {/* Kolom Nilai ikut hadir waktu menyunting supaya kolomnya tidak
+                              bergeser. Volume tidak bisa disunting dari sini -- layar ini cuma
+                              mengirim delapan kolom lama, dan backend sengaja tidak menimpa
+                              keempat kolom baru. */}
+                          <td className="px-4 py-2 text-right text-slate-400">
+                            {r.volume !== null && r.volume !== undefined
+                              ? formatRp(r.volume * draft.harga_satuan)
+                              : "—"}
+                          </td>
                           <td className="whitespace-nowrap px-4 py-2">
                             <button type="button" disabled={busy} onClick={saveEdit} className="btn btn-primary btn-sm mr-1.5">
                               <Save size={12} />
@@ -775,6 +785,18 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                               : r.volume_satuan}
                           </td>
                           <td className="px-4 py-2 text-right font-medium">{formatRp(r.harga_satuan)}</td>
+                          {/* Nilai baris = volume x harga satuan. Tanpa kolom ini, "108 m2"
+                              berdampingan dengan "Rp 30.000" gampang dibaca sebagai harga
+                              seluruh pekerjaan, padahal itu harga per m2. Baris tanpa volume
+                              menampilkan garis, bukan angka -- nilainya memang tidak diketahui,
+                              dan menganggapnya 1 x harga akan mengarang. */}
+                          <td className="px-4 py-2 text-right">
+                            {r.volume !== null && r.volume !== undefined ? (
+                              formatRp(r.volume * r.harga_satuan)
+                            ) : (
+                              <span className="text-slate-300">&mdash;</span>
+                            )}
+                          </td>
                           {editMode && (
                             <td className="px-4 py-2">
                               <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary btn-sm">
