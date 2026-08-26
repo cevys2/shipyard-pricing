@@ -32,6 +32,19 @@ const COLUMN_ORDER: (keyof CatalogRowInput)[] = [
 ];
 const COLUMN_LABELS = ["Perusahaan", "Kapal", "Tipe", "Tahun", "Kategori", "Uraian", "Satuan", "Harga"];
 
+/** Satuan yang menuntut pengukuran. Volume tepat 1 di satuan seperti ini hampir pasti
+ * bukan hasil ukur -- laporan docking memakai angka 1 sebagai penampung waktu luasnya
+ * tidak diukur atau tidak ditagih terpisah. Dokumen yang sama menulis 365 dan 500 di
+ * baris lain, jadi ini sifat dokumennya, bukan salah baca.
+ *
+ * Satuan borongan (ls, unit, set, pcs, kali) tidak masuk daftar: di sana volume 1 wajar. */
+const SATUAN_TERUKUR = new Set(["m2", "m²", "m", "mtr", "meter", "kg", "ton", "m3", "m³", "ltr", "liter"]);
+
+/** Nilai barisnya patut diragukan: volume 1 pada satuan yang seharusnya diukur. */
+function volumeMeragukan(r: CatalogRow): boolean {
+  return r.volume === 1 && !!r.satuan && SATUAN_TERUKUR.has(r.satuan.trim().toLowerCase());
+}
+
 const emptyDraft: CatalogRowInput = {
   nama_perusahaan: "",
   nama_kapal: "",
@@ -791,10 +804,18 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                               menampilkan garis, bukan angka -- nilainya memang tidak diketahui,
                               dan menganggapnya 1 x harga akan mengarang. */}
                           <td className="px-4 py-2 text-right">
-                            {r.volume !== null && r.volume !== undefined ? (
-                              formatRp(r.volume * r.harga_satuan)
-                            ) : (
+                            {r.volume === null || r.volume === undefined ? (
                               <span className="text-slate-300">&mdash;</span>
+                            ) : volumeMeragukan(r) ? (
+                              <span
+                                className="text-amber-600"
+                                title={`Dokumen aslinya menulis volume 1 ${r.satuan} untuk pekerjaan yang seharusnya diukur. Luas sebenarnya tidak tercatat di dokumen, jadi angka ini kemungkinan besar bukan nilai pekerjaannya - harga satuannya yang benar.`}
+                              >
+                                {formatRp(r.volume * r.harga_satuan)}
+                                <span className="ml-1 font-bold">?</span>
+                              </span>
+                            ) : (
+                              formatRp(r.volume * r.harga_satuan)
                             )}
                           </td>
                           {editMode && (
