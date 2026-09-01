@@ -296,6 +296,20 @@ function EditTable({
   moveLabel: string;
   color: string;
 }) {
+  // Kolom Keterangan cuma tampil kalau ada baris yang mengisinya. Di berkas seperti
+  // "Docking DEAL KMP. PRATHITA IV" kolom KETERANGAN di Excel-nya kosong di seluruh 281
+  // baris, jadi yang tersisa cuma kolom kosong yang memakan lebar dan mendesak Vol dan Sat
+  // -- padahal Vol bisa berisi 6000 (ltr) dan angkanya terpotong spinner.
+  //
+  // Sengaja DISEMBUNYIKAN, bukan dihapus: kolom itu tidak mati. Dialah yang menentukan
+  // sebuah baris masuk Addendum ('tambahan' di keterangan, docking_parser.py), dan di
+  // repair list dia sering berisi catatan yang menjelaskan harganya. Begitu ada isinya
+  // kolomnya muncul lagi -- termasuk di tabel Addendum, yang justru selalu punya isi.
+  //
+  // Dihitung per tabel, bukan sekali untuk keduanya: Induk boleh kehilangan kolomnya
+  // sementara Addendum tetap menampilkannya.
+  const adaKeterangan = rows.some((r) => r.keterangan.trim() !== "");
+
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
@@ -318,11 +332,11 @@ function EditTable({
               <tr>
                 <th className="px-2 py-2">Kategori</th>
                 <th className="px-2 py-2">Uraian</th>
-                <th className="px-2 py-2 w-16">Vol</th>
-                <th className="px-2 py-2 w-20">Sat</th>
+                <th className="px-2 py-2 w-24">Vol</th>
+                <th className="px-2 py-2 w-24">Sat</th>
                 <th className="px-2 py-2 text-right">Harga Satuan</th>
                 <th className="px-2 py-2 text-right">Nilai</th>
-                <th className="px-2 py-2">Keterangan</th>
+                {adaKeterangan && <th className="px-2 py-2">Keterangan</th>}
                 <th className="px-2 py-2"></th>
               </tr>
             </thead>
@@ -356,13 +370,15 @@ function EditTable({
                     {r.harga <= 0 && <span className="block text-[10px] text-red-500">harga wajib &gt; 0</span>}
                   </td>
                   <td className="px-2 py-2 text-right font-medium text-slate-700">{formatRp(nilaiBaris(r))}</td>
-                  <td className="px-1 py-1">
-                    <input
-                      className="cell-input"
-                      value={r.keterangan}
-                      onChange={(e) => onUpdate(r.key, "keterangan", e.target.value)}
-                    />
-                  </td>
+                  {adaKeterangan && (
+                    <td className="px-1 py-1">
+                      <input
+                        className="cell-input"
+                        value={r.keterangan}
+                        onChange={(e) => onUpdate(r.key, "keterangan", e.target.value)}
+                      />
+                    </td>
+                  )}
                   <td className="whitespace-nowrap px-1 py-1">
                     <button type="button" onClick={() => onMove(r.key)} className="btn btn-secondary mr-1 px-1.5 py-1 text-[10px]">
                       <Repeat size={11} />

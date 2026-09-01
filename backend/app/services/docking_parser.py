@@ -13,6 +13,7 @@ Aturan ekstraksi (ditetapkan bareng user):
 
 Posisi kolom (Keterangan, Harga, dst) di-scan ulang tiap file karena tidak tetap.
 """
+import datetime
 import io
 import re
 
@@ -150,15 +151,51 @@ def max_num_in_range(row, start, end):
     return best
 
 
+# Sub-header di bawah satu grup tidak sepakat ejaannya. Yang lazim "Satuan"/"Jumlah",
+# tapi "Docking DEAL KMP. PRATHITA IV" menulis sub-kolom harga satuannya "Sat" -- kata
+# yang sama persis dengan sub-kolom satuan di grup VOLUME.
+SUB_SINONIM = {
+    'satuan': ('satuan', 'sat', 'hargasatuan', 'unit'),
+    'jumlah': ('jumlah', 'jml', 'total'),
+    'qty': ('qty', 'quantity', 'volume', 'vol'),
+    'sat': ('sat', 'satuan', 'unit'),
+}
+
+# Sub-header mana yang duduk di KIRI grupnya kalau ejaannya tidak dikenali sama sekali.
+# Urutan Satuan-lalu-Jumlah dan Qty-lalu-Sat berlaku di semua template yang pernah dibaca.
+SUB_POSISI_KIRI = ('satuan', 'qty')
+
+
+def _norm_sub(v) -> str:
+    return norm_nospace(v).rstrip('.')
+
+
 def col_for_sub(group_labels, sub_labels, group_start_col, want_sub):
+    """Kolom mana di dalam satu grup header yang memuat sub-header `want_sub`.
+
+    Fallback-nya dulu `cols[-1]` -- kolom TERAKHIR grup itu -- dan itu sumber kegagalan
+    yang paling mahal sejauh ini. Di berkas PRATHITA IV sub-header harganya berbunyi "Sat",
+    pencocokan sama-persis dengan 'satuan' meleset, lalu fallback memilih kolom terakhir
+    grup HARGA: kolom Jumlah. Seluruh 154 baris masuk katalog dengan angka TOTAL sebagai
+    harga satuan -- "Penggunaan listrik harian, 19 hari" tersimpan 13.300.000, bukan
+    700.000 -- dan jumlah seluruh harganya persis sama dengan angka JUMLAH di berkas.
+    Tidak ada error, tidak ada peringatan.
+
+    Sekarang: ejaan persis dulu, baru sinonim, baru POSISI. Jatuh ke posisi masih menebak,
+    tapi menebak ke arah yang benar; `cols[-1]` menebak ke arah yang selalu salah untuk
+    kolom satuan.
+    """
     if group_start_col is None:
         return None
     target_label = group_labels[group_start_col]
     cols = [ci for ci, lbl in group_labels.items() if lbl == target_label]
-    for ci in cols:
-        if (sub_labels.get(ci) or '').strip().lower() == want_sub:
-            return ci
-    return cols[-1] if cols else None
+    if not cols:
+        return None
+    for kandidat in ((want_sub,), SUB_SINONIM.get(want_sub, ())):
+        for ci in cols:
+            if _norm_sub(sub_labels.get(ci)) in kandidat:
+                return ci
+    return cols[0] if want_sub in SUB_POSISI_KIRI else cols[-1]
 
 
 def find_label_value(values, label_keys, max_row=25, max_scan=8):
@@ -182,7 +219,11 @@ def find_label_value(values, label_keys, max_row=25, max_scan=8):
                     if v is not None and str(v).strip() not in (':', ''):
                         if isinstance(v, float) and float(v).is_integer():
                             v = int(v)
-                        return str(v).strip()
+                        # Titik dua tidak selalu punya sel sendiri: di berkas PRATHITA IV
+                        # label dan nilainya menyatu jadi ": KMP PRATHITA IV". Tanpa
+                        # dibuang, titik duanya ikut ke nama kapal lalu ikut jadi prefix
+                        # ID baris.
+                        return str(v).strip().lstrip(':').strip()
     return ""
 
 
@@ -243,7 +284,49 @@ def _tahun_sebaris(values, label_keys, max_row=25) -> str:
     return ""
 
 
-def guess_header(values, filename, sheet_name=""):
+# Label yang menyebut tahun tapi BUKAN tahun pekerjaan. "TAHUN PEMBUATAN : 1968" ada di
+# tiap kepala laporan; untuk kapal yang dibangun sesudah 2000, angkanya lolos YEAR_RE.
+LABEL_BUKAN_TAHUN_KERJA = ('pembuatan', 'pembangunan', 'dibangun')
+
+
+def _tahun_dari_sel_tanggal(values) -> str:
+    """Upaya terakhir: tahun dari sel yang benar-benar BERTIPE tanggal.
+
+    "Docking DEAL KMP. PRATHITA IV" tidak punya baris PERIODE DOCKING sama sekali dan nama
+    berkasnya tidak menyebut tahun, jadi kolom Tahun di form impor terisi kosong -- dan
+    tanpa tahun barisnya tidak bisa disimpan. Satu-satunya waktu yang tertulis di berkas itu
+    dua sel tanggal telanjang di blok tanda tangan (10 Feb 2025 dan 12 Mar 2025), tanpa
+    label apa pun di sebelahnya.
+
+    Syaratnya sempit dengan sengaja: HANYA sel bertipe tanggal yang dihitung, bukan angka
+    dan bukan teks. Itulah yang membuat "TAHUN PEMBUATAN : 1968" (angka) dan nomor surat
+    "2.00143/SW08/DK/SPJ/JN/II/2024" (teks) tidak ikut terbaca. Baris yang menyebut tahun
+    pembuatan dibuang lebih dulu, untuk kapal yang kebetulan dibangun sesudah 2000.
+
+    Batasnya jujur: berkas .xls lewat xlrd mengembalikan tanggal sebagai NOMOR SERI, bukan
+    objek tanggal, jadi upaya terakhir ini cuma berlaku untuk .xlsx. Kebetulan itu juga
+    yang dulu membuat sel tanggal di blok tanda tangan tersimpan sebagai harga 46.197.
+    """
+    hitungan: dict[str, int] = {}
+    for row in values:
+        if any(
+            c is not None and any(k in norm_nospace(c) for k in LABEL_BUKAN_TAHUN_KERJA)
+            for c in row
+        ):
+            continue
+        for cell in row:
+            if isinstance(cell, datetime.date) and not isinstance(cell, bool):
+                th = str(cell.year)
+                if YEAR_RE.search(th):
+                    hitungan[th] = hitungan.get(th, 0) + 1
+    if not hitungan:
+        return ""
+    # Yang paling sering muncul; seri sama -> yang paling awal, karena pekerjaannya mulai
+    # lebih dulu daripada tanggal tanda tangan penutupnya.
+    return min(sorted(hitungan), key=lambda th: (-hitungan[th], th))
+
+
+def guess_header(values, filename, sheet_name="", catatan=None):
     nama_kapal = tebak_nama_kapal(values, sheet_name, filename)
     nama_perusahaan = find_label_value(values, ['pemilik'])
     tahun = find_label_value(values, ['periodedocking', 'dockingtahun', 'tahundocking'])
@@ -253,6 +336,14 @@ def guess_header(values, filename, sheet_name=""):
     if tahun and not YEAR_RE.search(tahun):
         sebaris = _tahun_sebaris(values, ['periodedocking', 'dockingtahun', 'tahundocking'])
         tahun = sebaris or tahun
+    if not tahun:
+        # Kalau tidak ada PERIODE DOCKING, tanggal NAIK DOCK / TURUN DOCK adalah waktu
+        # pekerjaan yang paling harfiah di berkas. Diambil TAHUNNYA saja: selnya sering
+        # berisi tanggal penuh, dan menyalinnya bulat-bulat membuat prefix ID baris
+        # berbunyi "KMP._X-2025-02-10 00:00:00-001".
+        m = YEAR_RE.search(find_label_value(values, ['naikdock', 'turundock']) or "")
+        if m:
+            tahun = m.group(1)
     if not tahun:
         # Berkas perjanjian tidak menyebut periode docking, tapi menyebut tanggal
         # perjanjiannya. Itu lebih dekat ke waktu pekerjaan daripada tahun di nama berkas,
@@ -265,6 +356,13 @@ def guess_header(values, filename, sheet_name=""):
         m = YEAR_RE.search(sheet_name or "") or YEAR_RE.search(filename)
         if m:
             tahun = m.group(1)
+    if not tahun:
+        tahun = _tahun_dari_sel_tanggal(values)
+        if tahun and catatan is not None:
+            catatan.append(
+                f"Tahun {tahun} ditebak dari sel tanggal di berkas - tidak ada baris "
+                f"PERIODE DOCKING dan nama berkas tidak menyebut tahun. Periksa sebelum menyimpan."
+            )
     return nama_kapal, nama_perusahaan, tahun
 
 
@@ -321,6 +419,25 @@ def parse_sheet(values, sheet_name):
     end_col = volume_col if volume_col is not None else len(header_row)
 
     induk, addendum, warnings = [], [], []
+
+    # Palang struktur, bukan palang angka. Di grup harga yang punya lebih dari satu kolom,
+    # Satuan dan Jumlah tidak boleh mendarat di kolom yang sama -- kalau sama, sub-header-nya
+    # tidak terbaca dan yang tersimpan sebagai harga satuan sebenarnya angka total. Persis
+    # kegagalan "Sat" vs "Satuan" yang dulu lolos tanpa suara sampai 154 baris terlanjur
+    # masuk katalog. Ini tidak bisa berbunyi palsu seperti palang rekonsiliasi di jalur
+    # docking: dia memeriksa bentuk header, bukan menjumlahkan baris yang boleh bersyarat.
+    for nama_grup, mulai, sat_c, jml_c in (
+        ('Harga', harga_utama_start, harga_utama_satuan_col, harga_utama_jumlah_col),
+        ('Tambahan', tambahan_start, harga_tambahan_satuan_col, harga_tambahan_jumlah_col),
+    ):
+        if mulai is None or sat_c is None or sat_c != jml_c:
+            continue
+        if len([c for c, l in group_labels.items() if l == group_labels[mulai]]) > 1:
+            warnings.append(
+                f"Kolom '{nama_grup}': sub-header Satuan dan Jumlah terbaca di kolom yang "
+                f"sama - harga satuan mungkin terisi angka total, periksa sebelum menyimpan"
+            )
+
     current_category = None
     # Rantai baris induk yang sedang berlaku, dikunci per kedalaman. Lihat _kedalaman_kolom().
     induk_konteks: dict[int, str] = {}
@@ -480,7 +597,7 @@ def _load_values(file_bytes: bytes, filename: str):
 def parse_docking_file(file_bytes: bytes, filename: str) -> dict:
     values, sheetname = _load_values(file_bytes, filename)
     induk, addendum, warnings = parse_sheet(values, sheetname)
-    nama_kapal, nama_perusahaan, tahun = guess_header(values, filename, sheetname)
+    nama_kapal, nama_perusahaan, tahun = guess_header(values, filename, sheetname, warnings)
     return {
         "sheet_name": sheetname,
         "detected_nama_kapal": nama_kapal,

@@ -7,6 +7,7 @@ semuanya gagal DIAM-DIAM: parser mengembalikan daftar kosong, bukan error. Berka
 Yang ditiru di sini bentuk kepalanya saja, secukupnya untuk memicu tiap kegagalan.
 """
 
+import datetime
 import io
 
 import pytest
@@ -185,3 +186,114 @@ def test_tahun_dari_nama_sheet_kalau_kepala_diam():
     _, _, tahun = guess_header([_baris(c0="Lokasi", c3="KMP. TES")], "tanpa.xlsx", "KMP. TES - 2026")
 
     assert tahun == "2026"
+
+
+# --- sub-header harga bernama "Sat", bukan "Satuan" -------------------------------------
+
+def _berkas_prathita(**sel_baris) -> bytes:
+    """Bentuk kepala "Docking DEAL KMP. PRATHITA IV": sub-kolom harga satuan berjudul "Sat".
+
+    Kata yang sama persis dengan sub-kolom satuan di grup VOLUME, dan itu yang bikin
+    pencocokan sama-persis meleset.
+    """
+    return _berkas(
+        [_baris(c0="DATA - DATA KAPAL"), _baris(c0=2, c1="NAMA KAPAL", c4=": KMP PRATHITA IV")],
+        _baris(c0="No", c1="URAIAN", c13="VOLUME", c15="HARGA (Rp.)", c17="KETERANGAN"),
+        _baris(c13="Qty", c14="Sat", c15="Sat", c16="Jumlah"),
+        [_baris(c0="I", c1="BAGIAN UMUM"), _baris(**sel_baris)],
+    )
+
+
+def test_sub_header_sat_tidak_bikin_angka_total_jadi_harga_satuan():
+    """Kegagalan paling mahal sejauh ini, dan sepenuhnya tanpa suara.
+
+    Fallback lama `cols[-1]` memilih kolom TERAKHIR grup HARGA -- kolom Jumlah -- lalu
+    seluruh 154 baris berkas PRATHITA IV masuk katalog dengan angka total sebagai harga
+    satuan. Jumlah seluruh "harga satuan" persis sama dengan angka JUMLAH di berkas.
+    """
+    hasil = parse_docking_file(
+        _berkas_prathita(c0=3, c1="Penggunaan listrik harian",
+                         c13=19, c14="hari", c15=700_000, c16=13_300_000),
+        "Docking  DEAL  KMP. PRATHITA IV.xlsx",
+    )
+
+    (baris,) = hasil["induk"]
+    assert baris["harga"] == 700_000, "kolom Jumlah terbaca sebagai harga satuan"
+    assert baris["volume"] == 19
+    assert baris["volume"] * baris["harga"] == 13_300_000
+
+
+def test_palang_bunyi_kalau_satuan_dan_jumlah_jatuh_ke_kolom_yang_sama():
+    """Grup harga tiga kolom yang sub-header satuannya hilang sama sekali.
+
+    'satuan' jatuh ke posisi paling kiri, dan di situ justru duduk "Jumlah". Parser tidak
+    punya cara tahu mana yang benar -- yang penting dia bilang, bukan diam.
+    """
+    hasil = parse_docking_file(
+        _berkas(
+            [_baris(c0="NAMA KAPAL", c2=":", c3="KMP. TES")],
+            _baris(c0="No", c1="URAIAN", c13="VOLUME", c15="HARGA (Rp.)", c18="KETERANGAN"),
+            _baris(c13="Qty", c14="Sat", c15="Jumlah"),
+            [_baris(c0=1, c1="Kerja", c13=2, c14="Ls", c15=1_000_000)],
+        ),
+        "aneh.xlsx",
+    )
+
+    assert any("kolom yang sama" in w for w in hasil["warnings"])
+
+
+# --- label dan nilai menyatu di satu sel ------------------------------------------------
+
+def test_titik_dua_yang_menyatu_dengan_nilai_tidak_ikut_terbaca():
+    """": KMP PRATHITA IV" dalam SATU sel, bukan ":" dan nilainya di sel terpisah.
+
+    Titik duanya dulu ikut ke nama kapal, lalu ikut jadi prefix ID baris.
+    """
+    kepala = [
+        _baris(c0=2, c1="NAMA KAPAL", c4=": KMP PRATHITA IV"),
+        _baris(c0=3, c1="PEMILIK", c4=": PT. ASDP Indonesia Ferry (persero)"),
+    ]
+
+    kapal, pemilik, _ = guess_header(kepala, "x.xlsx")
+
+    assert kapal == "KMP PRATHITA IV"
+    assert pemilik == "PT. ASDP Indonesia Ferry (persero)"
+
+
+# --- tahun untuk berkas yang tidak menyebut PERIODE DOCKING -----------------------------
+
+def test_tahun_dari_tanggal_naik_dock_diambil_tahunnya_saja():
+    kepala = [
+        _baris(c0="NAMA KAPAL", c2=":", c3="KMP. TES"),
+        _baris(c0="NAIK DOCK", c2=":", c3=datetime.datetime(2025, 2, 10)),
+    ]
+
+    _, _, tahun = guess_header(kepala, "tanpa-tahun.xlsx")
+
+    assert tahun == "2025", "tanggal penuh tidak boleh masuk utuh ke kolom Tahun"
+
+
+def test_tahun_ditebak_dari_sel_tanggal_dan_dikatakan_bahwa_itu_tebakan():
+    """PRATHITA IV tidak punya PERIODE DOCKING dan nama berkasnya tidak menyebut tahun.
+
+    Satu-satunya waktu yang tertulis: dua sel tanggal telanjang di blok tanda tangan.
+    """
+    kepala = [_baris(c0="NAMA KAPAL", c2=":", c3="KMP. TES"), _baris(c20=datetime.datetime(2025, 2, 10))]
+    catatan: list[str] = []
+
+    _, _, tahun = guess_header(kepala, "tanpa-tahun.xlsx", "Sheet1", catatan)
+
+    assert tahun == "2025"
+    assert any("ditebak" in c for c in catatan), "tebakan harus terdengar, bukan diam"
+
+
+def test_tahun_pembuatan_kapal_tidak_dikira_tahun_pekerjaan():
+    """Kapal yang dibangun sesudah 2000 punya angka yang lolos YEAR_RE."""
+    kepala = [
+        _baris(c0="TAHUN PEMBUATAN", c2=":", c3=datetime.datetime(2015, 6, 1)),
+        _baris(c20=datetime.datetime(2025, 2, 10)),
+    ]
+
+    _, _, tahun = guess_header(kepala, "tanpa-tahun.xlsx")
+
+    assert tahun == "2025"

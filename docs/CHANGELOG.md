@@ -8,6 +8,59 @@ langsung di GitHub.
 
 ---
 
+## 1 September 2026 — angka total berhenti menyamar jadi harga satuan
+
+**Berkas docking yang menulis "Sat" sekarang terbaca benar.** Ini kegagalan paling mahal
+sejauh ini, dan sepenuhnya tanpa suara: tidak ada error, tidak ada peringatan, dan angkanya
+cukup masuk akal sehingga tidak ada alasan curiga.
+
+Semua berkas docking yang pernah ditangani menulis sub-kolom harga satuannya **"Satuan"**.
+"Docking DEAL KMP. PRATHITA IV" menulisnya **"Sat"** — kata yang sama persis dengan sub-kolom
+satuan di grup VOLUME. Pencocokan sama-persis meleset, lalu parser jatuh ke kolom terakhir
+grup harga: kolom **Jumlah**. Seluruh 154 baris masuk katalog dengan angka **total** sebagai
+harga satuan.
+
+"Penggunaan listrik harian, 19 hari" tersimpan seharga Rp 13.300.000, bukan Rp 700.000.
+Baris ber-volume 1 ("Ls", "kali") kelihatan benar, karena di situ satuan dan total memang sama
+— jadi gejalanya cuma muncul di sebagian baris.
+
+Buktinya satu angka: jumlah seluruh "harga satuan" yang masuk persis sama dengan angka JUMLAH
+di berkasnya, Rp 1.154.862.810. Sesudah perbaikan, volume × harga menjumlah ke angka yang
+sama, selisih Rp 0.
+
+**Kalau kamu pernah mengimpor berkas docking bertajuk "Sat", barisnya ada di katalog sekarang.**
+Tandanya: harga satuan yang kelihatan terlalu besar untuk satuannya, di baris yang volumenya
+lebih dari 1. Impor ulang berkasnya akan menghasilkan angka yang benar.
+
+**Palang baru yang memeriksa bentuk header, bukan angkanya.** Kalau di satu grup harga
+sub-kolom Satuan dan Jumlah terbaca di kolom yang sama, layar pratinjau bilang sebelum apa pun
+disimpan. Palang ini tidak bisa berbunyi palsu seperti palang penjumlahan — dia memeriksa
+susunan judul, bukan menjumlahkan baris yang boleh saja bersyarat.
+
+**Nama kapal tidak lagi kebawa titik dua.** Di berkas ini label dan nilainya menyatu dalam satu
+sel: `": KMP PRATHITA IV"`. Titik duanya dulu ikut ke nama kapal, lalu ikut jadi prefix ID
+baris. Berlaku juga untuk nama pemilik.
+
+**Tahun terisi walau berkasnya tidak menyebut "PERIODE DOCKING".** Urutan barunya: periode
+docking → tanggal **NAIK DOCK / TURUN DOCK** (diambil tahunnya saja) → tanggal perjanjian →
+nama sheet/berkas → upaya terakhir dari sel yang benar-benar bertipe tanggal. Yang terakhir
+**mengaku sebagai tebakan** lewat peringatan di layar, dan sengaja cuma membaca sel bertipe
+tanggal: itu yang membuat "TAHUN PEMBUATAN : 1968" (angka) dan nomor surat berakhiran
+"/II/2024" (teks) tidak ikut terbaca. Sebelumnya berkas seperti ini bertahun kosong, dan tanpa
+tahun barisnya tidak bisa disimpan sama sekali.
+
+**Layar pratinjau docking: kolom Vol dan Sat dilebarkan, Keterangan menyembunyikan diri kalau
+kosong.** Di berkas seperti PRATHITA IV kolom KETERANGAN di Excel-nya kosong di seluruh 281
+baris, jadi yang tersisa cuma kolom kosong yang mendesak Vol — padahal Vol bisa berisi 6000
+(ltr) dan angkanya terpotong. Kolomnya disembunyikan, bukan dihapus: dialah yang menentukan
+sebuah baris masuk Addendum, jadi begitu ada isinya dia muncul lagi. Dihitung per tabel, jadi
+Induk boleh kehilangan kolomnya sementara Addendum tetap menampilkannya. Isinya tetap
+tersimpan apa pun yang tampil di layar.
+
+**README: `createdb shipyard_test` ternyata belum cukup.** `tabel_katalog_harga` tidak dibuat
+oleh repo ini, jadi di database yang benar-benar kosong seluruh suite error di fixture dengan
+pesan yang menuding hal lain. DDL-nya sekarang ada di README.
+
 ## 24 Agustus 2026 — repair list masuk sendiri, dan impornya memeriksa dirinya sendiri
 
 **Mode impor ketiga: Repair List / Rincian Negosiasi.** Berkas "REPAIR LIST" atau "RINCIAN"

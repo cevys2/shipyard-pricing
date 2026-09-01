@@ -3,7 +3,7 @@
 Aplikasi internal PT Dukuh Raya (galangan kapal, Lombok). Katalog harga jasa, katalog
 material, dan analisa harga satuan (AHSP). Pengguna aktif: satu orang. Dikerjakan solo.
 
-Terakhir diperbarui: 24 Agustus 2026.
+Terakhir diperbarui: 1 September 2026.
 
 ## Stack
 
@@ -188,9 +188,23 @@ Semuanya sudah ditangani, dan tiap kasusnya dijaga `tests/test_docking_format_la
 | Kolom harga bernama `INDUK (Rp.)` | Realisasi LCT. ARJHUNA 2025 | 214 baris hilang |
 | Tanpa label `NAMA KAPAL`, nama kapal ada di baris `Lokasi` | Lampiran Perjanjian Marina Segunda / Prima Nusantara | kapal kosong, baris tidak bisa disimpan |
 | `PERIODE DOCKING : Nopember` dan `2025` di dua sel terpisah | Realisasi MV. Bali Hai II | tahun terisi "Nopember", lalu ikut jadi prefix ID |
+| Sub-kolom harga bernama `Sat`, bukan `Satuan` | Docking DEAL KMP. PRATHITA IV | 154 baris masuk dengan angka TOTAL sebagai harga satuan |
+| Label dan nilai menyatu di satu sel: `": KMP PRATHITA IV"` | idem | nama kapal berawalan titik dua, ikut jadi prefix ID |
+| Tanpa `PERIODE DOCKING`; tahun cuma ada di sel tanggal tak berlabel | idem | tahun kosong, baris tidak bisa disimpan sama sekali |
 
 Kegagalan jenis ini paling mahal karena tidak bersuara: berkas yang "berhasil diimpor 0 baris"
 terlihat sama persis dengan berkas yang memang kosong.
+
+Tiga baris terakhir (1 September 2026) beda jenisnya dan lebih buruk: berkasnya terbaca
+**penuh**, 154 baris, tanpa satu pun tanda bahaya — cuma angkanya yang salah. Sumbernya
+fallback `cols[-1]` di `col_for_sub()`: kalau sub-header tidak dikenali, dia diam-diam memilih
+kolom TERAKHIR grup, dan di grup harga dua kolom itu selalu kolom Jumlah. Sekarang urutannya
+ejaan persis → sinonim (`sat` ≡ `satuan`) → POSISI (`satuan` ke kiri, `jumlah` ke kanan).
+
+Ini **satu-satunya palang di jalur docking**, dan sengaja palang STRUKTUR, bukan penjumlahan:
+kalau Satuan dan Jumlah jatuh ke kolom yang sama di grup berkolom banyak, parser bilang. Dia
+memeriksa susunan judul, jadi tidak punya masalah bunyi-palsu yang membuat palang rekonsiliasi
+tidak dipasang di jalur ini (lihat bagian Kuantitas di atas).
 
 ### Konteks baris induk di jalur docking
 

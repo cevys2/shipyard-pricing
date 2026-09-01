@@ -55,7 +55,42 @@ yang sebenarnya. Berkas itu tidak ikut ke repo (`backend/.gitignore`), dan janga
 
 ```bash
 createdb shipyard_test
+```
+
+**`createdb` saja belum cukup.** `tabel_katalog_harga` tidak dibuat oleh repo ini — dia sudah
+ada sebelum aplikasi lahir, jadi semua `ensure_*()` cuma meng-ALTER-nya. Di database yang
+benar-benar kosong tabelnya tidak akan pernah muncul, dan seluruh suite error di fixture
+dengan pesan yang menuding hal lain. Buat bentuk dasarnya sekali:
+
+```sql
+CREATE TABLE tabel_katalog_harga (
+    id                 TEXT PRIMARY KEY,
+    nama_perusahaan    TEXT,
+    nama_kapal         TEXT,
+    tipe_perjanjian    TEXT,
+    tahun              TEXT,
+    kategori_pekerjaan TEXT,
+    uraian_pekerjaan   TEXT,
+    volume_satuan      TEXT,
+    harga_satuan       DOUBLE PRECISION
+);
+```
+
+`harga_satuan` memang `double precision`, bukan `numeric` — `test_kolom_lama_tidak_ikut_berubah`
+mematoknya, dan itu tes yang menangkapnya kalau salah.
+
+Sisa kolomnya (`volume`, `satuan`, `induk_uraian`, `keterangan`, `kategori_id`) dan semua tabel
+lain dibuat oleh `ensure_*()`. Jalankan sekali dalam urutan `lifespan()` di `main.py` —
+**urutannya mengikat**:
+
+```bash
 cd backend
+DATABASE_URL="postgresql://postgres:PASSWORD@127.0.0.1:5432/shipyard_test" JWT_SECRET=apa-saja   python -c "from app.database import *; [f() for f in (ensure_material_tables, ensure_partno_unique, ensure_katalog_kolom_rincian, ensure_kategori_table, ensure_ahsp_tables, ensure_audit_table, ensure_pencarian_index)]"
+```
+
+Baru setelah itu:
+
+```bash
 TEST_DATABASE_URL="postgresql://postgres:PASSWORD@127.0.0.1:5432/shipyard_test" pytest
 ```
 
