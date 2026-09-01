@@ -57,6 +57,28 @@ sebuah baris masuk Addendum, jadi begitu ada isinya dia muncul lagi. Dihitung pe
 Induk boleh kehilangan kolomnya sementara Addendum tetap menampilkannya. Isinya tetap
 tersimpan apa pun yang tampil di layar.
 
+**Angka 0 berhenti jadi bagian uraian pekerjaan.** Kolom penomoran di berkas ini berisi
+angka 0 di baris lanjutan -- pengisi tata letak, bukan isi. Nolnya ikut terbaca sebagai
+teks, jadi 56 dari 154 uraian berawalan "0 ": "0 1 x Primer ( Red 175 mikron )".
+
+Yang lebih merugikan tidak kelihatan di teksnya. Karena nol itu dihitung sebagai isi,
+kedalaman kolom tiap baris meleset, dan baris induk tergusur oleh anaknya sendiri --
+"Bongkar pasang selang air tawar" kehilangan jejak bahwa dia bagian dari "Di berikan air
+tawar untuk keperluan kapal". Di berkas ini baris yang punya konteks induk naik dari 14
+jadi 111.
+
+**Dua baris berharga yang uraiannya kosong tidak lagi jadi baris bernama "0".** Baris 187
+dan 194 hanya memuat volume dan harga; nama pekerjaannya ada di baris induk tepat di
+atasnya ("Repleting gading-gading internal rampdoor ..."). Sekarang uraiannya dipinjam
+dari induk itu, dan pinjamannya diumumkan lewat peringatan supaya bisa diperiksa. Rp
+681.380 dan Rp 730.050 tetap di katalog dengan nama yang bisa dibaca.
+
+Palangnya: baris kaki berkas (**Jumlah**, **PPN 11%**, **Jumlah + PPN**) juga tidak punya
+uraian, dan angkanya justru terbesar di berkas. Yang membedakan baris lanjutan yang sah
+dari baris kaki adalah **volume** -- baris lanjutan punya, baris kaki cuma punya satu
+angka jadi. Tanpa palang itu ketiganya masuk sebagai pekerjaan senilai Rp 1,15 miliar,
+Rp 127 juta, dan Rp 1,28 miliar, dan jumlah impor jadi 3,2x angka yang benar.
+
 **README: `createdb shipyard_test` ternyata belum cukup.** `tabel_katalog_harga` tidak dibuat
 oleh repo ini, jadi di database yang benar-benar kosong seluruh suite error di fixture dengan
 pesan yang menuding hal lain. DDL-nya sekarang ada di README.

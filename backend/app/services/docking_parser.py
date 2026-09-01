@@ -59,6 +59,34 @@ def norm_nospace(s) -> str:
     return re.sub(r'\s+', '', norm(s))
 
 
+def _pengisi(v) -> bool:
+    """Sel yang bagian dari TATA LETAK, bukan bagian dari uraian.
+
+    Tiga bentuk, dan yang ketiga cuma kelihatan kalau berkasnya dibuka sendiri:
+
+    - kosong;
+    - `-`, yang menempati sel tersendiri di kolom sebelum teksnya sebagai penanda tingkat;
+    - **angka 0**, yang dipakai sebagai nomor urut baris lanjutan di kolom penomoran.
+
+    Yang ketiga baru ketahuan di "Docking DEAL KMP. PRATHITA IV" dan merusak dua hal
+    sekaligus: 56 dari 154 uraian jadi berawalan "0 " ("0 1 x Primer ( Red 175 mikron )"),
+    dan karena nol itu ikut dihitung sebagai isi, kedalaman kolomnya meleset sehingga
+    baris induk tergusur oleh anaknya sendiri dan konteksnya hilang.
+
+    Angka nol tidak pernah jadi uraian pekerjaan yang sah, jadi membuangnya aman. Angka
+    lain tidak disentuh -- ukuran dan dimensi memang sering berdiri sendiri di satu sel.
+    """
+    if v is None:
+        return True
+    t = str(v).strip()
+    if t in ('', '-'):
+        return True
+    try:
+        return float(t) == 0
+    except ValueError:
+        return False
+
+
 def strip_roman_prefix(text: str) -> str:
     m = re.match(r'^([IVXLCDM]+)([.\s]+)(.*)$', text.strip(), re.IGNORECASE)
     if m and is_roman(m.group(1)):
@@ -448,7 +476,11 @@ def parse_sheet(values, sheet_name):
         if not any(c is not None for c in row):
             continue
         col_a = row[0]
-        col_a_str = str(col_a).strip() if col_a is not None else ""
+        # "0" di kolom nomor berarti baris lanjutan, sama saja dengan tidak bernomor.
+        # Ini ikut ke perhitungan kedalaman di bawah: tanpa dia, "a. Bongkar pasang selang
+        # air tawar" (bernomor 0) dianggap sedalam "Di berikan air tawar untuk keperluan
+        # kapal" (bernomor 5) yang jadi induknya, lalu induknya tergusur oleh anaknya.
+        col_a_str = "" if _pengisi(col_a) else str(col_a).strip()
 
         if col_a_str and is_roman(col_a_str):
             cat_text = str(row[uraian_col]).strip() if len(row) > uraian_col and row[uraian_col] else ""
@@ -459,39 +491,18 @@ def parse_sheet(values, sheet_name):
 
         first_text = None
         for ci in range(0, min(uraian_col + 1, len(row))):
-            if row[ci] is not None and str(row[ci]).strip():
+            if not _pengisi(row[ci]):
                 first_text = norm(row[ci])
                 break
         if first_text and (first_text in NOISE_EXACT or any(first_text.startswith(k) for k in NOISE_EXACT)):
             continue
 
-        # Kolom mana saja yang benar-benar berisi teks. Penanda '-' sengaja dilewati --
-        # di berkas ini tanda hubung menempati SEL TERSENDIRI di kolom sebelum teksnya,
-        # jadi dia bagian dari tata letak, bukan bagian dari uraian.
+        # Kolom mana saja yang benar-benar berisi teks -- lihat _pengisi().
         kolom_isi = [
             ci for ci in range(uraian_col, end_col)
-            if ci < len(row) and row[ci] is not None and str(row[ci]).strip() not in ('', '-')
+            if ci < len(row) and not _pengisi(row[ci])
         ]
         uraian_text = ' '.join(str(row[ci]).strip() for ci in kolom_isi).strip()
-        if not uraian_text:
-            continue
-
-        # Kedalaman baris dibaca dari KOLOM tempat teksnya mulai, bukan dari tanda baca.
-        # Berkas docking menggeser teks satu kolom ke kanan tiap turun satu tingkat:
-        #
-        #     kol 1: Pipa isap BBM (material pipa Blacksteel sch 40)
-        #     kol 1: '-'   kol 2: Pipa Sch. 40 uk 1,5"
-        #     kol 1: '-'   kol 2: Elbow
-        #
-        # Tanpa ini, "Elbow" tersimpan tanpa jejak apa pun bahwa dia bagian dari pipa isap
-        # BBM di kamar mesin kanan. Di KMP. GILIMANUK 2026 ada 15 baris berbunyi persis
-        # "Elbow" dengan harga Rp 300.000 sampai Rp 2.100.000, dan katalog tidak punya cara
-        # membedakannya.
-        kedalaman = kolom_isi[0] * 2 + (0 if col_a_str else 1)
-        for lebih_dalam in [k for k in induk_konteks if k >= kedalaman]:
-            del induk_konteks[lebih_dalam]
-        rantai_induk = PEMISAH_INDUK.join(induk_konteks[k] for k in sorted(induk_konteks))
-        induk_konteks[kedalaman] = uraian_text
 
         def get_num(ci):
             if ci is None or ci >= len(row):
@@ -519,6 +530,66 @@ def parse_sheet(values, sheet_name):
 
         harga_utama_val = unit_price(harga_utama_satuan_col, harga_utama_jumlah_col)
         harga_tambahan_val = unit_price(harga_tambahan_satuan_col, harga_tambahan_jumlah_col)
+
+        # Kedalaman baris dibaca dari KOLOM tempat teksnya mulai, bukan dari tanda baca.
+        # Berkas docking menggeser teks satu kolom ke kanan tiap turun satu tingkat:
+        #
+        #     kol 1: Pipa isap BBM (material pipa Blacksteel sch 40)
+        #     kol 1: '-'   kol 2: Pipa Sch. 40 uk 1,5"
+        #     kol 1: '-'   kol 2: Elbow
+        #
+        # Tanpa ini, "Elbow" tersimpan tanpa jejak apa pun bahwa dia bagian dari pipa isap
+        # BBM di kamar mesin kanan. Di KMP. GILIMANUK 2026 ada 15 baris berbunyi persis
+        # "Elbow" dengan harga Rp 300.000 sampai Rp 2.100.000, dan katalog tidak punya cara
+        # membedakannya.
+        if uraian_text:
+            kedalaman = kolom_isi[0] * 2 + (0 if col_a_str else 1)
+            for lebih_dalam in [k for k in induk_konteks if k >= kedalaman]:
+                del induk_konteks[lebih_dalam]
+            rantai_induk = PEMISAH_INDUK.join(induk_konteks[k] for k in sorted(induk_konteks))
+            induk_konteks[kedalaman] = uraian_text
+        else:
+            # Baris TANPA uraian sendiri. Di PRATHITA IV ada dua -- baris 187 dan 194 --
+            # yang seluruh teksnya ada di baris induk tepat di atasnya ("Repleting
+            # gading-gading internal rampdoor ...") sementara baris ini cuma memuat volume
+            # dan harganya: 21,98 kg x Rp 31.000 = Rp 681.380.
+            #
+            # Yang tidak berharga memang sampah dan dibuang seperti dulu. Yang berharga
+            # TIDAK boleh ikut terbuang: itu menghapus uang dari katalog tanpa jejak, dan
+            # diam-diam bikin jumlah impor tidak cocok dengan angka di berkasnya.
+            if not (harga_utama_val or harga_tambahan_val):
+                continue
+            # Baris KAKI berkas -- "Jumlah", "PPN 11%", "Jumlah + PPN" -- juga tidak punya
+            # uraian di rentang kolom uraian: labelnya duduk di kolom harga, di luar rentang
+            # itu. Angkanya justru yang terbesar di seluruh berkas, jadi kalau ikut terpinjam
+            # ketiganya masuk katalog sebagai "pekerjaan" seharga Rp 1,15 miliar, Rp 127 juta,
+            # dan Rp 1,28 miliar -- dan jumlah impor jadi 3,2x angka yang benar.
+            #
+            # Yang membedakannya dari baris lanjutan yang sah: baris lanjutan punya VOLUME
+            # (21,98 kg), baris kaki cuma punya satu angka jadi. Dipakai volumenya, bukan
+            # daftar kata seperti "jumlah"/"total", karena kata-kata itu juga muncul di
+            # uraian pekerjaan yang sungguhan dan palangnya akan membuang baris yang benar.
+            if not (qty_numeric and qty_numeric > 0):
+                continue
+            if not induk_konteks:
+                warnings.append(
+                    f"Baris {ri+1}: punya harga tapi tidak punya uraian dan tidak punya "
+                    f"baris induk - dilewati, cek manual"
+                )
+                continue
+            # Uraiannya dipinjam dari induk TERDALAM, dan induk itu dikeluarkan dari
+            # rantai supaya tidak muncul dua kali -- sebagai uraian sekaligus induknya.
+            terdalam = max(induk_konteks)
+            uraian_text = induk_konteks[terdalam]
+            rantai_induk = PEMISAH_INDUK.join(
+                induk_konteks[k] for k in sorted(induk_konteks) if k != terdalam
+            )
+            # Sengaja TIDAK didaftarkan jadi induk baris berikutnya: tidak punya teks sendiri.
+            warnings.append(
+                f"Baris {ri+1}: tidak punya uraian sendiri, dipinjam dari baris induknya "
+                f"('{uraian_text[:50]}') - cek manual"
+            )
+
         sat_val = row[sat_col] if sat_col is not None and sat_col < len(row) else None
         volume_satuan = str(sat_val).strip() if sat_val is not None and str(sat_val).strip() else "-"
 

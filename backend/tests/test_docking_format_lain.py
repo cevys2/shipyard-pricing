@@ -297,3 +297,100 @@ def test_tahun_pembuatan_kapal_tidak_dikira_tahun_pekerjaan():
     _, _, tahun = guess_header(kepala, "tanpa-tahun.xlsx")
 
     assert tahun == "2025"
+
+
+# --- angka 0 sebagai pengisi tata letak -------------------------------------------------
+
+def _berkas_nol(isi: list[list]) -> bytes:
+    """Kepala PRATHITA IV, dengan baris isi yang dioper pemanggilnya."""
+    return _berkas(
+        [_baris(c0="DATA - DATA KAPAL"), _baris(c0=2, c1="NAMA KAPAL", c4=": KMP TES")],
+        _baris(c0="No", c1="URAIAN", c13="VOLUME", c15="HARGA (Rp.)", c17="KETERANGAN"),
+        _baris(c13="Qty", c14="Sat", c15="Sat", c16="Jumlah"),
+        isi,
+    )
+
+
+def test_angka_nol_di_kolom_nomor_tidak_ikut_jadi_uraian():
+    """Kolom penomoran berisi 0 di baris lanjutan, dan nolnya dulu ikut ke uraian.
+
+    Di PRATHITA IV: 56 dari 154 uraian berawalan "0 ".
+    """
+    hasil = parse_docking_file(
+        _berkas_nol([
+            _baris(c0="I", c1="PENGECATAN"),
+            _baris(c0=0, c1=0, c2="1 x Primer ( Red 175 mikron )",
+                   c13=281, c14="m2", c15=10_000, c16=2_810_000),
+        ]),
+        "prathita.xlsx",
+    )
+
+    (baris,) = hasil["induk"]
+    assert baris["uraian"] == "1 x Primer ( Red 175 mikron )"
+
+
+def test_induk_tidak_tergusur_oleh_anaknya_yang_bernomor_nol():
+    """Nomor "0" berarti baris lanjutan, jadi kedalamannya harus DI BAWAH induknya.
+
+    Sebelum ini keduanya terbaca sedalam, lalu anaknya menggusur induknya dari rantai dan
+    konteksnya hilang.
+    """
+    hasil = parse_docking_file(
+        _berkas_nol([
+            _baris(c0="I", c1="BAGIAN UMUM"),
+            _baris(c0=5, c1="Di berikan air tawar untuk keperluan kapal"),
+            _baris(c0=0, c1="a.", c2="Bongkar pasang selang air tawar",
+                   c13=1, c14="kali", c15=250_000, c16=250_000),
+        ]),
+        "prathita.xlsx",
+    )
+
+    (baris,) = hasil["induk"]
+    assert baris["uraian"] == "a. Bongkar pasang selang air tawar"
+    assert baris["induk_uraian"] == "Di berikan air tawar untuk keperluan kapal"
+
+
+def test_baris_berharga_tanpa_uraian_meminjam_dari_induknya():
+    """Baris 187 PRATHITA IV: uraiannya ada di baris induk, volumenya di baris ini.
+
+    Membuangnya berarti menghapus Rp 681.380 dari katalog tanpa jejak apa pun.
+    """
+    hasil = parse_docking_file(
+        _berkas_nol([
+            _baris(c0="I", c1="RAMPDOOR"),
+            _baris(c0=0, c1="a.", c2="Repleting gading-gading internal rampdoor"),
+            _baris(c0=0, c1=0, c13=21.98, c14="kg", c15=31_000, c16=681_380),
+        ]),
+        "prathita.xlsx",
+    )
+
+    (baris,) = hasil["induk"]
+    assert baris["uraian"] == "a. Repleting gading-gading internal rampdoor"
+    assert baris["volume"] == 21.98
+    assert baris["harga"] == 31_000
+    assert any("dipinjam" in w for w in hasil["warnings"]), "meminjam uraian harus terdengar"
+
+
+def test_baris_kaki_jumlah_dan_ppn_tidak_ikut_terpinjam():
+    """Palang paling penting di aturan pinjam-uraian.
+
+    Baris "Jumlah" dan "PPN 11%" juga tidak punya uraian di rentang kolom uraian -- labelnya
+    duduk di kolom harga. Angkanya justru yang terbesar di berkas, jadi tanpa palang ini
+    ketiganya masuk katalog sebagai pekerjaan dan jumlah impor jadi 3,2x angka yang benar.
+    Yang membedakan: baris lanjutan yang sah punya VOLUME, baris kaki tidak.
+    """
+    hasil = parse_docking_file(
+        _berkas_nol([
+            _baris(c0="I", c1="LAIN-LAIN"),
+            _baris(c0=1, c1="Biaya Penampungan Limbah B3",
+                   c13=6000, c14="ltr", c15=4_000, c16=24_000_000),
+            _baris(c14="Jumlah", c16=24_000_000),
+            _baris(c14="PPN 11%", c16=2_640_000),
+            _baris(c14="Jumlah + PPN 11 %", c16=26_640_000),
+        ]),
+        "prathita.xlsx",
+    )
+
+    assert [b["uraian"] for b in hasil["induk"]] == ["Biaya Penampungan Limbah B3"]
+    nilai = sum(b["volume"] * b["harga"] for b in hasil["induk"])
+    assert nilai == 24_000_000

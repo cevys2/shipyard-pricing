@@ -191,6 +191,8 @@ Semuanya sudah ditangani, dan tiap kasusnya dijaga `tests/test_docking_format_la
 | Sub-kolom harga bernama `Sat`, bukan `Satuan` | Docking DEAL KMP. PRATHITA IV | 154 baris masuk dengan angka TOTAL sebagai harga satuan |
 | Label dan nilai menyatu di satu sel: `": KMP PRATHITA IV"` | idem | nama kapal berawalan titik dua, ikut jadi prefix ID |
 | Tanpa `PERIODE DOCKING`; tahun cuma ada di sel tanggal tak berlabel | idem | tahun kosong, baris tidak bisa disimpan sama sekali |
+| Angka `0` di kolom nomor sebagai pengisi baris lanjutan | idem | 56 uraian berawalan "0 ", dan induk tergusur oleh anaknya |
+| Baris berharga yang uraiannya ada di baris induk | idem | 2 baris masuk katalog bernama "0" |
 
 Kegagalan jenis ini paling mahal karena tidak bersuara: berkas yang "berhasil diimpor 0 baris"
 terlihat sama persis dengan berkas yang memang kosong.
@@ -220,6 +222,21 @@ sampai Rp 2.100.000; sesudah ini tiap baris menyebut jalur pipanya (`Pipa isap B
 Batasnya jujur: rantai induk TIDAK memisahkan ukuran pipa, karena ukurannya ada di baris
 saudara tepat di atasnya (`- Pipa Sch. 40 uk 1,5"`), bukan di baris induk. Dua Elbow di jalur
 pipa yang sama tetap terlihat serupa.
+
+Pengisi tata letak dikumpulkan di `_pengisi()` (1 September 2026): kosong, `-`, dan **angka 0**.
+Yang ketiga baru muncul di PRATHITA IV, dipakai sebagai nomor urut baris lanjutan, dan ikut ke
+dua tempat: teks uraian, dan kedalaman kolom lewat `col_a_str`.
+
+Baris berharga yang uraiannya kosong **meminjam** uraian dari induk terdalamnya, dan induk itu
+dikeluarkan dari rantai supaya tidak muncul dua kali. Baris pinjaman tidak pernah jadi induk
+baris berikutnya, dan tiap pinjaman muncul sebagai peringatan.
+
+**Palangnya volume, bukan daftar kata.** Baris kaki berkas (`Jumlah`, `PPN 11%`,
+`Jumlah + PPN`) juga tidak punya uraian di rentang kolom uraian -- labelnya duduk di kolom
+harga. Yang membedakannya: baris lanjutan yang sah punya volume, baris kaki cuma punya satu
+angka jadi. Memakai daftar kata seperti "jumlah"/"total" akan membuang baris pekerjaan yang
+sungguhan memuat kata itu. Tanpa palang ini, tiga baris kaki PRATHITA IV masuk katalog dan
+jumlah impor jadi 3,2x angka yang benar.
 
 ### Repair List — dokumen awal pekerjaan, beda dari laporan realisasi
 
