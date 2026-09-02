@@ -3,7 +3,7 @@
 Aplikasi internal PT Dukuh Raya (galangan kapal, Lombok). Katalog harga jasa, katalog
 material, dan analisa harga satuan (AHSP). Pengguna aktif: satu orang. Dikerjakan solo.
 
-Terakhir diperbarui: 1 September 2026.
+Terakhir diperbarui: 3 September 2026.
 
 ## Stack
 
@@ -42,16 +42,13 @@ backend/tests/      -- 201 tes, harus tetap lulus setelah perubahan apa pun
 ## Perubahan skema — TIDAK ada Alembic
 
 Pola yang dipakai: fungsi `ensure_xxx_table()` di `backend/app/database.py` yang menjalankan
-DDL mentah dan idempoten saat app start, lalu dipanggil dari `main.py`.
+DDL mentah dan idempoten saat app start, lalu dipanggil dari `main.py`. Pola terbersih untuk
+ditiru: **`ensure_audit_table()`**. Untuk menambah kolom ke tabel yang sudah berisi data lihat
+`tahun_pembelian` di `ensure_material_tables()` — tambah nullable, backfill, baru `SET NOT NULL`.
 
-Contoh pola yang paling bersih untuk ditiru: **`ensure_audit_table()`**.
-Contoh penambahan kolom ke tabel yang sudah berisi data: lihat `tahun_pembelian` di
-`ensure_material_tables()` — tambah nullable, backfill, baru `SET NOT NULL`.
-
-Fungsi yang ada sekarang, dalam urutan pemanggilan di `main.py`:
-`ensure_material_tables()`, `ensure_partno_unique()`, `ensure_katalog_kolom_rincian()`,
-`ensure_kategori_table()`, `ensure_ahsp_tables()`, `ensure_audit_table()`,
-`ensure_pencarian_index()`.
+Urutan pemanggilan di `main.py`: `ensure_material_tables()`, `ensure_partno_unique()`,
+`ensure_katalog_kolom_rincian()`, `ensure_kategori_table()`, `ensure_ahsp_tables()`,
+`ensure_audit_table()`, `ensure_pencarian_index()`.
 
 Urutannya bukan selera: `ahsp_komponen` punya FK ke `sumber_daya`, `ahsp.kategori_id` ke
 `kategori`, dan index pencarian menempel ke tabel yang harus sudah ada. Dipanggil di luar
@@ -112,23 +109,21 @@ Diketahui terbatas:
   di seluruh baris; cuma `qty` yang dipakai.
 - `uq_sd_identitas` cuma menolak nama yang persis sama, jadi penjaga duplikat di layar
   sengaja dibuat lebih longgar daripada index-nya.
-- **Cakupan kategori: 90,2% di produksi saat ini, 100% begitu di-deploy.** Per cadangan
-  17 Agustus 2026, 6.017 dari 6.673 baris punya `kategori_id`; 656 kosong. Sebabnya
+- **Cakupan kategori: 90,2% di produksi saat ini, 100% begitu di-deploy.** Sebabnya
   `selaraskan_kategori()` cuma jalan saat app start (di ujung `ensure_kategori_table()`),
   **belum di jalur impor Excel** — jadi baris hasil impor menunggu deploy berikutnya. Angkanya
-  kelihatan di tab Analitik (`cakupan.tanpa_kategori`).
-  Dari 656 itu, 107 sudah cocok alias lama. Sisanya 549 memakai tujuh sebutan yang belum punya
-  alias; ketujuhnya ditambahkan 18 Agustus 2026, jadi alias 83 → 90. Dihitung ulang terhadap
-  cadangan yang sama: 6.673/6.673 = **100,00%**, nol sisa.
-  Catatan jujur: selama jalur impor belum memanggil resolver, angka ini akan turun lagi tiap
-  impor baru dan pulih lagi tiap deploy.
-  Tujuh alias lagi ditambahkan 24 Agustus 2026 (90 → 97) untuk sebutan seksi di berkas
-  REPAIR LIST, yang bentuknya memang beda dari laporan realisasi. Tanpa ketujuhnya, 374 dari
-  385 baris tiga repair list Basarnas masuk tanpa kategori sama sekali; dengan ketujuhnya,
-  385/385 terpetakan. Satu di antaranya keputusan, bukan kepastian: `DOCKING/ GENERAL SERVICE`
-  dipetakan ke PELAYANAN UMUM, padahal sebutannya menggabung dua kategori yang di repo ini
-  terpisah. Kalau yang dimaksud biaya naik-turun dok, pindahkan satu baris alias itu ke
-  DOCKING & UNDOCKING.
+  turun lagi tiap impor baru dan pulih lagi tiap deploy. Kelihatan di tab Analitik
+  (`cakupan.tanpa_kategori`).
+  Riwayatnya: per cadangan 17 Agustus 2026, 6.017/6.673 baris punya `kategori_id`, 656 kosong;
+  107 di antaranya cocok alias lama, sisanya 549 memakai tujuh sebutan yang belum punya alias.
+  Ketujuhnya ditambahkan 18 Agustus (83 → 90 alias) → dihitung ulang terhadap cadangan yang
+  sama: 6.673/6.673 = **100,00%**.
+  Tujuh alias lagi ditambahkan 24 Agustus (90 → 97) untuk sebutan seksi di berkas REPAIR LIST,
+  yang bentuknya memang beda dari laporan realisasi. Tanpa ketujuhnya, 374 dari 385 baris tiga
+  repair list Basarnas masuk tanpa kategori; dengan ketujuhnya, 385/385 terpetakan.
+  Satu di antaranya keputusan, bukan kepastian: `DOCKING/ GENERAL SERVICE` dipetakan ke
+  PELAYANAN UMUM, padahal sebutannya menggabung dua kategori yang di repo ini terpisah. Kalau
+  yang dimaksud biaya naik-turun dok, pindahkan satu baris alias itu ke DOCKING & UNDOCKING.
 - **Pencarian belum mencakup `induk_uraian`.** `KOLOM_CARI_KATALOG` masih dua kolom, jadi
   mengetik "Main Engine Tengah" tidak menemukan baris part yang konteksnya ada di kolom itu;
   mencari nama partnya sendiri tetap jalan. Menambahkannya bukan sekadar mengubah satu tuple:
@@ -151,12 +146,12 @@ repo, 414 baris punya Qty DAN kolom Jumlah, dan `volume × harga_satuan = Jumlah
 keempat-ratus-empat-belasnya.
 
 **Jalur docking sengaja TIDAK diberi palang rekonsiliasi** seperti Repair List. Sebabnya
-nyata, bukan kehati-hatian kosong: ada baris "tarif" (Keel block, Bottom share, Side Block,
-"Repair Propeller Blade jika terjadi kerusakan") yang punya harga satuan tapi kolom Jumlah-nya
-kosong, dan memang tidak ikut TOTAL BIAYA di berkasnya. Menjumlahkan `volume × harga` seluruh
-baris melebihi TOTAL BIAYA sekitar 0,4% (Rp 5,5 juta di MISHIMA, Rp 7,0 juta di GILIMANUK II).
-Itu bukan baris yang jatuh — itu tarif bersyarat. Palang yang berbunyi merah padahal impornya
-benar akan cepat diabaikan, dan begitu diabaikan dia tidak menjaga apa pun.
+nyata: ada baris "tarif" (Keel block, Bottom share, Side Block, "Repair Propeller Blade jika
+terjadi kerusakan") yang punya harga satuan tapi kolom Jumlah-nya kosong, dan memang tidak ikut
+TOTAL BIAYA di berkasnya. Menjumlahkan `volume × harga` seluruh baris melebihi TOTAL BIAYA
+sekitar 0,4% (Rp 5,5 juta di MISHIMA, Rp 7,0 juta di GILIMANUK II). Itu bukan baris yang jatuh
+— itu tarif bersyarat. Palang yang berbunyi merah padahal impornya benar akan cepat diabaikan,
+dan begitu diabaikan dia tidak menjaga apa pun.
 
 Baris repair list tidak punya masalah itu: di ketiga berkas Basarnas semua baris berharga
 punya VOL, dan selisihnya nol.
@@ -286,8 +281,12 @@ pembelian di tahun yang sama, yang tergambar adalah yang paling baru di tahun it
 ## Dokumen
 
 `docs/roadmap-fitur.md`, `docs/desain-katalog-material.md` (ERD + DDL + query analitik),
-`docs/rencana-langkah-3-struktur-biaya.md`, `docs/catatan-tabel-katalog-harga.md`,
-`docs/CHANGELOG.md`.
+`docs/catatan-tabel-katalog-harga.md`, `docs/CHANGELOG.md`.
+
+`docs/rencana-langkah-3-struktur-biaya.md` — bukan lagi rencana (fiturnya sudah jalan), tapi
+temuan dari file Excel AHSP asli dan alasan di balik model datanya. `database.py`,
+`schemas/ahsp.py`, dan `services/ahsp.py` merujuk ke **nomor bagian 2 dan 3** di dokumen itu
+dari docstring-nya — kalau memangkasnya lagi, jaga penomoran itu.
 
 **`docs/errata-serah-terima.md`** — Dokumen Serah Terima (PDF, di luar repo) disusun 10
 Agustus 2026 dan repo sudah bergerak sejak itu. Kalau errata dan PDF bertentangan, errata

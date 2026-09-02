@@ -124,7 +124,7 @@ laporan asli.
 | `docs/errata-serah-terima.md` | Koreksi atas Dokumen Serah Terima (PDF, di luar repo) |
 | `docs/roadmap-fitur.md` | Rencana fitur yang disetujui klien |
 | `docs/desain-katalog-material.md` | ERD, DDL, query analitik katalog material |
-| `docs/rencana-langkah-3-struktur-biaya.md` | Rencana lengkap tab Struktur Biaya |
+| `docs/rencana-langkah-3-struktur-biaya.md` | Temuan dari Excel AHSP asli + alasan model data tab Struktur Biaya |
 | `docs/catatan-tabel-katalog-harga.md` | Temuan kualitas data katalog harga |
 | `docs/bundel-kategori-claude-code.md` | Keputusan kategori pekerjaan kanonik |
 
