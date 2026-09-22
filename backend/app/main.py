@@ -11,6 +11,7 @@ from app.database import (
     ensure_ahsp_tables,
     ensure_audit_table,
     ensure_kategori_table,
+    ensure_klien_induk,
     ensure_katalog_kolom_rincian,
     ensure_material_tables,
     ensure_partno_unique,
@@ -36,6 +37,9 @@ async def lifespan(_: FastAPI):
     # Setelah material: ahsp_komponen punya foreign key ke sumber_daya.
     ensure_ahsp_tables()
     ensure_audit_table()
+    # Tidak bergantung pada apa pun -- tabelnya berdiri sendiri dan cuma dibaca lewat
+    # LEFT JOIN, jadi urutannya bebas. Ditaruh di sini supaya tetap sebelum index.
+    ensure_klien_induk()
     # Paling akhir: index pencarian menempel ke sumber_daya dan tabel_katalog_harga,
     # jadi keduanya harus sudah ada.
     ensure_pencarian_index()

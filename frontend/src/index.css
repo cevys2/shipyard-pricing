@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -9,16 +9,35 @@
   --brass: #c9974c;
   --surface: #f5f7f9;
   --card-border: #e2e8f0;
+
+  /* Bayangan berlapis tipis, bukan satu kotak abu. Kartu KPI dan tabel di layar ini
+     berdempetan; bayangan keras bikin tiap kotak berteriak sama kerasnya. */
+  --shadow-card: 0 1px 2px rgb(11 31 51 / 0.04), 0 1px 3px rgb(11 31 51 / 0.06);
+  --shadow-card-hover: 0 2px 4px rgb(11 31 51 / 0.05), 0 4px 12px rgb(11 31 51 / 0.08);
+
+  /* Satu definisi cincin fokus, dipakai seluruh app. Ini aplikasi entri data yang
+     dipakai lewat keyboard -- fokus yang tidak kelihatan artinya kehilangan tempat. */
+  --ring: color-mix(in oklch, var(--marine) 45%, white);
 }
 
 body {
   @apply text-slate-900 antialiased;
   background: var(--surface);
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* Plus Jakarta Sans: huruf-hurufnya lebih bulat dan lebih tenang daripada Inter pada
+     ukuran kecil, dan tabel di app ini isinya teks 12-13px terus. */
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  /* Angka selebar sama secara global: kolom rupiah tidak lagi bergoyang waktu nilainya
+     berubah, dan itu kolom yang paling sering dibaca berderet di app ini. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "cv05" 1;
+  letter-spacing: -0.006em;
 }
 
 .font-display {
   font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /* Space Grotesk agak renggang bawaannya; dirapatkan sedikit supaya judul terbaca
+     sebagai satu blok, bukan deretan huruf. */
+  letter-spacing: -0.02em;
 }
 
 .font-mono-id {
@@ -26,12 +45,39 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Teks berjalan (peringatan, paragraf penjelas) sengaja TIDAK tabular -- angka
+   proporsional lebih enak dibaca di dalam kalimat. */
+p {
+  font-variant-numeric: normal;
+}
+
+/* Kembalikan tabular di tempat yang memang berderet. */
+table,
+.tabular-nums,
+.font-mono-id {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Satu aturan fokus untuk semua yang bisa di-Tab. Sebelumnya tiap komponen memutuskan
+   sendiri (sebagian tidak memutuskan apa pun), jadi menelusuri form pakai keyboard bisa
+   kehilangan jejak di tengah jalan. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .cell-input {
-  @apply w-full rounded border border-slate-300 px-2 py-1 text-sm outline-none ring-blue-500 focus:ring-2;
+  @apply w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none transition-colors;
+}
+.cell-input:focus {
+  border-color: var(--marine);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--marine) 15%, transparent);
 }
 
 .btn {
-  @apply inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+  @apply inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40;
+  letter-spacing: -0.005em;
 }
 .btn-sm {
   @apply px-2.5 py-1.5;
@@ -41,24 +87,33 @@ body {
 }
 .btn-primary {
   background: var(--marine);
-  @apply text-white hover:brightness-110;
+  box-shadow: var(--shadow-card);
+  @apply text-white;
 }
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--marine-dark);
+  box-shadow: var(--shadow-card-hover);
 }
 .btn-secondary {
-  @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  @apply border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50;
 }
 .btn-ghost {
   @apply text-slate-600 hover:bg-slate-100;
 }
 .btn-danger {
-  @apply border border-red-200 bg-white text-red-600 hover:bg-red-50;
+  @apply border border-red-200 bg-white text-red-600 hover:border-red-300 hover:bg-red-50;
 }
 .btn-danger-solid {
   @apply bg-red-600 text-white hover:bg-red-500;
 }
 .btn-accent {
   background: var(--brass);
+  box-shadow: var(--shadow-card);
   @apply text-white hover:brightness-105;
+}
+
+/* Kartu: sudut sedikit lebih besar dan bayangan lebih lembut daripada `shadow-sm`
+   bawaan Tailwind, yang di latar abu-abu ini terlihat seperti garis kedua. */
+.shadow-sm {
+  box-shadow: var(--shadow-card) !important;
 }

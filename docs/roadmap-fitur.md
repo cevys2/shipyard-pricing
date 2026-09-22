@@ -31,3 +31,35 @@ prioritas, jangan langsung semua katalog.
 
 ---
 **Status saat ini: fokus Langkah 1 saja.**
+
+---
+
+## Ditunda dengan sengaja (22 September 2026)
+
+### Radix primitives — disetujui arahnya, belum dikerjakan
+Dropdown, dialog, tooltip, dan tab di app ini dibuat tangan. Yang hilang bukan tampilannya,
+melainkan perilaku keyboard: fokus yang terperangkap di dialog, Esc yang menutup, panah yang
+berpindah antar opsi. Ini aplikasi entri data yang dipakai lewat keyboard, jadi itu bukan
+kosmetik.
+
+Biayanya nyata: tiap komponen yang memakainya harus ditulis ulang, dan repo ini dirawat satu
+orang. Karena itu font dan polish dikerjakan lebih dulu (nol dependensi, satu berkas), dan
+Radix menunggu giliran sendiri.
+
+Satu langkah kecil sudah diambil di arah itu: `index.css` sekarang punya **satu** aturan
+`:focus-visible` untuk semua yang bisa di-Tab, menggantikan keadaan lama di mana tiap
+komponen memutuskan sendiri dan sebagian tidak memutuskan apa pun.
+
+### Normalisasi satuan — prasyarat, bukan fitur
+`satuan` punya 37 ejaan untuk ~20 satuan nyata (`m²`/`m2`/`m'`, `mtr`/`m`/`mter`,
+`pcs`/`pc`/`buah`/`bh`, `tangki`/`tanki`, `liter`/`ltr`, `segel`/`shackle`). Belum
+dikerjakan karena analitik yang ada tidak mengelompokkan per satuan.
+
+Begitu ada layar yang menjawab **"harga sandblasting per m² wajarnya berapa"** — dan itu
+layar yang langsung kepakai waktu menyusun penawaran — pemetaan satuan kanonik jadi
+prasyarat mutlak. Polanya sudah ada dan terbukti: `kategori` + `kategori_alias`.
+
+### Keluaran penawaran — jurang terbesar yang tersisa
+Belum disentuh. Aplikasi masih belum menghasilkan dokumen apa pun; penawaran tetap disusun
+manual di Excel. Analitik "Ke Mana Uangnya Pergi" mempersempit jaraknya sedikit (sekarang
+nilai pekerjaan bisa dibaca dari aplikasi), tapi tidak menutupnya.

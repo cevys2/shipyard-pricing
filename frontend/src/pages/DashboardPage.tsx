@@ -26,6 +26,7 @@ type Tab = "view" | "material" | "ahsp" | "analitik" | "import";
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
   kapal: "Semua",
+  jenis: "Semua",
   kategori: "Semua",
   tahun: "Semua",
   tipe: "Semua",
@@ -46,6 +47,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
     () => ({
       perusahaan: filters.perusahaan,
       kapal: filters.kapal,
+      jenis: filters.jenis,
       kategori: filters.kategori,
       tahun: filters.tahun,
       tipe: filters.tipe,
@@ -206,7 +208,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
 
           {filterOpts && tab === "view" && (
             <>
-              <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
                 <FilterSelect
                   label="Klien"
                   value={filters.perusahaan}
@@ -218,6 +220,12 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                   value={filters.kapal}
                   options={filterOpts.kapal}
                   onChange={(v) => setFilters((f) => ({ ...f, kapal: v }))}
+                />
+                <FilterSelect
+                  label="Jenis Kapal"
+                  value={filters.jenis}
+                  options={filterOpts.jenis}
+                  onChange={(v) => setFilters((f) => ({ ...f, jenis: v }))}
                 />
                 <FilterSelect
                   label="Kategori"

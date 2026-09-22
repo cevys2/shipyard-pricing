@@ -15,7 +15,7 @@ import {
   type MaterialRow,
   type PastePreview,
   type PastePreviewRow,
-} from "../lib/api";
+  formatTanggal,} from "../lib/api";
 import { bacaAngkaUang, parseTsv } from "../lib/tsv";
 import NumberInput from "./NumberInput";
 import MaterialGridForm from "./MaterialGridForm";
@@ -1049,7 +1049,7 @@ export default function EditableMaterialTable({ token, jenis, rows, loading, onC
                           <td className="px-4 py-2">{r.tahun_pembelian ?? "-"}</td>
                           {adaPembelian && <td className="px-4 py-2">{r.supplier_nama ?? "-"}</td>}
                           {adaPembelian && <td className="px-4 py-2">{r.nama_kapal ?? "-"}</td>}
-                          <td className="px-4 py-2">{r.berlaku_dari ?? "-"}</td>
+                          <td className="whitespace-nowrap px-4 py-2">{formatTanggal(r.berlaku_dari)}</td>
                           <td className="px-4 py-2">
                             <button
                               type="button"

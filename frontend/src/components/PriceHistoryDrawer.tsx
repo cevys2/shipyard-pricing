@@ -3,7 +3,11 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import {
   api,
+  formatBulanTahun,
   formatMoney,
+  formatTanggal,
+  formatTanggalDariEpoch,
+  tahunDari,
   type Currency,
   type MaterialRow,
   type PriceHistoryRow,
@@ -81,12 +85,57 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
       chartData: rows
         .filter((r) => r.mata_uang === utama)
         .map((r) => ({
+          // Sumbu-X numerik (epoch ms), bukan teks tanggal. Sebagai kategori, recharts
+          // menjarakkan tiap titik sama rata -- pembelian Januari dan Februari 2025
+          // terlihat sejauh pembelian 2025 dan 2026. Garis yang menanjak landai lalu
+          // curam jadi tak terbaca bedanya, padahal itu justru yang dicari.
+          waktu: new Date(r.berlaku_dari).getTime(),
           tanggal: r.berlaku_dari,
+          tahun_pembelian: r.tahun_pembelian,
+          // Titik ini diplot di posisi `berlaku_dari`, padahal yang berwenang soal "kapan"
+          // adalah `tahun_pembelian`. Tanggalnya TIDAK dikarang ulang ke tahun pembelian --
+          // bulan sebenarnya tidak diketahui, dan menebaknya akan menampilkan angka yang
+          // tidak pernah ada di dokumen mana pun. Yang dilakukan: titiknya ditandai, supaya
+          // belokan tajam di grafik punya penjelasan alih-alih jadi misteri.
+          cocok: tahunDari(r.berlaku_dari) === r.tahun_pembelian,
           harga: r.harga_satuan,
           supplier: r.supplier_nama ?? "-",
-        })),
+        }))
+        .filter((d) => Number.isFinite(d.waktu)),
     };
   }, [rows]);
+
+  /** Dikelompokkan per tahun pembelian, terbaru di atas.
+   *
+   * `tahun_pembelian` yang berwenang, bukan `berlaku_dari` -- `berlaku_dari` boleh
+   * dikosongkan waktu menempel dan kalau kosong jatuh ke hari ini, jadi sering dia fakta
+   * soal kapan orang sempat menginput. Backend juga MENGURUTKAN dengan itu
+   * (`urutan_harga_sql`), jadi sebelum ini tabelnya diurutkan oleh kolom yang tidak
+   * ditampilkan sama sekali -- baris tampak melompat tanpa sebab yang kelihatan. */
+  const perTahun = useMemo(() => {
+    const peta = new Map<number, PriceHistoryRow[]>();
+    rows.forEach((r) => {
+      const t = r.tahun_pembelian;
+      if (!peta.has(t)) peta.set(t, []);
+      peta.get(t)!.push(r);
+    });
+    return [...peta.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([tahun, isi]) => ({ tahun, isi: [...isi].reverse() }));
+  }, [rows]);
+
+  const rentangTahun = useMemo(() => {
+    if (rows.length === 0) return "-";
+    const t = rows.map((r) => r.tahun_pembelian);
+    const min = Math.min(...t);
+    const max = Math.max(...t);
+    return min === max ? String(min) : `${min} → ${max}`;
+  }, [rows]);
+
+  const nBedaTahun = useMemo(
+    () => chartData.filter((d) => !d.cocok).length,
+    [chartData],
+  );
 
   const perubahan = useMemo(() => {
     if (chartData.length < 2) return null;
@@ -160,13 +209,10 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
             <>
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="Titik Harga" value={String(rows.length)} />
-                <Stat
-                  label="Rentang"
-                  value={
-                    rows.length ? `${rows[0].berlaku_dari} → ${rows[rows.length - 1].berlaku_dari}` : "-"
-                  }
-                  small
-                />
+                {/* Tahun pembelian, bukan `berlaku_dari` -- supaya angka di sini sama
+                    dengan sumbu-X grafik tren di tab Analitik. Sebelumnya dua layar bisa
+                    menyebut rentang yang berbeda untuk material yang sama. */}
+                <Stat label="Rentang Beli" value={rentangTahun} />
                 <Stat
                   label="Perubahan"
                   value={perubahan ? `${perubahan.persen >= 0 ? "+" : ""}${perubahan.persen.toFixed(1)}%` : "-"}
@@ -200,7 +246,15 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
                   <ResponsiveContainer width="100%" height={230}>
                     <LineChart data={chartData} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="tanggal" tick={{ fontSize: 11, fill: "#64748b" }} tickMargin={8} />
+                      <XAxis
+                        dataKey="waktu"
+                        type="number"
+                        scale="time"
+                        domain={["dataMin", "dataMax"]}
+                        tick={{ fontSize: 11, fill: "#64748b" }}
+                        tickMargin={8}
+                        tickFormatter={formatBulanTahun}
+                      />
                       <YAxis
                         tick={{ fontSize: 11, fill: "#64748b" }}
                         width={80}
@@ -210,7 +264,7 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
                       />
                       <Tooltip
                         formatter={(v) => formatMoney(Number(v), mataUangUtama)}
-                        labelFormatter={(l) => `Berlaku dari ${l}`}
+                        labelFormatter={(l) => formatTanggalDariEpoch(Number(l))}
                         contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
                       />
                       <Line
@@ -218,11 +272,22 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
                         dataKey="harga"
                         stroke="var(--marine)"
                         strokeWidth={2}
-                        dot={{ r: 3, fill: "var(--marine)" }}
+                        dot={<TitikHarga />}
                         activeDot={{ r: 5 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
+                  {nBedaTahun > 0 && (
+                    <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-800">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                      <span>
+                        {nBedaTahun} titik (bulat kuning) tanggal berlakunya jatuh di tahun yang
+                        berbeda dari tahun pembeliannya, jadi posisinya di sumbu waktu tidak
+                        mewakili kapan barangnya dibeli. Daftar di bawah mengelompokkannya
+                        menurut <strong>tahun beli</strong> &mdash; itu yang berwenang.
+                      </span>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -335,31 +400,60 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
                         <th className="px-3 py-2.5"></th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {rows.map((r) => (
-                        <tr key={r.id} className="border-t border-slate-100">
-                          <td className="px-3 py-2">{r.berlaku_dari}</td>
-                          <td className="px-3 py-2 text-right font-medium">
-                            {formatMoney(r.harga_satuan, r.mata_uang)}
-                          </td>
-                          <td className="px-3 py-2">{r.supplier_nama ?? "-"}</td>
-                          <td className="px-3 py-2 text-xs text-slate-500">
-                            {[r.sumber, r.no_dokumen].filter(Boolean).join(" · ") || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => hapus(r.id)}
-                              className="btn btn-danger btn-sm"
-                              title="Hapus titik harga ini"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </td>
+                    {/* Satu tbody per tahun pembelian, terbaru di atas. Tahunnya jadi
+                        judul yang menempel waktu digulir, jadi "titik harga 2025 yang mana
+                        saja" bisa dijawab dengan melihat, bukan membaca satu per satu. */}
+                    {perTahun.map(({ tahun, isi }) => (
+                      <tbody key={tahun}>
+                        <tr>
+                          <th
+                            colSpan={5}
+                            className="sticky top-0 border-t border-slate-200 bg-slate-100 px-3 py-1.5 text-left text-xs font-bold text-slate-700"
+                          >
+                            Tahun beli {tahun}
+                            <span className="ml-2 font-medium text-slate-500">{isi.length} titik</span>
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
+                        {isi.map((r) => (
+                          <tr key={r.id} className="border-t border-slate-100">
+                            <td className="whitespace-nowrap px-3 py-2">
+                              {formatTanggal(r.berlaku_dari)}
+                              {/* Tahun `berlaku_dari` yang berbeda dari tahun pembelian
+                                  bukan kesalahan, tapi harus kelihatan: itu satu-satunya
+                                  penjelasan kenapa baris ini duduk di kelompok tahun yang
+                                  terlihat "salah". Di cadangan 9 Agustus, 9 dari 68 baris
+                                  harga seperti ini. */}
+                              {tahunDari(r.berlaku_dari) !== r.tahun_pembelian && (
+                                <span
+                                  className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
+                                  title={JUDUL_BEDA_TAHUN(r.berlaku_dari, r.tahun_pembelian)}
+                                >
+                                  beda tahun
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium tabular-nums">
+                              {formatMoney(r.harga_satuan, r.mata_uang)}
+                            </td>
+                            <td className="px-3 py-2">{r.supplier_nama ?? "-"}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500">
+                              {[r.sumber, r.no_dokumen].filter(Boolean).join(" · ") || "-"}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => hapus(r.id)}
+                                className="btn btn-danger btn-sm"
+                                title="Hapus titik harga ini"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    ))}
                   </table>
                 </div>
               </div>
@@ -368,6 +462,37 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
         </div>
       </aside>
     </div>
+  );
+}
+
+/** Titik yang tahun `berlaku_dari`-nya tidak sama dengan tahun pembelian digambar kuning
+ * dan berongga. Tanpa penanda ini, baris seperti itu bikin garis membelok tajam di ujung
+ * dan terbaca sebagai "harga turun", padahal yang terjadi cuma titiknya duduk di posisi
+ * waktu yang salah. */
+function TitikHarga(props: {
+  cx?: number;
+  cy?: number;
+  payload?: { cocok?: boolean };
+}) {
+  const { cx, cy, payload } = props;
+  if (cx == null || cy == null) return null;
+  const cocok = payload?.cocok !== false;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={cocok ? 3 : 4.5}
+      fill={cocok ? "var(--marine)" : "#fff"}
+      stroke={cocok ? "var(--marine)" : "#d97706"}
+      strokeWidth={cocok ? 0 : 2}
+    />
+  );
+}
+
+function JUDUL_BEDA_TAHUN(iso: string | null, tahunBeli: number): string {
+  return (
+    `Tanggal berlakunya ${tahunDari(iso)}, tapi pembeliannya dicatat tahun ${tahunBeli}. ` +
+    "Yang dipakai mengurutkan dan menggambar grafik adalah tahun pembelian."
   );
 }
 

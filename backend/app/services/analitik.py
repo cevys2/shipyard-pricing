@@ -11,7 +11,12 @@ from typing import Any
 from sqlalchemy import text
 
 from app.config import settings
-from app.database import engine, urutan_harga_sql
+from app.database import (
+    JENIS_KAPAL_SQL,
+    NAMA_KAPAL_NORM_SQL,
+    engine,
+    urutan_harga_sql,
+)
 
 TABLE = settings.catalog_table
 
@@ -113,6 +118,98 @@ def tren_harga_jasa(*, kategori: str | None = None, min_sampel: int = 3) -> dict
         "seri": [dict(r) for r in seri],
         "per_tahun": [dict(r) for r in per_tahun],
         "cakupan": dict(cakupan) if cakupan else {},
+    }
+
+
+def nilai_pekerjaan() -> dict[str, Any]:
+    """Nilai pekerjaan (volume x harga_satuan) per kategori/tahun dan per kapal/klien.
+
+    Beda dari `tren_harga_jasa()`, yang menjawab "harga satuannya berapa". Yang ini
+    menjawab "uangnya pergi ke mana" -- dan itu baru mungkin sejak kolom `volume` ada,
+    karena tanpa kuantitas satu baris Rp 300.000 bisa berarti Rp 300.000 atau
+    Rp 90.000.000.
+
+    CAKUPANNYA SEPARUH, DAN ITU HARUS KELIHATAN. Per 22 September 2026 cuma 3.243 dari
+    8.024 baris punya `volume` -- sisanya diimpor sebelum kolomnya ada, dan nilainya
+    memang tidak diketahui. Cakupannya juga tidak acak: dia mengikuti jalur impor, jadi
+    per kapal angkanya melompat dari 14% (SINDU TRITAMA) sampai 100% (PRATHITA IV).
+    Karena itu `per_kapal` membawa `n_baris` DAN `n_baris_bernilai` sekaligus: kapal yang
+    cuma 14% barisnya terhitung akan terlihat murah padahal cuma sebagian yang terbaca,
+    dan satu-satunya cara jujur adalah menyebut pecahannya, bukan menyembunyikan
+    penyebutnya.
+
+    `klien` memakai `COALESCE(ki.induk, ...)` supaya dua ejaan PT yang satu induk tidak
+    dihitung sebagai dua klien -- lihat `database.ensure_klien_induk()`. Nama kapal
+    dinormalisasi spasinya lewat `NAMA_KAPAL_NORM_SQL` dengan alasan yang sama.
+    """
+    # ROUND(...::numeric): `harga_satuan` double precision, jadi volume x harga jatuh ke
+    # float dan menyisakan ekor seperti "...577,972507". Rupiah tidak sepecah itu, dan
+    # angka yang memamerkan ketelitian palsu bikin orang ragu pada seluruh layarnya.
+    with engine.connect() as conn:
+        # JOIN (bukan LEFT JOIN) ke `kategori` konsisten dengan `tren_harga_jasa()`:
+        # nilai dari kategori "tidak diketahui" tidak bisa ditindaklanjuti. Yang tersaring
+        # ikut dilaporkan di `cakupan.tanpa_kategori`.
+        per_kategori = conn.execute(
+            text(
+                f"""
+                SELECT k.nama                            AS kategori,
+                       t.tahun,
+                       COUNT(*)                          AS n_baris,
+                       ROUND(SUM(t.volume * t.harga_satuan)::numeric) AS nilai
+                FROM   {TABLE} t
+                JOIN   kategori k ON k.id = t.kategori_id
+                WHERE  t.harga_satuan > 0 AND t.volume IS NOT NULL
+                GROUP  BY k.nama, k.urutan, t.tahun
+                ORDER  BY k.urutan, t.tahun
+                """
+            )
+        ).mappings().all()
+
+        # Di sini TIDAK disaring `volume IS NOT NULL`: penyebutnya justru yang dicari.
+        # COUNT(*) = seluruh baris berharga kapal itu, COUNT(t.volume) = yang ikut
+        # terhitung nilainya. SUM mengabaikan NULL dengan sendirinya.
+        per_kapal = conn.execute(
+            text(
+                f"""
+                SELECT {NAMA_KAPAL_NORM_SQL}             AS nama_kapal,
+                       {JENIS_KAPAL_SQL}                 AS jenis,
+                       COALESCE(ki.induk, t.nama_perusahaan) AS klien,
+                       t.tahun,
+                       COUNT(*)                          AS n_baris,
+                       COUNT(t.volume)                   AS n_baris_bernilai,
+                       COALESCE(ROUND(SUM(t.volume * t.harga_satuan)::numeric), 0) AS nilai
+                FROM   {TABLE} t
+                LEFT   JOIN klien_induk ki ON ki.nama_perusahaan = t.nama_perusahaan
+                WHERE  t.harga_satuan > 0
+                GROUP  BY {NAMA_KAPAL_NORM_SQL},
+                          {JENIS_KAPAL_SQL},
+                          COALESCE(ki.induk, t.nama_perusahaan),
+                          t.tahun
+                ORDER  BY 3, 1, 4
+                """
+            )
+        ).mappings().all()
+
+        cakupan = conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*)                                      AS total_baris,
+                       COUNT(volume)                                 AS baris_bernilai,
+                       COUNT(DISTINCT {NAMA_KAPAL_NORM_SQL})         AS total_kapal,
+                       COUNT(DISTINCT {NAMA_KAPAL_NORM_SQL})
+                           FILTER (WHERE volume IS NOT NULL)         AS kapal_bernilai,
+                       COUNT(*) FILTER (WHERE kategori_id IS NULL)   AS tanpa_kategori,
+                       COALESCE(ROUND(SUM(volume * harga_satuan)::numeric), 0) AS nilai_total
+                FROM   {TABLE}
+                WHERE  harga_satuan > 0
+                """
+            )
+        ).mappings().first()
+
+    return {
+        "cakupan": dict(cakupan) if cakupan else {},
+        "per_kategori": [dict(r) for r in per_kategori],
+        "per_kapal": [dict(r) for r in per_kapal],
     }
 
 

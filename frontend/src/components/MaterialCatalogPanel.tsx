@@ -9,7 +9,7 @@ import {
   type MaterialFilterOptions,
   type MaterialRow,
   type MaterialStats,
-} from "../lib/api";
+  formatTanggal,} from "../lib/api";
 import EditableMaterialTable from "./EditableMaterialTable";
 
 type Props = { auth: AuthUser };
@@ -150,7 +150,7 @@ export default function MaterialCatalogPanel({ auth }: Props) {
           <KpiCard title={`Total ${JUDUL[jenis].replace("Katalog ", "")}`} value={String(stats.total_material)} accent />
           {adaPembelian && <KpiCard title="Total Supplier" value={String(stats.total_supplier)} />}
           {adaPembelian && <KpiCard title="Total Kapal" value={String(stats.total_kapal)} />}
-          <KpiCard title="Update Harga Terakhir" value={stats.update_terakhir ?? "-"} />
+          <KpiCard title="Update Harga Terakhir" value={formatTanggal(stats.update_terakhir)} />
         </div>
       )}
 

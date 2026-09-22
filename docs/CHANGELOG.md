@@ -8,6 +8,86 @@ langsung di GitHub.
 
 ---
 
+## 22 September 2026 — analitik menjawab "uangnya ke mana", dan dua kapal yang ternyata satu
+
+**Seksi baru: Ke Mana Uangnya Pergi.** Analitik selama ini cuma bisa menjawab "harga
+satuannya berapa". Sekarang ada nilai pekerjaan — volume × harga satuan — per kategori per
+tahun, plus perbandingan antar kapal dan antar klien. Ini yang baru mungkin sejak kolom
+`volume` ada: tanpa kuantitas, satu baris Rp 300.000 bisa berarti Rp 300.000 atau
+Rp 90.000.000, dan tidak ada cara membedakannya.
+
+**Angkanya sengaja tidak dibulatkan ke atas jadi "total biaya docking".** Baru 40,4% baris
+(3.243 dari 8.024) punya volume, dan cakupannya tidak acak — dia mengikuti jalur impor, jadi
+per kapal melompat dari 24% sampai 100%. Kalau yang ditampilkan cuma satu angka rupiah,
+kapal yang seperempat barisnya terbaca akan terlihat murah, bukan terlihat belum terukur.
+Karena itu tiap baris membawa kolom **Cakupan** yang menyebut pecahannya (`61/90`), dan kapal
+yang belum punya volume sama sekali tetap muncul bertanda **"belum terukur"** — bukan
+disembunyikan. Perbandingan yang kehilangan pesertanya terlihat lengkap padahal tidak.
+
+**Filter Jenis Kapal (KLM / KMP / KN / LCT / MV).** Diturunkan dari token pertama nama kapal,
+bukan kolom baru — tidak ada yang perlu diisi waktu menambah baris, dan tidak ada kolom
+kedua yang bisa basi. Diverifikasi: kelima jenis menjumlah persis 8.024 baris, tidak ada
+yang jatuh.
+
+**Dua kapal yang sebenarnya satu, dan dua PT yang sebenarnya satu.**
+`KMP. PRIMA  NUSANTARA` (spasi ganda, 166 baris) dan `KMP. PRIMA NUSANTARA` (210 baris)
+selama ini jadi dua entri terpisah di dropdown — memilih salah satu menyembunyikan separuh
+barisnya tanpa memberi tahu. Idem `KMP.  MUNIC 1` dan `MV.  ARUNA ODDYSEY`. Sekarang
+dirapikan **saat membaca**, bukan dengan meng-UPDATE tabelnya: `nama_perusahaan` dan
+`nama_kapal` tetap merekam apa yang tertulis di dokumen asli, aturan yang sama dengan
+`kategori_pekerjaan`.
+
+Begitu juga `PT. AGUNG TAMA RAYA` dan `PT. AGUNG TRANSINA RAYA` — satu induk, dan tanpa
+pemetaan `klien_induk` perbandingan klien membelah satu klien jadi dua yang masing-masing
+terlihat separuh. Kanoniknya `PT. AGUNG TAMA RAYA`; kalau induknya ternyata entitas ketiga,
+satu UPDATE di tabel itu cukup dan tidak ada baris katalog yang perlu disentuh.
+
+Efek sampingnya: KPI "Total Kapal" dulu menghitung 14 sementara dropdown di bawahnya
+mendaftar 13 — selisih yang mustahil ditebak dari layar. Keduanya sekarang memakai
+perhitungan yang sama.
+
+**Pertanyaan lama yang tertutup: tidak ada baris tanda tangan di produksi.** Keempat kata
+penandanya dicari ke seluruh 8.024 baris; satu-satunya yang kena adalah baris pekerjaan yang
+sah — `Dibuatkan laporan pengedokan kapal (Docking Report) mengetahui class`, Rp 5.000.000,
+KMP. TRIMAS ELLISA. Bukan sampah, dan jangan dihapus.
+
+**Tampilan.** Teks pindah dari Inter ke **Plus Jakarta Sans** — hurufnya lebih bulat dan
+lebih tenang di ukuran 12-13px yang mengisi hampir seluruh tabel di app ini. Angka jadi
+tabular secara global, jadi kolom rupiah berhenti bergoyang waktu nilainya berubah, tapi
+dikembalikan ke proporsional di dalam paragraf supaya angka di tengah kalimat tetap enak
+dibaca. Bayangan kartu dibuat berlapis dan lebih tipis, dan ada satu aturan `:focus-visible`
+untuk semua yang bisa di-Tab. Tidak ada dependensi baru — seluruhnya di `index.css`.
+
+**Riwayat harga material: tanggalnya bisa dibaca, dan titiknya bisa ditemukan.**
+Tabel riwayat harga selama ini **diurutkan oleh kolom yang tidak ditampilkan** — backend
+mengurutkan `tahun_pembelian, berlaku_dari` (lihat `urutan_harga_sql`), tapi tabelnya cuma
+memperlihatkan `berlaku_dari`. Untuk baris yang dua tahunnya berbeda — 9 dari 68 baris di
+cadangan 9 Agustus — barisnya tampak melompat tanpa sebab yang kelihatan dari layar.
+
+Sekarang titik harga dikelompokkan per **tahun beli** dengan judul yang menempel waktu
+digulir, terbaru di atas, dan tiap kelompok menyebut jumlah titiknya. Baris yang tanggal
+berlakunya jatuh di tahun lain diberi tanda **"beda tahun"** — itu penjelasan kenapa dia
+duduk di kelompok yang terlihat salah. Tanggal ISO (`2026-11-05`) diganti bentuk yang
+terbaca (`5 Nov 2026`) di drawer, di tabel material, dan di KPI Update Harga Terakhir.
+
+Sumbu-X grafik riwayat juga berhenti berbohong soal jarak waktu. Sebelumnya tanggal dipakai
+sebagai **kategori**, jadi pembelian Januari dan Februari terlihat sejauh pembelian 2025 dan
+2026 — garis yang menanjak landai lalu curam jadi tak terbaca bedanya, padahal itu justru
+yang dicari. Sekarang sumbunya numerik dalam waktu asli.
+
+Satu konsekuensi sengaja dibiarkan terlihat, bukan dirapikan: titik yang tanggal berlakunya
+jatuh di tahun berbeda diplot di posisi tanggal itu, sehingga grafiknya bisa membelok tajam.
+Tanggalnya **tidak dikarang ulang** ke tahun pembelian — bulan sebenarnya tidak diketahui,
+dan menebaknya akan menampilkan angka yang tidak pernah ada di dokumen mana pun. Titik
+seperti itu digambar kuning berongga dengan keterangan di bawah grafik, supaya belokannya
+punya penjelasan alih-alih jadi misteri.
+
+Stat "Rentang" di drawer juga pindah dari `berlaku_dari` ke `tahun_pembelian`, jadi angkanya
+sekarang sama dengan sumbu-X grafik tren di tab Analitik. Sebelumnya dua layar bisa menyebut
+rentang yang berbeda untuk material yang sama.
+
+---
+
 ## 1 September 2026 — angka total berhenti menyamar jadi harga satuan
 
 **Berkas docking yang menulis "Sat" sekarang terbaca benar.** Ini kegagalan paling mahal

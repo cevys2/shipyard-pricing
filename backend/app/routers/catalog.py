@@ -26,6 +26,7 @@ def get_catalog(
     _: Annotated[dict, Depends(get_current_user)],
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
@@ -34,6 +35,7 @@ def get_catalog(
     return catalog_service.list_catalog(
         perusahaan=perusahaan,
         kapal=kapal,
+        jenis=jenis,
         kategori=kategori,
         tahun=tahun,
         tipe=tipe,
@@ -46,6 +48,7 @@ def get_stats(
     _: Annotated[dict, Depends(get_current_user)],
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
@@ -54,6 +57,7 @@ def get_stats(
     return catalog_service.catalog_stats(
         perusahaan=perusahaan,
         kapal=kapal,
+        jenis=jenis,
         kategori=kategori,
         tahun=tahun,
         tipe=tipe,
@@ -66,6 +70,7 @@ def get_filters(
     _: Annotated[dict, Depends(get_current_user)],
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
@@ -74,6 +79,7 @@ def get_filters(
     return catalog_service.filter_options(
         perusahaan=perusahaan,
         kapal=kapal,
+        jenis=jenis,
         kategori=kategori,
         tahun=tahun,
         tipe=tipe,

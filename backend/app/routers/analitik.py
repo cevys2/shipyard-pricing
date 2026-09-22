@@ -28,6 +28,14 @@ def tren_jasa_kategori(
     return analitik_service.kategori_options(min_sampel=max(1, min_sampel))
 
 
+@router.get("/nilai-pekerjaan")
+def nilai_pekerjaan(_: Annotated[dict, Depends(get_current_user)]):
+    # Tanpa parameter: agregatnya sudah kecil (puluhan baris) dan seluruh pengirisan --
+    # per tahun, per jenis kapal, per klien -- dikerjakan di layar. Menambah filter di
+    # sini berarti dua tempat yang harus sepakat soal apa yang disaring.
+    return analitik_service.nilai_pekerjaan()
+
+
 @router.get("/tren-material")
 def tren_material(_: Annotated[dict, Depends(get_current_user)]):
     return analitik_service.tren_material()

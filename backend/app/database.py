@@ -716,3 +716,71 @@ def ensure_audit_table() -> None:
                 "ON audit_log(entitas, dibuat_pada DESC)"
             )
         )
+
+
+# Jenis kapal (KLM/KMP/KN/LCT/MV) TIDAK disimpan sebagai kolom. Dia selalu token pertama
+# nama kapal, jadi menyimpannya lagi berarti dua sumber kebenaran yang bisa berbeda -- dan
+# yang kedua pasti basi lebih dulu. Titik diganti spasi (bukan dibuang) supaya "KMP.CUCUT"
+# tanpa spasi tetap terbaca "KMP", bukan "KMPCUCUT".
+#
+# Diverifikasi terhadap 49 pasangan kapal-klien di produksi (22 September 2026): lima jenis
+# bersih -- KLM 14 kapal, KMP 25, KN 5, LCT 2, MV 4 -- tanpa satu pun sisa yang aneh.
+JENIS_KAPAL_SQL = "upper(split_part(btrim(replace(nama_kapal, '.', ' ')), ' ', 1))"
+
+# Nama kapal yang sama bisa tertulis dengan spasi ganda dan jadi dua entri berbeda:
+# `KMP. PRIMA  NUSANTARA` (166 baris) dan `KMP. PRIMA NUSANTARA` (210 baris) itu satu
+# kapal, begitu juga `KMP.  MUNIC 1` dan `MV.  ARUNA ODDYSEY`. Dirapikan saat MEMBACA,
+# bukan dengan meng-UPDATE tabelnya -- aturan yang sama dengan `kategori_pekerjaan`.
+# chr(160) (spasi tak-putus dari Excel) ikut dinormalkan, persis seperti di
+# `kategori_norm_sql()`.
+NAMA_KAPAL_NORM_SQL = (
+    r"btrim(regexp_replace(replace(nama_kapal, chr(160), ' '), '\s+', ' ', 'g'))"
+)
+
+
+def ensure_klien_induk() -> None:
+    """Pemetaan nama klien yang sebenarnya satu perusahaan induk.
+
+    `nama_perusahaan` di `tabel_katalog_harga` TIDAK ditimpa -- aturannya sama dengan
+    `kategori_pekerjaan`: itu catatan apa yang benar-benar tertulis di dokumen asli.
+    Koreksinya ditulis di sini dan dipakai lewat COALESCE saat membaca, sehingga dokumen
+    tetap bisa ditelusuri ke sumbernya.
+
+    Sebabnya nyata: `KMP. SINDU DWITAMA` tercatat di bawah `PT. AGUNG TAMA RAYA` (240
+    baris) DAN `PT. AGUNG TRANSINA RAYA` (245 baris) -- idem SINDU TRITAMA (111 dan 108).
+    Keduanya satu induk, jadi tanpa pemetaan ini perbandingan klien menghitung satu klien
+    dua kali.
+
+    Kanoniknya `PT. AGUNG TAMA RAYA` karena itu yang disebut sebagai pemegang SINDU
+    TRITAMA. Kalau induknya ternyata entitas ketiga, satu UPDATE di tabel ini cukup --
+    tidak ada baris katalog yang perlu disentuh.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS klien_induk (
+                    nama_perusahaan TEXT PRIMARY KEY,
+                    induk           TEXT NOT NULL,
+                    catatan         TEXT,
+                    dibuat_pada     TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        # ON CONFLICT DO NOTHING, bukan DO UPDATE: kalau suatu saat induknya dikoreksi
+        # lewat SQL, deploy berikutnya tidak boleh mengembalikannya ke tebakan seed ini.
+        conn.execute(
+            text(
+                """
+                INSERT INTO klien_induk (nama_perusahaan, induk, catatan)
+                VALUES (:dari, :ke, :catatan)
+                ON CONFLICT (nama_perusahaan) DO NOTHING
+                """
+            ),
+            {
+                "dari": "PT. AGUNG TRANSINA RAYA",
+                "ke": "PT. AGUNG TAMA RAYA",
+                "catatan": "Satu induk dengan PT. AGUNG TAMA RAYA (dikonfirmasi 22 September 2026).",
+            },
+        )

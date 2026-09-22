@@ -308,6 +308,9 @@ export const api = {
   trenMaterial(token: string) {
     return request<TrenMaterial>("/analitik/tren-material", {}, token);
   },
+  nilaiPekerjaan(token: string) {
+    return request<NilaiPekerjaan>("/analitik/nilai-pekerjaan", {}, token);
+  },
   auditLog(token: string, params: { entitas?: string; limit?: number } = {}) {
     const q = new URLSearchParams();
     if (params.entitas && params.entitas !== "Semua") q.set("entitas", params.entitas);
@@ -328,6 +331,40 @@ export type PriceInput = {
   no_dokumen: string;
   catatan: string;
 };
+
+const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+/** "2025-03-14" -> "14 Mar 2025".
+ *
+ * Sengaja TIDAK memakai `toLocaleDateString`: `new Date("2025-03-14")` diurai sebagai
+ * tengah malam UTC, jadi di WIB/WITA tanggalnya bisa tergeser mundur sehari. Tanggal di
+ * app ini datang sebagai string polos dari Postgres dan memang tidak punya zona waktu --
+ * jadi diurai sebagai teks, bukan sebagai momen. */
+export function formatTanggal(iso: string | null | undefined): string {
+  if (!iso) return "-";
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d || m < 1 || m > 12) return iso;
+  return `${d} ${BULAN[m - 1]} ${y}`;
+}
+
+/** Tahun dari tanggal ISO, tanpa mengurai jadi Date. null kalau tidak terbaca. */
+export function tahunDari(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const y = Number(iso.slice(0, 4));
+  return Number.isFinite(y) && y > 0 ? y : null;
+}
+
+/** Epoch ms -> "Mar 2025" / "14 Mar 2025". Dipakai sumbu-X dan tooltip grafik riwayat,
+ * yang memang sudah bekerja dalam epoch. */
+export function formatBulanTahun(ms: number): string {
+  const d = new Date(ms);
+  return `${BULAN[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+export function formatTanggalDariEpoch(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getDate()} ${BULAN[d.getMonth()]} ${d.getFullYear()}`;
+}
 
 export type PriceHistoryRow = {
   id: number;
@@ -402,6 +439,41 @@ export type TrenMaterial = {
   ringkas: { total_material: number; siap_tren: number; total_titik_harga: number };
   kandidat: TrenMaterialKandidat[];
   titik: TrenMaterialTitik[];
+};
+
+export type NilaiKategori = {
+  kategori: string;
+  tahun: string;
+  n_baris: number;
+  nilai: number;
+};
+
+export type NilaiKapal = {
+  nama_kapal: string;
+  /** KLM / KMP / KN / LCT / MV. */
+  jenis: string;
+  /** Sudah digulung ke perusahaan induk, jadi dua ejaan PT yang satu induk tidak
+   * terhitung sebagai dua klien. */
+  klien: string;
+  tahun: string;
+  /** Seluruh baris berharga kapal ini. */
+  n_baris: number;
+  /** Yang punya `volume`, jadi ikut terhitung di `nilai`. Selalu <= n_baris. */
+  n_baris_bernilai: number;
+  nilai: number;
+};
+
+export type NilaiPekerjaan = {
+  cakupan: {
+    total_baris: number;
+    baris_bernilai: number;
+    total_kapal: number;
+    kapal_bernilai: number;
+    tanpa_kategori: number;
+    nilai_total: number;
+  };
+  per_kategori: NilaiKategori[];
+  per_kapal: NilaiKapal[];
 };
 
 export type PastePreviewRow = {
@@ -557,6 +629,9 @@ export type CatalogStats = {
 export type FilterOptions = {
   perusahaan: string[];
   kapal: string[];
+  /** Jenis kapal (KLM/KMP/KN/LCT/MV). Diturunkan backend dari token pertama nama kapal,
+   * bukan kolom tersimpan -- jadi tidak ada yang perlu diisi waktu menambah baris. */
+  jenis: string[];
   kategori: string[];
   tahun: string[];
   tipe: string[];

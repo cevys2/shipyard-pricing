@@ -3,7 +3,7 @@
 Aplikasi internal PT Dukuh Raya (galangan kapal, Lombok). Katalog harga jasa, katalog
 material, dan analisa harga satuan (AHSP). Pengguna aktif: satu orang. Dikerjakan solo.
 
-Terakhir diperbarui: 3 September 2026.
+Terakhir diperbarui: 22 September 2026.
 
 ## Stack
 
@@ -11,7 +11,12 @@ Terakhir diperbarui: 3 September 2026.
   SELALU parameterized query — jangan pernah f-string ke SQL.
 - **Frontend**: React + TypeScript + Vite + Tailwind v4 (`frontend/`). Satu halaman utama
   `src/pages/DashboardPage.tsx` dengan beberapa tab. Design system: navy `--ink`/`--marine`
-  + aksen brass, heading "Space Grotesk". Tombol pakai `.btn .btn-primary/secondary/danger/accent`
+  + aksen brass, heading "Space Grotesk", teks "Plus Jakarta Sans" (22 September 2026,
+  menggantikan Inter — lebih bulat dan lebih tenang di ukuran 12-13px yang mengisi tabel).
+  Angka tabular secara global lewat `body`, dikembalikan ke proporsional di `p` supaya angka
+  di dalam kalimat tetap enak dibaca. Satu aturan `:focus-visible` untuk semua yang bisa
+  di-Tab — app entri data, fokus yang tak kelihatan artinya kehilangan tempat.
+  Tombol pakai `.btn .btn-primary/secondary/danger/accent`
   (lihat `frontend/src/index.css`). Ikon `lucide-react`.
 - **Database**: Postgres di Railway (bukan Supabase). Env var `DATABASE_URL`.
 - **Auth**: `backend/app/auth.py` **hanya memverifikasi** JWT — `get_current_user()` dan
@@ -48,7 +53,7 @@ ditiru: **`ensure_audit_table()`**. Untuk menambah kolom ke tabel yang sudah ber
 
 Urutan pemanggilan di `main.py`: `ensure_material_tables()`, `ensure_partno_unique()`,
 `ensure_katalog_kolom_rincian()`, `ensure_kategori_table()`, `ensure_ahsp_tables()`,
-`ensure_audit_table()`, `ensure_pencarian_index()`.
+`ensure_audit_table()`, `ensure_klien_induk()`, `ensure_pencarian_index()`.
 
 Urutannya bukan selera: `ahsp_komponen` punya FK ke `sumber_daya`, `ahsp.kategori_id` ke
 `kategori`, dan index pencarian menempel ke tabel yang harus sudah ada. Dipanggil di luar
@@ -66,6 +71,7 @@ seperti `chk_sdh_mata_uang`.
 | `supplier`, `sumber_daya`, `sumber_daya_harga` | Katalog material + riwayat harga. View `v_harga_terkini`. |
 | `ahsp`, `ahsp_komponen` | Analisa harga satuan. |
 | `audit_log` | Append-only, siapa mengubah apa. |
+| `klien_induk` | Pemetaan ejaan PT yang sebenarnya satu induk. Dipakai lewat `COALESCE` saat membaca; `nama_perusahaan` tidak pernah ditimpa. |
 
 ### Aturan `tabel_katalog_harga`
 
@@ -97,6 +103,7 @@ nilainya dari layar dulu — jangan cukup menambahkannya di SQL.
 ## Keadaan sekarang
 
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
+analitik **nilai pekerjaan** (volume × harga; 22 September 2026), filter **jenis kapal**,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
 baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 100 alias), dan
 impor Repair List (mode ketiga di tab Import Excel).
@@ -105,6 +112,21 @@ Diketahui terbatas:
 
 - Aplikasi belum menghasilkan keluaran apa pun — penawaran masih disusun manual di Excel.
   Ini jurang terbesar yang tersisa antara "katalog" dan "alat yang menyelesaikan pekerjaan".
+- **Analitik "Ke Mana Uangnya Pergi" cuma mencakup 40,4% baris** (3.243 dari 8.024,
+  per 22 September 2026), dan cakupannya **tidak acak** — dia mengikuti jalur impor, jadi
+  per kapal melompat dari 24% (SINDU TRITAMA) sampai 100% (PRATHITA IV). Karena itu
+  `per_kapal` membawa `n_baris` DAN `n_baris_bernilai`, dan layarnya menampilkan pecahannya
+  per baris. **Jangan pernah menambahkan `WHERE volume IS NOT NULL` ke query per-kapal** —
+  penyebutnya hilang, tiap kapal terlihat 100% terukur, dan nilai yang memotret seperempat
+  pekerjaan terbaca sebagai nilai penuh. Dijaga `tests/test_nilai_pekerjaan.py`.
+- **`satuan` punya 37 ejaan untuk ~20 satuan nyata**: `m²`(206)/`m2`(160)/`m'`(5),
+  `mtr`(214)/`m`(59)/`mter`(1), `pcs`/`pc`/`buah`/`bh`, `tangki`/`tanki`, `liter`/`ltr`,
+  `segel`/`shackle`. Belum dinormalisasi karena analitik yang ada tidak mengelompokkan per
+  satuan. Begitu ada layar yang menjawab "harga per m² wajarnya berapa", pemetaan satuan
+  kanonik (pola `kategori_alias`) jadi prasyarat mutlak — tanpa itu m² dan m2 jadi dua
+  kelompok yang masing-masing separuh.
+- **Dua baris uji di produksi**: `KMP. TES` / `PT. TES FERRY`, nama yang sama dengan fixture
+  di `tests/test_docking_volume.py`. Ikut terhitung di KPI dan dropdown. Belum dihapus.
 - Tab Struktur Biaya baru berisi satu analisa (13 komponen). `shift` dan `jml_hari` isinya 1
   di seluruh baris; cuma `qty` yang dipakai.
 - `uq_sd_identitas` cuma menolak nama yang persis sama, jadi penjaga duplikat di layar
@@ -164,9 +186,12 @@ katalog palsu seharga 46.197 (MISHIMA) atau 45.903 (GILIMANUK II) — angka yang
 akal sebagai harga sehingga tidak pernah ada yang curiga. `NOISE_EXACT` sekarang memuat
 `diketahui`, `disetujui`, `mengetahui`, `dibuat oleh`.
 
-Kemungkinan ada baris seperti ini di produksi, satu per berkas docking yang pernah diimpor.
-Belum dihitung — butuh cadangan produksi. Cara mencarinya:
-`WHERE uraian_pekerjaan ILIKE '%disetujui%' OR uraian_pekerjaan ILIKE '%diketahui%'`.
+**Sudah dihitung di produksi (22 September 2026): nol baris palsu.** Keempat kata itu
+dicari ke seluruh 8.024 baris dan cuma satu yang kena — `Dibuatkan laporan pengedokan kapal
+(Docking Report) mengetahui class`, Rp 5.000.000, KMP. TRIMAS ELLISA. Itu baris pekerjaan
+yang sah, kebetulan memuat kata "mengetahui". **Jangan dihapus.** Ini juga pengingat bahwa
+`NOISE_EXACT` benar dipakai sebagai pencocokan persis, bukan `ILIKE '%...%'`: kalau
+pencocokannya longgar, baris ini yang jadi korban.
 
 Sengaja TIDAK memakai aturan "berhenti membaca begitu ketemu TOTAL": kalau ada berkas yang
 punya baris Total per seksi di tengah tabel, aturan itu memotong sisa berkasnya diam-diam —
@@ -274,6 +299,17 @@ Karena itu **`tahun_pembelian` yang berwenang**, dan sekarang sudah dipakai kons
 
 `berlaku_dari` tetap ikut sebagai pemecah seri untuk membedakan dua pembelian di tahun yang
 sama — selama memang diisi.
+
+Drawer Riwayat Harga (22 September 2026) mengelompokkan titik harga per **tahun beli**, bukan
+mengurutkannya diam-diam seperti dulu: backend selalu mengurutkan `tahun_pembelian` dulu,
+sementara tabelnya cuma menampilkan `berlaku_dari`, jadi baris yang dua tahunnya berbeda
+tampak melompat tanpa sebab. Baris seperti itu sekarang bertanda "beda tahun".
+
+Grafik di drawer memakai sumbu waktu numerik atas `berlaku_dari` — itu satu-satunya tanggal
+nyata yang dipunyai tiap titik. Titik yang tahunnya tidak cocok **sengaja tidak digeser** ke
+tahun pembeliannya: bulan sebenarnya tidak diketahui, dan menebaknya akan menampilkan angka
+yang tidak ada di dokumen mana pun. Titiknya ditandai kuning berongga plus keterangan.
+Kalau suatu saat mau digeser, itu keputusan soal data, bukan soal tampilan.
 
 Konsekuensi yang disengaja: grafik tren punya satu titik per tahun. Kalau ada beberapa
 pembelian di tahun yang sama, yang tergambar adalah yang paling baru di tahun itu.

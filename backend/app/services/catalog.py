@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.config import settings
-from app.database import KOLOM_CARI_KATALOG, engine
+from app.database import JENIS_KAPAL_SQL, KOLOM_CARI_KATALOG, NAMA_KAPAL_NORM_SQL, engine
 from app.schemas.catalog import (
     BulkCatalogCreate,
     BulkPatchRequest,
@@ -26,9 +26,18 @@ _COLUMNS = (
     "volume, satuan, induk_uraian, keterangan"
 )
 
+# Nilainya boleh ekspresi, bukan cuma nama kolom: `jenis` diturunkan dari nama kapal dan
+# tidak punya kolom sendiri. Keduanya dipakai di dua tempat -- klausa WHERE di
+# `_build_where()` dan SELECT DISTINCT di `filter_options()` -- dan ekspresi bekerja di
+# kedua-duanya, jadi tidak perlu jalur khusus.
 _FILTER_COLS = {
     "perusahaan": "nama_perusahaan",
-    "kapal": "nama_kapal",
+    # Dinormalisasi spasinya, bukan `nama_kapal` mentah: `KMP. PRIMA  NUSANTARA` dan
+    # `KMP. PRIMA NUSANTARA` itu satu kapal, dan tanpa ini dropdown-nya memuat keduanya
+    # sehingga memilih salah satu menyembunyikan separuh barisnya. Baris yang ditampilkan
+    # tetap membawa nama mentahnya -- yang dirapikan cuma cara menyaring dan mendaftar.
+    "kapal": NAMA_KAPAL_NORM_SQL,
+    "jenis": JENIS_KAPAL_SQL,
     "kategori": "kategori_pekerjaan",
     "tahun": "tahun",
     "tipe": "tipe_perjanjian",
@@ -39,6 +48,7 @@ def _build_where(
     *,
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
@@ -46,7 +56,14 @@ def _build_where(
 ) -> tuple[str, dict[str, Any], pencarian.Pencarian | None]:
     clauses = []
     params: dict[str, Any] = {}
-    filters = {"perusahaan": perusahaan, "kapal": kapal, "kategori": kategori, "tahun": tahun, "tipe": tipe}
+    filters = {
+        "perusahaan": perusahaan,
+        "kapal": kapal,
+        "jenis": jenis,
+        "kategori": kategori,
+        "tahun": tahun,
+        "tipe": tipe,
+    }
     for key, val in filters.items():
         if val and val != "Semua":
             col = _FILTER_COLS[key]
@@ -68,13 +85,20 @@ def list_catalog(
     *,
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
     search: str | None = None,
 ) -> list[CatalogRowOut]:
     where, params, cari = _build_where(
-        perusahaan=perusahaan, kapal=kapal, kategori=kategori, tahun=tahun, tipe=tipe, search=search
+        perusahaan=perusahaan,
+        kapal=kapal,
+        jenis=jenis,
+        kategori=kategori,
+        tahun=tahun,
+        tipe=tipe,
+        search=search,
     )
     urut = f"{cari.skor} DESC, nama_kapal, id" if cari else "nama_kapal, id"
     query = text(f"SELECT {_COLUMNS} FROM {TABLE} {where} ORDER BY {urut}")
@@ -94,19 +118,29 @@ def catalog_stats(
     *,
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
     search: str | None = None,
 ) -> CatalogStats:
     where, params, _ = _build_where(
-        perusahaan=perusahaan, kapal=kapal, kategori=kategori, tahun=tahun, tipe=tipe, search=search
+        perusahaan=perusahaan,
+        kapal=kapal,
+        jenis=jenis,
+        kategori=kategori,
+        tahun=tahun,
+        tipe=tipe,
+        search=search,
     )
     query = text(
         f"""
         SELECT COUNT(*) AS total_item,
                COUNT(DISTINCT nama_perusahaan) AS total_klien,
-               COUNT(DISTINCT nama_kapal) AS total_kapal,
+               -- Dinormalisasi, sama dengan dropdown Kapal. Kalau dihitung mentah, KPI
+               -- bilang 14 kapal sementara dropdown di bawahnya mendaftar 13 -- selisih
+               -- yang lahir dari spasi ganda dan mustahil ditebak dari layar.
+               COUNT(DISTINCT {NAMA_KAPAL_NORM_SQL}) AS total_kapal,
                COUNT(DISTINCT tahun) AS total_tahun
         FROM {TABLE} {where}
         """
@@ -122,12 +156,20 @@ def filter_options(
     *,
     perusahaan: str | None = None,
     kapal: str | None = None,
+    jenis: str | None = None,
     kategori: str | None = None,
     tahun: str | None = None,
     tipe: str | None = None,
     search: str | None = None,
 ) -> dict[str, list[str]]:
-    active = {"perusahaan": perusahaan, "kapal": kapal, "kategori": kategori, "tahun": tahun, "tipe": tipe}
+    active = {
+        "perusahaan": perusahaan,
+        "kapal": kapal,
+        "jenis": jenis,
+        "kategori": kategori,
+        "tahun": tahun,
+        "tipe": tipe,
+    }
     result: dict[str, list[str]] = {}
     with engine.connect() as conn:
         for key, col in _FILTER_COLS.items():
