@@ -278,11 +278,14 @@ export default function AnalitikPanel({ auth }: Props) {
             <Peringatan>
               <strong>Angka ini bukan total biaya docking.</strong> Cuma{" "}
               {nilai.cakupan.baris_bernilai.toLocaleString("id-ID")} dari{" "}
-              {nilai.cakupan.total_baris.toLocaleString("id-ID")} baris punya volume — sisanya masuk
-              sebelum kolom itu ada, dan kuantitasnya memang tidak pernah tersimpan. Cakupannya juga{" "}
-              <strong>tidak acak</strong>: dia mengikuti jalur impor, jadi per kapal melompat dari 24%
-              sampai 100%. Kolom <em>Cakupan</em> di tabel bawah menyebut pecahannya satu per satu —
-              baca itu dulu sebelum membandingkan dua kapal.
+              {nilai.cakupan.total_baris.toLocaleString("id-ID")} baris punya volume, dan cakupannya{" "}
+              <strong>tidak acak</strong> — dia mengikuti jalur impor, jadi per kapal bisa melompat
+              dari belasan persen sampai penuh. Kolom <em>Cakupan</em> di tabel bawah menyebut
+              pecahannya satu per satu; baca itu dulu sebelum membandingkan dua kapal.
+              <br />
+              Baris tanpa volume belum tentu tidak diketahui kuantitasnya: untuk berkas docking yang
+              diimpor sebelum parser bisa membaca kolom Qty, angkanya masih ada di berkas aslinya dan
+              ikut terbaca kalau berkasnya diimpor ulang.
             </Peringatan>
 
             {dataBatang.length === 0 ? (

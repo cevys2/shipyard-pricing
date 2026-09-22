@@ -1,4 +1,6 @@
 import io
+import re
+from collections import Counter
 from typing import Any
 
 import pandas as pd
@@ -429,6 +431,80 @@ def _nilai_unik(kolom) -> list[str]:
         if teks and teks not in urut:
             urut.append(teks)
     return urut
+
+
+def _teks_kunci(v: object) -> str:
+    """Bentuk teks untuk membandingkan dua baris dari impor yang berbeda.
+
+    Spasi dirapikan (impor lama menyimpan newline di tengah teks) dan awalan "- " dibuang
+    (penanganan pengisi tata letak di parser berubah 1 September 2026). Tanpa keduanya,
+    berkas yang sama yang diimpor sebelum dan sesudah perbaikan parser terlihat berbeda.
+    """
+    if v is None:
+        return ""
+    return re.sub(r"\s+", " ", str(v)).strip().upper().lstrip("- ").strip()
+
+
+def peringatan_impor_ganda(
+    nama_kapal: str, item: list[tuple[str | None, float | None, float | None]]
+) -> list[str]:
+    """Peringatan kalau isi berkas ini sudah ada di katalog -- berkas yang masuk dua kali.
+
+    Ini bukan hipotesis. Per 22 September 2026 produksi memuat berkas MISHIMA sebanyak
+    TIGA kali (591 baris, seharusnya 197) dan MUNIC 1 EMPAT kali (716, seharusnya 179).
+    Nilai MISHIMA terbaca Rp 3,5 miliar padahal sebenarnya Rp 1,3 miliar. Tidak ada satu
+    pun tanda di layar; nama kapalnya sama, jadi di dropdown dia tetap satu kapal.
+
+    Kenapa mencocokkan ISI, bukan nama berkas: berkas yang sama bisa diganti namanya, dan
+    impor MISHIMA yang pertama masuk sebagai "MISHIMA" lalu yang berikutnya sebagai
+    "KMP. MISHIMA" -- nama kapalnya pun berubah. Yang tidak berubah cuma isinya.
+
+    Kenapa memperingatkan, bukan menolak: impor ulang yang DISENGAJA itu sah, misalnya
+    waktu parser diperbaiki dan berkas lama perlu dibaca ulang. Yang tidak boleh terjadi
+    adalah impor ulang yang tidak disadari. Palang yang menolak akan menghalangi
+    perbaikan; palang yang memberi tahu tidak.
+
+    Sengaja tidak menyebut kapan impor lamanya terjadi, walau `created_at` ada di
+    produksi: kolom itu bukan buatan repo ini (`tabel_katalog_harga` dibuat di luar),
+    jadi query yang bergantung padanya gagal di database mana pun yang tidak
+    kebetulan punya. Tahun dan jumlah baris sudah cukup untuk mengenali berkasnya.
+
+    Ambangnya 30%: baris Addendum yang sah nyaris tidak beririsan dengan Induk (diukur di
+    13 kapal berbatch ganda: irisannya 0-11%), jadi di bawah itu peringatannya cuma bunyi
+    palsu -- dan palang yang berbunyi palsu akan diabaikan, lalu berhenti menjaga apa pun.
+    """
+    bersih = [(_teks_kunci(u), h, v) for u, h, v in item if u]
+    if not bersih:
+        return []
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT uraian_pekerjaan, harga_satuan, volume, tahun
+                FROM   {TABLE}
+                WHERE  {NAMA_KAPAL_NORM_SQL} = :kapal
+                """
+            ),
+            {"kapal": " ".join(str(nama_kapal).split()).strip()},
+        ).mappings().all()
+    if not rows:
+        return []
+
+    ada = Counter(
+        (_teks_kunci(r["uraian_pekerjaan"]), r["harga_satuan"], r["volume"]) for r in rows
+    )
+    cocok = sum((Counter(bersih) & ada).values())
+    if cocok / len(bersih) < 0.30:
+        return []
+
+    tahun = sorted({r["tahun"] for r in rows if r["tahun"]})
+    return [
+        f"BERKAS INI SEPERTINYA SUDAH PERNAH DIIMPOR. {cocok} dari {len(bersih)} baris "
+        f"({cocok / len(bersih) * 100:.0f}%) isinya sudah ada di katalog untuk kapal ini "
+        f"(tahun {', '.join(tahun)}; {len(rows)} baris tersimpan). Kalau ini impor ulang "
+        f"yang disengaja, hapus dulu baris lamanya -- kalau tidak, nilainya terhitung dua kali."
+    ]
 
 
 def parse_spreadsheet(file_bytes: bytes, filename: str) -> tuple[BulkCatalogCreate | None, list[str]]:

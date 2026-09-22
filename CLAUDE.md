@@ -330,8 +330,9 @@ yang benar. Baca ini sebelum memercayai PDF-nya.
 
 Arsip keputusan kategori: `docs/bundel-kategori-claude-code.md`, `docs/final_peta.json`,
 `docs/seed_kategori.sql` (yang benar-benar dijalankan `backend/app/seed_kategori.py`).
-Migrasi tahun yang sudah dijalankan: `docs/perbaikan-tahun-katalog.sql` +
-`backend/perbaiki_tahun.py`.
+Migrasi tahun yang sudah dijalankan: `docs/perbaikan-tahun-katalog.sql`. Pembungkus
+Python-nya (`backend/perbaiki_tahun.py`, 300 baris) dibuang 22 September 2026 — sekali
+jalan, sudah jalan, dan SQL-nya tetap jadi catatan yang berlaku.
 
 ## Kebiasaan kerja
 

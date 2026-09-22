@@ -132,6 +132,13 @@ async def import_docking_preview(
         result = docking_parser.parse_docking_file(content, file.filename or "upload.xlsx")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
+    # Ditaruh PALING DEPAN di daftar peringatan: kalau berkasnya memang sudah pernah masuk,
+    # tidak ada gunanya membaca 13 peringatan lain soal baris yang mana pun.
+    result["warnings"] = catalog_service.peringatan_impor_ganda(
+        result.get("detected_nama_kapal") or "",
+        [(r.get("uraian"), r.get("harga"), r.get("volume"))
+         for r in result.get("induk", []) + result.get("addendum", [])],
+    ) + result.get("warnings", [])
     return result
 
 
@@ -183,9 +190,14 @@ async def import_repair_list_preview(
 ):
     content = await file.read()
     try:
-        return repair_list_parser.parse_repair_list_file(content, file.filename or "upload.xlsx")
+        hasil = repair_list_parser.parse_repair_list_file(content, file.filename or "upload.xlsx")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
+    hasil["warnings"] = catalog_service.peringatan_impor_ganda(
+        hasil.get("detected_nama_kapal") or "",
+        [(r.get("uraian"), r.get("harga"), r.get("volume")) for r in hasil.get("items", [])],
+    ) + hasil.get("warnings", [])
+    return hasil
 
 
 @router.post("/import/repair-list-commit")
