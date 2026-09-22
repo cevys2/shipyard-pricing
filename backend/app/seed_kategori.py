@@ -1,12 +1,15 @@
 """Master kategori pekerjaan kanonik + pemetaan sebutan lama.
 
-11 kategori (10 jenis pekerjaan + LAIN-LAIN) dan 100 alias. Yang 83 pertama disepakati VP
+11 kategori (10 jenis pekerjaan + LAIN-LAIN) dan 126 alias. Yang 83 pertama disepakati VP
 marketing 2026; 7 berikutnya ditambahkan 18 Agustus 2026 setelah menghitung cadangan
 produksi 17 Agustus menemukan 549 baris berteks kategori yang belum punya alias sama
 sekali; 7 terakhir ditambahkan 24 Agustus 2026 untuk sebutan seksi di berkas REPAIR LIST,
 yang bentuknya memang beda dari laporan realisasi docking (tanpa alias itu, 374 dari 385
-baris tiga repair list Basarnas masuk tanpa kategori sama sekali); 3 terakhir muncul waktu
-seluruh arsip 20 berkas dibaca sekaligus, 24 Agustus 2026.
+baris tiga repair list Basarnas masuk tanpa kategori sama sekali); 3 berikutnya muncul waktu
+seluruh arsip 20 berkas dibaca sekaligus, 24 Agustus 2026; 26 terakhir ditambahkan
+22 September 2026 setelah deploy menemukan 321 baris produksi yang teks kategorinya belum
+punya alias sama sekali -- 13 di antaranya jatuh ke LAIN-LAIN, semuanya mengikuti preseden
+yang sudah ada di sana, dan dua cuma soal en-dash (U+2013) yang dikira hyphen.
 Catatan lengkap keputusannya ada di `docs/bundel-kategori-claude-code.md`; peta yang sama
 tersimpan sebagai data mentah di `docs/final_peta.json`, dan `tests/test_kategori.py`
 menjaga keduanya tidak berpisah diam-diam.
@@ -42,11 +45,25 @@ PETA: dict[str, tuple[str, ...]] = {
         # perpipaannya karena begitulah dokumennya menyatukan mereka; memecahnya butuh
         # kategori "POMPA" tersendiri, dan itu keputusan yang lebih besar dari ini.
         "POMPA DAN PERPIPAAN",
+        # Dua sebutan dari arsip yang dibaca 22 September 2026. Yang pertama cuma soal
+        # tanda baca: en-dash (U+2013), bukan hyphen -- `kategori_norm_sql()` merapikan
+        # spasi dan huruf besar, tapi TIDAK menyentuh tanda hubung, jadi ini memang
+        # sebutan yang berbeda buat resolver. 34 baris.
+        # Pompa ikut ke sini bersama perpipaannya, sejalan dengan keputusan di atas.
+        'PIPA – PIPA',
+        'PEKERJAAN POMPA-POMPA DAN PERPIPAAN',
     ),
     "REPLATING": (
         "PEKERJAAN REPLATING",
         "PEKERJAAN REPLATING PLAT",
         "REPLATING",
+        # Dua sebutan yang MENGGABUNG replating dengan kategori lain (lambung,
+        # konstruksi). Dipetakan ke REPLATING, bukan LAIN-LAIN: replating disebut
+        # lebih dulu dan pekerjaan penggantian pelat itu yang paling menentukan
+        # biayanya. Ini pilihan, bukan kepastian -- 71 baris, dan kalau ternyata
+        # isinya lebih banyak perawatan lambung, pindahkan barisnya ke sana.
+        'REPLATING & LAMBUNG',
+        'REPLATING DAN KONTRUKSI',
     ),
     "PELAYANAN UMUM": (
         # Seksi I repair list: satu baris lump sum Rp 100 juta. Sebutannya menggabung dua
@@ -64,6 +81,11 @@ PETA: dict[str, tuple[str, ...]] = {
         "PELAYANAN UMUM KAPAL ( GENERAL SERVICES )",
         "PELAYANAN UMUM/GENERAL SERVICES",
         "UMUM",
+        # Keduanya bentuk lain dari general service. Yang kedua mengikuti keputusan
+        # yang sama dengan alias "DOCKING/ GENERAL SERVICE" di atas -- dan kalau
+        # keputusan itu nanti dibalik, kedua baris ini pindah bersama.
+        'BAGIAN UMUM (GENERAL SERVICE )',
+        'PEKERJAAN DOCKING/GENERAL SERVICE',
     ),
     "PERAWATAN LAMBUNG": (
         "ATAS GARIS AIR",
@@ -80,6 +102,8 @@ PETA: dict[str, tuple[str, ...]] = {
         "PERAWATAN LAMBUNG (BGA)",
         "PERAWATAN LAMBUNG (HULL)",
         "PERAWATAN LAMBUNG KAPAL",
+        # Bentuk lain dari "PERAWATAN LAMBUNG KAPAL (BGA) & (AGA)" yang sudah ada.
+        'PERAWATAN LAMBUNG (BGA + AGA)',
     ),
     "KEMUDI, PROPELLER & POROS": (
         "KEMUDI, PROPELLER & POROS",
@@ -95,6 +119,9 @@ PETA: dict[str, tuple[str, ...]] = {
         "TAIL SAHFT, PROPELLER, RUDDER DAN STERN BUSH",
         "TAIL SHAFT, PROPELLER, RUDDER & STERN BUSH",
         "VOID KEMUDI",
+        # Sejalan dengan "SISTEM PROPULSI" dan "PEKERJAAN PROPULSI" yang sudah ada.
+        'PEKERJAAN SISTEM PROPULSI',
+        'PEKERJAAN SISTEM PROPULSI DAN KEMUDI',
     ),
     "SEA CHEST & VALVE": (
         "KRAN-KRAN",
@@ -105,6 +132,8 @@ PETA: dict[str, tuple[str, ...]] = {
         "SEA CHEST DAN SEA VALVE",
         "SEA CHEST, SEA VALVE & OVER BOARD",
         "VALVE-VALVE",
+        # "SEACHEST" tanpa spasi; sisanya sama dengan "SEA CHEST DAN SEA VALVE".
+        'SEACHEST DAN SEA VALVE',
     ),
     "DOCKING & UNDOCKING": (
         "DOCKING & UNDOCKING",
@@ -126,6 +155,10 @@ PETA: dict[str, tuple[str, ...]] = {
         "JANGKAR, RANTAI JANGKAR DAN CERUK JANGKAR "
         "( RANTAI = 40 MM , KANAN = 8 SEGEL, KIRI = 7 SEGEL )",
         "RANTAI JANGKAR DAN CERUK",
+        # Yang kedua memuat jumlah segel di dalam kurung, persis pola yang sudah
+        # ada di alias '... ( RANTAI = 40 MM , KANAN = 8 SEGEL, KIRI = 7 SEGEL )'.
+        'JANGKAR DAN RANTAI JANGKAR',
+        'JANGKAR, RANTAI JANGKAR DAN CERUK JANGKAR ( KANAN = 10 SEGEL KIRI = 9 SEGEL )',
     ),
     "TANGKI": (
         # CLEANING (5 baris) masuk sini, bukan PERAWATAN LAMBUNG -- asumsi K-A1.
@@ -135,6 +168,8 @@ PETA: dict[str, tuple[str, ...]] = {
         "TANGKI - TANGKI",
         "TANGKI-TANGKI",
         "TANK CLEANING",
+        # En-dash lagi, plus "DAN KOMPARTEMENT". Bandingkan "TANGKI - TANGKI" di atas.
+        'TANGKI – TANGKI DAN KOMPARTEMENT',
     ),
     "LAIN-LAIN": (
         # 442 baris PEKERJAAN TAMBAHAN / ADDITIONAL WORK jatuh ke sini (keputusan K-5),
@@ -170,6 +205,29 @@ PETA: dict[str, tuple[str, ...]] = {
         "PERLENGKAPAN LAMBUNG, PEMADAM,INTERIOR DAN KELISTRIKAN KAPAL",
         "PERMESINAN",
         "ULTRASONIC TEST DAN NDT",
+        # 13 sebutan dari arsip 22 September 2026 yang tidak punya padanan di 10
+        # kategori kerja. Tidak satu pun tebakan baru -- semuanya mengikuti preseden
+        # yang sudah ada di daftar ini: PERMESINAN/KAMAR MESIN untuk permesinan dan
+        # engine room, PEKERJAAN LISTRIK untuk kelistrikan, NAVIGASI DAN KOMUNIKASI,
+        # ULTRASONIC TEST DAN NDT untuk UT ketebalan pelat, dan tiga sebutan dek
+        # (CAR DECK, TOP DECK, "... NON REPLATING") yang sudah lebih dulu di sini.
+        #
+        # Yang paling besar PEKERJAAN PERMESINAN (36 baris) dan ENGINE ROOM (31).
+        # Keduanya menguatkan catatan lama: kategori PERMESINAN tersendiri makin
+        # terasa perlu, tapi itu keputusan master data, bukan keputusan impor.
+        'PEKERJAAN PERMESINAN',
+        'ENGINE ROOM',
+        'CAR DECK & DECK WINCH',
+        'CAR DECK',
+        'PEKERJAAN PERLENGKAPAN LAMBUNG, PEMADAM,INTERIOR DAN KELISTRIKAN KAPAL',
+        'TOP DECK DAN DECK ANJUNGAN',
+        'ERECTION DECK',
+        'KELISTRIKAN',
+        'PEKERJAAN FUMIGASI',
+        'PEKERJAAN PERLENGKAPAN KESELAMATAN DAN PEMADAM',
+        'PEKERJAAN NAVIGASI DAN KOMUNIKASI',
+        'PROMENADE DECK',
+        'PEKERJAAN PENGECEKAN KETEBALAN PLAT / ULTRASONIC THICKNESS TEST (UT) 400 TITIK',
     ),
 }
 

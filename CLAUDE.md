@@ -36,7 +36,7 @@ backend/app/
   database.py       -- SEMUA DDL ada di sini (lihat "Perubahan skema" di bawah)
   auth.py           -- verifikasi JWT saja
   config.py         -- settings, termasuk catalog_table = "tabel_katalog_harga"
-  seed_kategori.py  -- 11 kategori + 100 alias, dipakai ensure_kategori_table()
+  seed_kategori.py  -- 11 kategori + 126 alias, dipakai ensure_kategori_table()
   routers/          -- ahsp, analitik, catalog, kategori, material
   services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian,
                        repair_list_parser
@@ -105,7 +105,7 @@ nilainya dari layar dulu — jangan cukup menambahkannya di SQL.
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 analitik **nilai pekerjaan** (volume × harga; 22 September 2026), filter **jenis kapal**,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
-baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 100 alias), dan
+baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 alias), dan
 impor Repair List (mode ketiga di tab Import Excel).
 
 Diketahui terbatas:

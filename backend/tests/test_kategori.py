@@ -82,7 +82,7 @@ def test_peta_python_sama_dengan_final_peta_json():
 
 def test_jumlah_kategori_dan_alias():
     assert len(PETA) == 11
-    assert len(baris_alias()) == 100
+    assert len(baris_alias()) == 126
 
 
 def test_alias_tersimpan_dalam_bentuk_hasil_normalisasi():
@@ -108,7 +108,7 @@ def test_seed_idempoten():
     ensure_kategori_table()
     with engine.connect() as c:
         assert c.execute(text("SELECT count(*) FROM kategori")).scalar() == 11
-        assert c.execute(text("SELECT count(*) FROM kategori_alias")).scalar() == 100
+        assert c.execute(text("SELECT count(*) FROM kategori_alias")).scalar() == 126
         assert c.execute(
             text("SELECT count(DISTINCT urutan) FROM kategori")
         ).scalar() == 11
