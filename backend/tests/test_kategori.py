@@ -368,3 +368,64 @@ def test_bentuk_ekspresi_normalisasi_dipaku():
         "upper(btrim(regexp_replace(replace(kategori_pekerjaan, chr(160), ' '), "
         "'\\s+', ' ', 'g')))"
     )
+
+
+def test_impor_dan_edit_langsung_berkategori_tanpa_menunggu_deploy():
+    """Dulu baris baru baru dapat `kategori_id` di app start berikutnya, jadi cakupan
+    kategori turun tiap impor. Sekarang resolver jalan di INSERT dan UPDATE itu sendiri --
+    tes ini sengaja TIDAK memanggil `selaraskan_kategori()`."""
+    from app.schemas.catalog import (
+        BulkCatalogCreate,
+        BulkPatchRequest,
+        CatalogItemBase,
+        TipePerjanjian,
+    )
+    from app.services.catalog import bulk_create, bulk_patch
+
+    bulk_create(
+        BulkCatalogCreate(
+            nama_kapal="KMP. TES",
+            tahun="2025",
+            items=[
+                CatalogItemBase(kategori_pekerjaan="Pipa-Pipa", uraian_pekerjaan="a", harga_satuan=1),
+                CatalogItemBase(kategori_pekerjaan="BELUM ADA ALIASNYA", uraian_pekerjaan="b", harga_satuan=1),
+            ],
+        ),
+        aktor="tes",
+    )
+    a, b = "KMP._TES-2025-001", "KMP._TES-2025-002"
+    assert _kategori_dari(a) == "PIPA - PIPA"
+    assert _kategori_dari(b) is None
+
+    def ubah(id_, kategori):
+        bulk_patch(
+            BulkPatchRequest(
+                updates=[
+                    {
+                        "id": id_,
+                        "data": {
+                            "nama_perusahaan": "", "nama_kapal": "KMP. TES",
+                            "tipe_perjanjian": TipePerjanjian.induk, "tahun": "2025",
+                            "kategori_pekerjaan": kategori, "uraian_pekerjaan": "x",
+                            "volume_satuan": "-", "harga_satuan": 1,
+                        },
+                    }
+                ]
+            ),
+            aktor="tes",
+        )
+
+    ubah(b, "REPLATING")
+    assert _kategori_dari(b) == "REPLATING"
+
+    # Koreksi manual kebal: mengubah teksnya tidak menimpa kategori pilihan manusia.
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "UPDATE tabel_katalog_harga SET kategori_sumber = 'manual', "
+                "kategori_id = (SELECT id FROM kategori WHERE nama = 'LAIN-LAIN') WHERE id = :id"
+            ),
+            {"id": a},
+        )
+    ubah(a, "REPLATING")
+    assert _kategori_dari(a) == "LAIN-LAIN"

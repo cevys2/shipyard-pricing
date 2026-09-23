@@ -26,7 +26,11 @@ os.environ.setdefault("JWT_SECRET", "rahasia-tes-saja")
 
 from sqlalchemy import text  # noqa: E402
 
-from app.database import engine, ensure_katalog_kolom_rincian  # noqa: E402
+from app.database import (  # noqa: E402
+    engine,
+    ensure_kategori_table,
+    ensure_katalog_kolom_rincian,
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -38,6 +42,8 @@ def kolom_rincian_siap():
     ada, dan errornya menuding tesnya, bukan setup DB-nya.
     """
     ensure_katalog_kolom_rincian()
+    # INSERT katalog me-resolve `kategori_id` lewat `kategori_alias`, jadi keduanya harus ada.
+    ensure_kategori_table()
 
 
 @pytest.fixture(autouse=True)

@@ -312,6 +312,14 @@ def kategori_norm_sql(kolom: str = "kategori_pekerjaan") -> str:
     return f"upper(btrim(regexp_replace(replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')))"
 
 
+# Resolver satu baris, untuk ditaruh langsung di INSERT/UPDATE katalog. Tanpa ini baris
+# hasil impor menunggu `selaraskan_kategori()` di app start berikutnya -- cakupan kategori
+# turun tiap impor dan baru pulih tiap deploy. Aturannya sama persis dengan resolver itu:
+# alias yang tidak dikenal tetap NULL.
+def kategori_id_sql(kolom: str) -> str:
+    return f"(SELECT kategori_id FROM kategori_alias WHERE alias = {kategori_norm_sql(kolom)})"
+
+
 def ensure_katalog_kolom_rincian() -> None:
     """Empat kolom nullable di `tabel_katalog_harga` untuk rincian yang selama ini hilang.
 

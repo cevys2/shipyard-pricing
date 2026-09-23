@@ -131,11 +131,13 @@ Diketahui terbatas:
   di seluruh baris; cuma `qty` yang dipakai.
 - `uq_sd_identitas` cuma menolak nama yang persis sama, jadi penjaga duplikat di layar
   sengaja dibuat lebih longgar daripada index-nya.
-- **Cakupan kategori: 90,2% di produksi saat ini, 100% begitu di-deploy.** Sebabnya
-  `selaraskan_kategori()` cuma jalan saat app start (di ujung `ensure_kategori_table()`),
-  **belum di jalur impor Excel** — jadi baris hasil impor menunggu deploy berikutnya. Angkanya
-  turun lagi tiap impor baru dan pulih lagi tiap deploy. Kelihatan di tab Analitik
-  (`cakupan.tanpa_kategori`).
+- **Cakupan kategori tidak lagi turun tiap impor** (23 September 2026). Dulu
+  `selaraskan_kategori()` cuma jalan saat app start, jadi baris hasil impor menunggu deploy
+  berikutnya (90,2% di produksi sebelum itu). Sekarang `database.kategori_id_sql()` me-resolve
+  `kategori_id` di dalam INSERT `_insert_rows()` — semua jalur simpan lewat situ — dan di
+  UPDATE `bulk_patch()` untuk baris `kategori_sumber = 'alias'`. `selaraskan_kategori()` tetap
+  jalan saat app start untuk alias yang baru ditambahkan. Yang masih bisa kosong hanyalah
+  sebutan yang belum punya alias. Kelihatan di tab Analitik (`cakupan.tanpa_kategori`).
   Riwayatnya: per cadangan 17 Agustus 2026, 6.017/6.673 baris punya `kategori_id`, 656 kosong;
   107 di antaranya cocok alias lama, sisanya 549 memakai tujuh sebutan yang belum punya alias.
   Ketujuhnya ditambahkan 18 Agustus (83 → 90 alias) → dihitung ulang terhadap cadangan yang

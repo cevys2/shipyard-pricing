@@ -9,7 +9,13 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.config import settings
-from app.database import JENIS_KAPAL_SQL, KOLOM_CARI_KATALOG, NAMA_KAPAL_NORM_SQL, engine
+from app.database import (
+    JENIS_KAPAL_SQL,
+    KOLOM_CARI_KATALOG,
+    NAMA_KAPAL_NORM_SQL,
+    engine,
+    kategori_id_sql,
+)
 from app.schemas.catalog import (
     BulkCatalogCreate,
     BulkPatchRequest,
@@ -209,7 +215,10 @@ def _insert_rows(conn: Connection, rows: list[dict[str, Any]]) -> None:
         chunk = rows[start : start + _INSERT_CHUNK]
         placeholders, params = [], {}
         for i, r in enumerate(chunk):
-            placeholders.append("(" + ", ".join(f":{c}{i}" for c in _INSERT_COLS) + ")")
+            placeholders.append(
+                "(" + ", ".join(f":{c}{i}" for c in _INSERT_COLS)
+                + f", {kategori_id_sql(f':kat{i}')})"
+            )
             for c in _INSERT_COLS:
                 params[f"{c}{i}"] = r[c]
         conn.execute(
@@ -218,7 +227,7 @@ def _insert_rows(conn: Connection, rows: list[dict[str, Any]]) -> None:
                 INSERT INTO {TABLE}
                 (id, nama_perusahaan, nama_kapal, tipe_perjanjian, tahun,
                  kategori_pekerjaan, uraian_pekerjaan, volume_satuan, harga_satuan,
-                 volume, satuan, induk_uraian, keterangan)
+                 volume, satuan, induk_uraian, keterangan, kategori_id)
                 VALUES {", ".join(placeholders)}
                 """
             ),
@@ -367,7 +376,10 @@ def bulk_patch(body: BulkPatchRequest, *, aktor: str) -> dict[str, int]:
                 UPDATE {TABLE}
                 SET nama_perusahaan = :pt, nama_kapal = :kpl, tipe_perjanjian = :tipe, tahun = :thn,
                     kategori_pekerjaan = :kat, uraian_pekerjaan = :urai,
-                    volume_satuan = :sat, harga_satuan = :hrg
+                    volume_satuan = :sat, harga_satuan = :hrg,
+                    -- Teks kategori bisa berubah di sini; kategori_id ikut, kecuali koreksi manual.
+                    kategori_id = CASE WHEN kategori_sumber = 'alias'
+                                       THEN {kategori_id_sql(":kat")} ELSE kategori_id END
                 WHERE id = :id
                 """
             )
