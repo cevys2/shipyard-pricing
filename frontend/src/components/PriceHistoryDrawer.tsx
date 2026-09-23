@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import {
@@ -65,11 +65,19 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
     load();
   }, [load]);
 
+  // <dialog> bawaan + showModal(): halaman di belakang jadi inert (Tab tidak kabur ke
+  // sana), fokus masuk ke drawer, dan Esc menutup -- tanpa pustaka. Fokus dikembalikan
+  // sendiri ke tombol pembukanya, karena drawer ini dilepas dari DOM, bukan di-close().
+  const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [onClose]);
+    const d = dialogRef.current;
+    const pembuka = document.activeElement as HTMLElement | null;
+    if (d && !d.open) d.showModal();
+    return () => {
+      d?.close();
+      pembuka?.focus();
+    };
+  }, []);
 
   // Mata uang berbeda TIDAK boleh masuk satu garis -- 456 EUR dan 48.000 IDR di satu
   // sumbu-Y bikin grafik yang terlihat masuk akal padahal tak berarti apa-apa. Jadi
@@ -179,14 +187,22 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} aria-hidden />
-      <aside className="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-white shadow-2xl">
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="judul-riwayat-harga"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-2xl border-0 p-0 backdrop:bg-slate-900/40"
+    >
+      <aside className="flex h-full w-full flex-col overflow-y-auto bg-white shadow-2xl">
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Riwayat Harga</p>
-              <h3 className="font-display text-xl font-bold text-slate-900">{material.nama}</h3>
+              <h3 id="judul-riwayat-harga" className="font-display text-xl font-bold text-slate-900">{material.nama}</h3>
               <p className="mt-0.5 text-sm text-slate-500">
                 {material.spesifikasi || "tanpa spesifikasi"} &middot; satuan {material.satuan}
               </p>
@@ -461,7 +477,7 @@ export default function PriceHistoryDrawer({ token, material, onClose, onChanged
           )}
         </div>
       </aside>
-    </div>
+    </dialog>
   );
 }
 

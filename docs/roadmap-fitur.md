@@ -50,6 +50,14 @@ Satu langkah kecil sudah diambil di arah itu: `index.css` sekarang punya **satu*
 `:focus-visible` untuk semua yang bisa di-Tab, menggantikan keadaan lama di mana tiap
 komponen memutuskan sendiri dan sebagian tidak memutuskan apa pun.
 
+**Diperiksa ulang 23 September 2026 — Radix tidak dipasang.** Kodenya ternyata tidak
+seperti yang diduga paragraf di atas: ke-17 dropdown adalah `<select>` bawaan, navigasi tab
+berupa tombol biasa, konfirmasi hapus memakai `confirm()` bawaan. Satu-satunya overlay buatan
+tangan adalah drawer Riwayat Harga, dan itu dipindah ke `<dialog>` + `showModal()` bawaan:
+Tab terkurung di drawer, Esc dan klik latar menutup, fokus kembali ke tombol "Riwayat" asalnya.
+Radix baru layak dipertimbangkan kalau muncul widget yang tidak punya padanan bawaan —
+combobox dengan pencarian, menu konteks, tooltip.
+
 ### Normalisasi satuan — prasyarat, bukan fitur
 `satuan` punya 37 ejaan untuk ~20 satuan nyata (`m²`/`m2`/`m'`, `mtr`/`m`/`mter`,
 `pcs`/`pc`/`buah`/`bh`, `tangki`/`tanki`, `liter`/`ltr`, `segel`/`shackle`). Belum
