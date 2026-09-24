@@ -17,7 +17,11 @@ export function cekBerkas(namaBerkas: string, terima: string[]): string | null {
   // TODO(Lutfi): isi fungsi ini, lalu hapus dua baris `void` di bawah.
   // Selama masih begini, semua berkas diloloskan dan backend yang menolak -- sama persis
   // dengan perilaku sebelum pemeriksaan ini ada, jadi app tetap jalan.
-  void namaBerkas;
-  void terima;
-  return null;
+  
+  const posisi = namaBerkas.lastIndexOf(".");
+  const ext = namaBerkas.slice(posisi);
+  ext.toLowerCase();
+  if (terima.includes(ext)) return null;
+
+  
 }
