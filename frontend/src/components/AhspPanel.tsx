@@ -123,12 +123,9 @@ export default function AhspPanel({ auth }: Props) {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-display text-lg font-bold text-slate-900">Struktur Biaya</h2>
-          <p className="text-xs text-slate-500">
-            Rincian biaya modal per item yang dijual — dasar justifikasi harga ke pelanggan.
-          </p>
-        </div>
+        <p className="text-sm text-slate-500">
+          Rincian biaya modal per item yang dijual — dasar justifikasi harga ke pelanggan.
+        </p>
         <button
           type="button"
           onClick={() => setShowForm((s) => !s)}

@@ -13,6 +13,7 @@ import DockingImportPanel from "../components/DockingImportPanel";
 import RepairListImportPanel from "../components/RepairListImportPanel";
 import MaterialCatalogPanel from "../components/MaterialCatalogPanel";
 import AhspPanel from "../components/AhspPanel";
+import PilihBerkas from "../components/PilihBerkas";
 // recharts itu dependensi terbesar di app ini (~100 kB gzip). Tab Analitik bukan
 // tampilan awal, jadi di-lazy supaya recharts tidak ikut di bundle pertama.
 const AnalitikPanel = lazy(() => import("../components/AnalitikPanel"));
@@ -126,6 +127,13 @@ export default function DashboardPage({ auth, onLogout }: Props) {
     { key: "analitik", label: "Analitik", icon: TrendingUp },
     { key: "import", label: "Import Excel", icon: Upload },
   ];
+  const judulTab = navItems.find((n) => n.key === tab)?.label ?? "";
+
+  const importModes: { key: typeof importMode; label: string }[] = [
+    { key: "docking", label: "Laporan Docking" },
+    { key: "repair", label: "Repair List / Rincian" },
+    { key: "flat", label: "Format Rapi" },
+  ];
 
   return (
     <div className="flex min-h-screen">
@@ -179,21 +187,27 @@ export default function DashboardPage({ auth, onLogout }: Props) {
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
+        {/* Tinggi dikunci setinggi versi yang ada kotak carinya, supaya halaman tidak melompat
+            2px waktu pindah ke tab yang tidak punya kotak cari. */}
+        <header className="flex min-h-[71px] items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
           <div className="flex items-center gap-3">
             <img src={logoFull} alt="PT Dukuh Raya Shipyard" className="h-9 w-auto" />
             <span className="h-8 w-px bg-slate-200" />
-            <h2 className="font-display text-lg font-bold text-slate-900">Overview Dashboard</h2>
+            <h1 className="font-display text-lg font-bold text-slate-900">{judulTab}</h1>
           </div>
-          <div className="relative w-72">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              placeholder="Cari uraian / kategori pekerjaan..."
-              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-blue-100"
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            />
-          </div>
+          {/* Kotak ini cuma menyaring tabel katalog jasa. Dulu dia tampil di semua tab, jadi
+              di Katalog Material ada dua kotak cari dan yang di atas diam-diam menyaring tab lain. */}
+          {tab === "view" && (
+            <div className="relative w-72">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                placeholder="Cari uraian / kategori pekerjaan..."
+                className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-blue-100"
+                value={filters.search}
+                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+              />
+            </div>
+          )}
         </header>
 
         <main className="flex-1 p-6">
@@ -269,28 +283,23 @@ export default function DashboardPage({ auth, onLogout }: Props) {
 
           {tab === "import" && (
             <div className="max-w-3xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-              <div className="mb-5 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setImportMode("docking")}
-                  className={`btn btn-sm ${importMode === "docking" ? "btn-primary" : "btn-secondary"}`}
-                >
-                  Laporan Docking (otomatis Induk/Addendum)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportMode("repair")}
-                  className={`btn btn-sm ${importMode === "repair" ? "btn-primary" : "btn-secondary"}`}
-                >
-                  Repair List / Rincian Negosiasi
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportMode("flat")}
-                  className={`btn btn-sm ${importMode === "flat" ? "btn-primary" : "btn-secondary"}`}
-                >
-                  Format Rapi (kolom sudah bersih)
-                </button>
+              {/* Bentuknya sama dengan pilihan Bahan/Upah/Alat di Katalog Material: satu
+                  pilihan aktif dari beberapa, bukan tiga tombol aksi yang berdiri sendiri. */}
+              <div className="mb-6 inline-flex flex-wrap rounded-lg border border-slate-300 bg-white p-0.5">
+                {importModes.map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => setImportMode(m.key)}
+                    aria-pressed={importMode === m.key}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                      importMode === m.key ? "text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                    style={importMode === m.key ? { background: "var(--marine)" } : undefined}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
 
               {importMode === "docking" ? (
@@ -339,15 +348,9 @@ export default function DashboardPage({ auth, onLogout }: Props) {
                     akan ditolak dengan menyebut kapalnya — sebelumnya berkas seperti itu tetap diproses dan
                     semua barisnya tercatat atas nama kapal yang kebetulan muncul paling atas.
                   </p>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    className="mt-6 block w-full text-sm"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void onImport(f);
-                    }}
-                  />
+                  <div className="mt-6">
+                    <PilihBerkas terima={[".xlsx", ".xls", ".csv"]} onPilih={(f) => void onImport(f)} />
+                  </div>
                   {importMsg && <p className="mt-4 text-sm text-slate-700">{importMsg}</p>}
                 </>
               )}

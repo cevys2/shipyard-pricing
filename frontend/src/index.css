@@ -67,6 +67,33 @@ table,
   border-radius: 6px;
 }
 
+/* Area pilih berkas di tab Import. Input aslinya disembunyikan (`sr-only`) tapi tetap bisa
+   di-Tab, jadi cincin fokusnya dipindah ke kotak yang kelihatan -- kalau tidak, aturan
+   fokus di atas menggambar cincin di elemen yang tak terlihat. */
+.drop-zone {
+  @apply flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center;
+  transition: border-color 150ms, background-color 150ms;
+}
+.drop-zone:not([aria-disabled="true"]):hover {
+  @apply border-slate-400 bg-white;
+}
+.drop-zone[data-seret="ya"] {
+  border-color: var(--marine);
+  background: color-mix(in oklch, var(--marine) 6%, white);
+}
+.drop-zone:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.drop-zone[aria-disabled="true"] {
+  @apply cursor-not-allowed opacity-60;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-zone {
+    transition: none;
+  }
+}
+
 .cell-input {
   @apply w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none transition-colors;
 }

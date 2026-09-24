@@ -102,7 +102,6 @@ export default function MaterialCatalogPanel({ auth }: Props) {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-lg font-bold text-slate-900">{JUDUL[jenis]}</h2>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex rounded-lg border border-slate-300 bg-white p-0.5">
             {JENIS_SUMBER_DAYA.map((j) => (

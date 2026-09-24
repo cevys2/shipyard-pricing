@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CheckCircle2, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, formatRp, type RepairListPreview } from "../lib/api";
+import PilihBerkas from "./PilihBerkas";
 
 type Props = {
   token: string;
@@ -141,15 +142,7 @@ export default function RepairListImportPanel({ token, onImported }: Props) {
 
   return (
     <div>
-      <input
-        type="file"
-        accept=".xlsx,.xls"
-        className="block w-full text-sm"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void handleFile(f);
-        }}
-      />
+      <PilihBerkas terima={[".xlsx", ".xls"]} disabled={loading} onPilih={(f) => void handleFile(f)} />
       {loading && menyimpan === 0 && <p className="mt-3 text-sm text-slate-500">Memproses...</p>}
       {menyimpan > 0 && (
         <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
