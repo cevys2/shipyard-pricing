@@ -14,14 +14,8 @@
  * Aturannya dijaga `tests/berkas.test.ts`. Jalankan: `npm test` dari folder frontend.
  */
 export function cekBerkas(namaBerkas: string, terima: string[]): string | null {
-  // TODO(Lutfi): isi fungsi ini, lalu hapus dua baris `void` di bawah.
-  // Selama masih begini, semua berkas diloloskan dan backend yang menolak -- sama persis
-  // dengan perilaku sebelum pemeriksaan ini ada, jadi app tetap jalan.
-  
   const posisi = namaBerkas.lastIndexOf(".");
-  const ext = namaBerkas.slice(posisi);
-  ext.toLowerCase();
+  const ext = namaBerkas.slice(posisi).toLowerCase();
   if (terima.includes(ext)) return null;
-
-  
+  return `Extension ${ext} tidak sesuai dengan aturan. Pilih berkas ${terima.join(", ")}.`;
 }
