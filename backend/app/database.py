@@ -312,12 +312,24 @@ def kategori_norm_sql(kolom: str = "kategori_pekerjaan") -> str:
     return f"upper(btrim(regexp_replace(replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')))"
 
 
-# Resolver satu baris, untuk ditaruh langsung di INSERT/UPDATE katalog. Tanpa ini baris
-# hasil impor menunggu `selaraskan_kategori()` di app start berikutnya -- cakupan kategori
-# turun tiap impor dan baru pulih tiap deploy. Aturannya sama persis dengan resolver itu:
-# alias yang tidak dikenal tetap NULL.
+# Resolver satu baris -- SATU-SATUNYA definisi aturan kategori. Dipakai INSERT/UPDATE katalog
+# dan juga oleh `selaraskan_kategori()` di app start; kalau keduanya punya aturan sendiri,
+# mengedit harga sebuah baris bisa menghapus kategori yang diberikan resolver lainnya.
+#
+# 1. Alias persis dulu: keputusan manusia untuk satu teks tertentu selalu menang.
+# 2. Fallback: teks yang DIAWALI "PEKERJAAN TAMBAHAN" -> LAIN-LAIN, mengikuti keputusan K-5.
+#    Seksi tambahan di laporan docking ditulis bertanggal ("PEKERJAAN TAMBAHAN/ Senin,
+#    25-05-2026"), jadi tiap berkas membawa teks baru yang tidak akan pernah punya alias
+#    persis -- 303 baris kosong per 5 Oktober 2026. Pakai awalan, bukan "memuat": "PEKERJAAN
+#    TAMBAHAN PIPA- PIPA" punya alias persis ke PIPA dan tetap ditangkap langkah 1.
+# Selain itu tetap NULL.
 def kategori_id_sql(kolom: str) -> str:
-    return f"(SELECT kategori_id FROM kategori_alias WHERE alias = {kategori_norm_sql(kolom)})"
+    norm = kategori_norm_sql(kolom)
+    return (
+        f"COALESCE((SELECT kategori_id FROM kategori_alias WHERE alias = {norm}), "
+        f"CASE WHEN {norm} LIKE 'PEKERJAAN TAMBAHAN%' "
+        f"THEN (SELECT id FROM kategori WHERE nama = 'LAIN-LAIN') END)"
+    )
 
 
 def ensure_katalog_kolom_rincian() -> None:
@@ -463,7 +475,11 @@ def ensure_kategori_table() -> None:
 
 
 def selaraskan_kategori() -> int:
-    """Isi `kategori_id` dari `kategori_alias`. Mengembalikan jumlah baris yang berubah.
+    """Isi `kategori_id` lewat `kategori_id_sql()`. Mengembalikan jumlah baris yang berubah.
+
+    Memakai resolver yang sama dengan INSERT/UPDATE katalog, termasuk fallback PEKERJAAN
+    TAMBAHAN, supaya hasil app start dan hasil menyunting satu baris tidak pernah berbeda.
+    Akibatnya baris yang aliasnya sudah dihapus ikut jadi NULL, bukan memegang kategori lama.
 
     Hanya menyentuh baris `kategori_sumber = 'alias'` -- koreksi manusia (`'manual'`) kebal,
     termasuk kalau ada baris lain berteks kategori sama yang tetap ikut resolver.
@@ -476,11 +492,9 @@ def selaraskan_kategori() -> int:
             text(
                 f"""
                 UPDATE {settings.catalog_table} t
-                SET    kategori_id = a.kategori_id
-                FROM   kategori_alias a
+                SET    kategori_id = {kategori_id_sql("t.kategori_pekerjaan")}
                 WHERE  t.kategori_sumber = 'alias'
-                  AND  {kategori_norm_sql("t.kategori_pekerjaan")} = a.alias
-                  AND  t.kategori_id IS DISTINCT FROM a.kategori_id
+                  AND  t.kategori_id IS DISTINCT FROM {kategori_id_sql("t.kategori_pekerjaan")}
                 """
             )
         )

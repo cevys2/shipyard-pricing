@@ -429,3 +429,71 @@ def test_impor_dan_edit_langsung_berkategori_tanpa_menunggu_deploy():
         )
     ubah(a, "REPLATING")
     assert _kategori_dari(a) == "LAIN-LAIN"
+
+
+# --- fallback PEKERJAAN TAMBAHAN -> LAIN-LAIN (5 Oktober 2026) ---------------------------
+
+def test_tambahan_bertanggal_jatuh_ke_lain_lain():
+    """Seksi tambahan ditulis bertanggal, jadi tiap berkas membawa teks baru yang tidak akan
+    pernah punya alias persis. Ejaan diambil persis dari GILIMANUK 2026 dan KLM. PRANA."""
+    _tulis([
+        {"id": "T1", "kategori": "PEKERJAAN TAMBAHAN/ Senin, 25-05-2026"},
+        {"id": "T2", "kategori": "PEKERJAAN TAMBAHAN/Senin, 04-5-2026"},
+        {"id": "T3", "kategori": "PEKERJAAN TAMBAHAN /Sabtu, 26/09/2026"},
+        {"id": "T4", "kategori": "pekerjaan  tambahan, Rabu 02-09-2026"},
+    ])
+    selaraskan_kategori()
+    for id_ in ("T1", "T2", "T3", "T4"):
+        assert _kategori_dari(id_) == "LAIN-LAIN", id_
+
+
+def test_alias_persis_menang_atas_fallback():
+    """"PEKERJAAN TAMBAHAN PIPA- PIPA" juga diawali PEKERJAAN TAMBAHAN, tapi punya alias
+    persis ke PIPA. Kalau fallback jalan duluan, keputusan yang lebih teliti itu tertimpa."""
+    _tulis([{"id": "T5", "kategori": "PEKERJAAN TAMBAHAN PIPA- PIPA"}])
+    selaraskan_kategori()
+    assert _kategori_dari("T5") == "PIPA - PIPA"
+
+
+def test_tambahan_hanya_diawali_bukan_memuat():
+    _tulis([{"id": "T6", "kategori": "LAPORAN PEKERJAAN TAMBAHAN"}])
+    selaraskan_kategori()
+    assert _kategori_dari("T6") is None
+
+
+def test_impor_dan_edit_tambahan_tidak_bolak_balik():
+    """Aturannya harus sama di INSERT/UPDATE dan di app start. Kalau fallback cuma ada di
+    `selaraskan_kategori()`, mengedit harga baris ini mengosongkan kategorinya lagi."""
+    from app.schemas.catalog import BulkCatalogCreate, BulkPatchRequest, CatalogItemBase, TipePerjanjian
+    from app.services.catalog import bulk_create, bulk_patch
+
+    teks = "PEKERJAAN TAMBAHAN/ Sabtu, 30-05-2026"
+    bulk_create(
+        BulkCatalogCreate(
+            nama_kapal="KMP. TES",
+            tahun="2025",
+            items=[CatalogItemBase(kategori_pekerjaan=teks, uraian_pekerjaan="a", harga_satuan=1)],
+        ),
+        aktor="tes",
+    )
+    id_ = "KMP._TES-2025-001"
+    assert _kategori_dari(id_) == "LAIN-LAIN"
+
+    bulk_patch(
+        BulkPatchRequest(
+            updates=[
+                {
+                    "id": id_,
+                    "data": {
+                        "nama_perusahaan": "", "nama_kapal": "KMP. TES",
+                        "tipe_perjanjian": TipePerjanjian.induk, "tahun": "2025",
+                        "kategori_pekerjaan": teks, "uraian_pekerjaan": "a",
+                        "volume_satuan": "-", "harga_satuan": 2,
+                    },
+                }
+            ]
+        ),
+        aktor="tes",
+    )
+    assert _kategori_dari(id_) == "LAIN-LAIN"
+    assert selaraskan_kategori() == 0

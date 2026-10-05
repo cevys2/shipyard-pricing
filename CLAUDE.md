@@ -138,6 +138,13 @@ Diketahui terbatas:
   UPDATE `bulk_patch()` untuk baris `kategori_sumber = 'alias'`. `selaraskan_kategori()` tetap
   jalan saat app start untuk alias yang baru ditambahkan. Yang masih bisa kosong hanyalah
   sebutan yang belum punya alias. Kelihatan di tab Analitik (`cakupan.tanpa_kategori`).
+  **Fallback PEKERJAAN TAMBAHAN** (5 Oktober 2026): seksi tambahan ditulis bertanggal
+  (`PEKERJAAN TAMBAHAN/ Senin, 25-05-2026`), jadi tiap berkas membawa teks yang tidak akan
+  pernah punya alias persis — 303 baris kosong. `kategori_id_sql()` sekarang mencoba alias
+  persis dulu, lalu teks yang **diawali** PEKERJAAN TAMBAHAN → LAIN-LAIN (mengikuti K-5).
+  Awalan, bukan "memuat", dan persis dulu: `PEKERJAAN TAMBAHAN PIPA- PIPA` tetap ke PIPA.
+  `selaraskan_kategori()` memanggil resolver yang sama — aturan kategori cuma ditulis di satu
+  tempat, karena dua versi berarti mengedit harga bisa mengosongkan kategori yang diberi app start.
   Riwayatnya: per cadangan 17 Agustus 2026, 6.017/6.673 baris punya `kategori_id`, 656 kosong;
   107 di antaranya cocok alias lama, sisanya 549 memakai tujuh sebutan yang belum punya alias.
   Ketujuhnya ditambahkan 18 Agustus (83 → 90 alias) → dihitung ulang terhadap cadangan yang

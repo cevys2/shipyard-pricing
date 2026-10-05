@@ -23,3 +23,6 @@ graphify-out/
 
 # 6. Setelan Claude Code per-mesin (permission Bash), bukan keputusan proyek
 .claude/settings.local.json
+
+# 7. Catatan belajar VibeWise (profil dan progres pribadi, bukan bagian proyek)
+.vibe-wise/
