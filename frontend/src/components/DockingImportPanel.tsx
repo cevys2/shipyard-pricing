@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, Plus, Repeat, Trash2 } from "lucide-react";
 import { api, formatRp, type DockingImportPreview } from "../lib/api";
 import PilihBerkas from "./PilihBerkas";
+import PeringatanPerusahaanKosong from "./PeringatanPerusahaanKosong";
 
 type Props = {
   token: string;
@@ -195,10 +196,13 @@ export default function DockingImportPanel({ token, onImported }: Props) {
             <label className="block text-xs font-medium text-slate-600">
               Perusahaan
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className={`mt-1 w-full rounded-lg border px-2 py-2 text-sm ${
+                  header.nama_perusahaan.trim() ? "border-slate-300" : "border-amber-400 bg-amber-50"
+                }`}
                 value={header.nama_perusahaan}
                 onChange={(e) => setHeader((h) => ({ ...h, nama_perusahaan: e.target.value }))}
               />
+              <PeringatanPerusahaanKosong nama={header.nama_perusahaan} />
             </label>
             <label className="block text-xs font-medium text-slate-600">
               Kapal *
