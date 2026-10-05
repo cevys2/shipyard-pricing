@@ -363,3 +363,29 @@ def test_baris_tanpa_induk_tetap_none():
     (item,) = _induk([_baris(c0=1, c1="Sea trial", c12=1, c13="Ls", c14=1_000_000)])
 
     assert item["induk_uraian"] is None
+
+
+def test_pratinjau_endpoint_membawa_induk_uraian():
+    """Parser mengisi `induk_uraian`, tapi response_model pratinjau dulu tidak punya
+    lapangannya -- Pydantic menyaringnya diam-diam dan impor KMP. GILIMANUK 5 Oktober 2026
+    masuk 228 baris tanpa satu pun konteks induk."""
+    import time
+
+    from fastapi.testclient import TestClient
+    from jose import jwt
+
+    from app.config import settings
+    from app.main import app
+
+    token = jwt.encode(
+        {"sub": "tes@contoh.com", "role": "admin", "exp": int(time.time()) + 600},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    pratinjau = TestClient(app).post(
+        "/catalog/import/docking-preview",
+        files={"file": ("docking.xlsx", _berkas(_pipa()), "application/vnd.ms-excel")},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    elbow = [it for it in pratinjau["induk"] if it["uraian"] == "Elbow"]
+    assert elbow[0]["induk_uraian"].endswith("Pipa isap BBM")

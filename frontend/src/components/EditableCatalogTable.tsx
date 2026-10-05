@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, ClipboardPaste, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardPaste, CornerDownRight, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import {
   api,
   formatMoneyRingkas,
@@ -783,12 +783,19 @@ export default function EditableCatalogTable({ token, rows, loading, onChanged }
                             {/* Induk di atas uraian. Tanpanya, tiga baris "Excentric P/N
                                 51.06501-0339" dari satu repair list terlihat identik padahal
                                 masing-masing untuk mesin yang berbeda dan harganya beda. */}
-                            {r.induk_uraian && (
-                              <span className="block text-[11px] leading-tight text-slate-400">
-                                {r.induk_uraian}
-                              </span>
+                            {r.induk_uraian ? (
+                              <>
+                                <span className="block text-xs leading-tight text-slate-500">
+                                  Bagian dari: <span className="font-semibold text-slate-700">{r.induk_uraian}</span>
+                                </span>
+                                <span className="flex items-start gap-1 pl-2">
+                                  <CornerDownRight size={12} className="mt-0.5 shrink-0 text-slate-400" aria-hidden />
+                                  {r.uraian_pekerjaan}
+                                </span>
+                              </>
+                            ) : (
+                              r.uraian_pekerjaan
                             )}
-                            {r.uraian_pekerjaan}
                           </td>
                           <td className="px-4 py-2">
                             {/* Angka volume kalau ada; kalau tidak, teks lama apa adanya.

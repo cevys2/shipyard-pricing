@@ -583,6 +583,7 @@ export type DockingParsedItem = {
   // dulu dibaca lalu dibuang setelah dipakai membagi kolom Jumlah jadi harga satuan.
   volume: number | null;
   satuan: string | null;
+  induk_uraian: string | null;
 };
 
 export type DockingImportPreview = {

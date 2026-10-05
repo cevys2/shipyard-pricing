@@ -123,6 +123,9 @@ class DockingParsedItem(BaseModel):
     # tetap dipertahankan apa adanya supaya jalur lama tidak berubah artinya.
     volume: float | None = None
     satuan: str | None = None
+    # Tanpa lapangan ini response_model menyaring rantai induk dari docking_parser, dan
+    # semua baris impor docking masuk tanpa konteks (impor KMP. GILIMANUK 5 Oktober 2026).
+    induk_uraian: str | None = None
 
 
 class DockingImportPreview(BaseModel):

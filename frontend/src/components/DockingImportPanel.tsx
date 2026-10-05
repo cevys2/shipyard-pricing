@@ -16,6 +16,7 @@ type EditRow = {
   satuan: string;
   harga: number;
   keterangan: string;
+  induk: string;
 };
 
 let counter = 0;
@@ -33,6 +34,7 @@ function fromParsed(items: DockingImportPreview["induk"]): EditRow[] {
     satuan: it.satuan ?? (it.volume_satuan === "-" ? "" : it.volume_satuan),
     harga: it.harga,
     keterangan: it.keterangan || "",
+    induk: it.induk_uraian || "",
   }));
 }
 
@@ -44,6 +46,7 @@ const emptyRow = (): EditRow => ({
   satuan: "",
   harga: 0,
   keterangan: "",
+  induk: "",
 });
 
 /** Nilai satu baris. Volume kosong dihitung 1 x harga, sama dengan sisi backend. */
@@ -145,6 +148,7 @@ export default function DockingImportPanel({ token, onImported }: Props) {
           volume: r.volume,
           satuan: r.satuan || null,
           keterangan: r.keterangan || null,
+          induk_uraian: r.induk || null,
         }));
       const res = await api.dockingCommit(token, {
         nama_perusahaan: header.nama_perusahaan,
