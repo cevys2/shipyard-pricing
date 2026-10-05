@@ -282,7 +282,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
           )}
 
           {tab === "import" && (
-            <div className="max-w-3xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
               {/* Bentuknya sama dengan pilihan Bahan/Upah/Alat di Katalog Material: satu
                   pilihan aktif dari beberapa, bukan tiga tombol aksi yang berdiri sendiri. */}
               <div className="mb-6 inline-flex flex-wrap rounded-lg border border-slate-300 bg-white p-0.5">

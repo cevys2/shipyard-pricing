@@ -231,7 +231,7 @@ export default function RepairListImportPanel({ token, onImported }: Props) {
               <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
                 <tr>
                   <th className="px-2 py-2">Kategori</th>
-                  <th className="px-2 py-2">Induk / Uraian</th>
+                  <th className="min-w-[20rem] px-2 py-2">Induk / Uraian</th>
                   <th className="px-2 py-2 w-20">Vol</th>
                   <th className="px-2 py-2 w-20">Sat</th>
                   <th className="px-2 py-2 text-right">Harga Satuan</th>
