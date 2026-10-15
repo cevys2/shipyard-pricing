@@ -3,3 +3,4 @@
 -r requirements.txt
 pytest
 httpx
+mcp>=2,<3  # server MCP read-only lokal (backend/mcp_baca.py)
