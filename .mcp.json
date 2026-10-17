@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "shipyard-pricing": {
-      "command": "python",
+      "command": "C:/Users/User/miniconda3/python.exe",
       "args": ["backend/mcp_baca.py"]
     }
   }
