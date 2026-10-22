@@ -66,6 +66,9 @@ def test_alias_tidak_dipakai_dua_satuan():
         ("Buah", "pcs"),
         ("PC", "pcs"),
         ("Ltr.", "liter"),
+        ("Ltr. ", "liter"),  # titik lalu spasi, lazim di sel Excel
+        ("bh. ", "pcs"),
+        ("M2. ", "m²"),
         ("Tanki", "tangki"),
         ("Shackle", "segel"),
         ("LS", "Ls"),
@@ -96,9 +99,20 @@ def test_tanpa_satuan_jadi_null(kosong):
 
 
 def test_borongan_ditandai():
+    # Dipatok ke keputusannya sendiri (22 Oktober 2026), bukan cuma ke konstanta seed --
+    # membandingkan database ke konstanta yang sama yang mengisinya lulus untuk isi apa pun.
+    assert BORONGAN == {"Ls", "Lot", "Paket"}
     with engine.connect() as c:
         rows = dict(c.execute(text("SELECT nama, borongan FROM satuan")).all())
     assert {n for n, b in rows.items() if b} == set(BORONGAN)
+
+
+def test_mengubah_tanda_borongan_di_seed_benar_benar_sampai():
+    with engine.begin() as c:
+        c.execute(text("UPDATE satuan SET borongan = FALSE WHERE nama = 'Ls'"))
+    ensure_satuan_table()
+    with engine.connect() as c:
+        assert c.execute(text("SELECT borongan FROM satuan WHERE nama = 'Ls'")).scalar() is True
 
 
 def test_memindahkan_ejaan_di_seed_benar_benar_sampai():

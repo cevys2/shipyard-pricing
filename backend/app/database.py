@@ -833,10 +833,41 @@ def satuan_norm_sql(kolom: str = "volume_satuan") -> str:
 # Resolver satu baris: nama satuan baku, atau NULL kalau ejaannya belum dipetakan. Pemanggil
 # yang mengelompokkan memakai COALESCE ke `satuan_norm_sql()`, supaya ejaan yang belum
 # dipetakan tetap tampil dengan namanya sendiri, bukan hilang.
-def satuan_baku_sql(kolom: str = "volume_satuan") -> str:
+def _satuan_baku_dari(norm: str) -> str:
     return (
         f"(SELECT s.nama FROM satuan_alias sa JOIN satuan s ON s.id = sa.satuan_id "
-        f"WHERE sa.alias = {satuan_norm_sql(kolom)})"
+        f"WHERE sa.alias = {norm})"
+    )
+
+
+def satuan_baku_sql(kolom: str = "volume_satuan") -> str:
+    return _satuan_baku_dari(satuan_norm_sql(kolom))
+
+
+# Satuan SATU BARIS KATALOG, sudah dirapikan. Dua kolom menyimpan satuan, dan tidak semua jalur
+# impor mengisi keduanya: Format Rapi dengan kolom `Vol`/`Sat` (tanpa kolom `Satuan`) mengisi
+# `satuan`, sementara `volume_satuan` tetap "-". Kalau cuma `volume_satuan` yang dibaca, baris
+# itu jatuh ke kelompok "tanpa satuan" tanpa ada yang terlihat salah.
+#
+# `volume_satuan` didahulukan karena dialah yang ikut berubah waktu baris disunting di layar --
+# `bulk_patch()` sengaja tidak menyentuh `satuan` (lihat CLAUDE.md), jadi kalau keduanya beda,
+# yang lama yang lebih baru.
+def satuan_katalog_sql(alias: str = "t") -> str:
+    return (
+        f"COALESCE({satuan_norm_sql(f'{alias}.volume_satuan')}, "
+        f"{satuan_norm_sql(f'{alias}.satuan')})"
+    )
+
+
+def satuan_katalog_baku_sql(alias: str = "t") -> str:
+    return _satuan_baku_dari(satuan_katalog_sql(alias))
+
+
+def satuan_katalog_tertulis_sql(alias: str = "t") -> str:
+    """Teks asli kolom yang dipakai `satuan_katalog_sql()` -- buat ditampilkan apa adanya."""
+    return (
+        f"CASE WHEN {satuan_norm_sql(f'{alias}.volume_satuan')} IS NOT NULL "
+        f"THEN {alias}.volume_satuan ELSE {alias}.satuan END"
     )
 
 

@@ -40,7 +40,13 @@ from typing import Any
 from sqlalchemy import text
 
 from app.config import settings
-from app.database import NAMA_KAPAL_NORM_SQL, engine, satuan_baku_sql, satuan_norm_sql
+from app.database import (
+    NAMA_KAPAL_NORM_SQL,
+    engine,
+    satuan_katalog_baku_sql,
+    satuan_katalog_sql,
+    satuan_katalog_tertulis_sql,
+)
 from app.services import pencarian
 
 TABLE = settings.catalog_table
@@ -71,7 +77,7 @@ def _nilai_tengah(nilai: list[float]) -> tuple[float, float, float]:
 def harga_wajar(q: str | None) -> dict[str, Any]:
     cari = pencarian.bangun(q, KOLOM_CARI, toleran=False)
     hasil: dict[str, Any] = {
-        "kata": pencarian.pecah(q),
+        "kata": pencarian.pecah(q, ketat=True),
         "aturan": {"min_kapal": MIN_KAPAL, "rasio_sebar": RASIO_SEBAR},
         "batas_baris": BATAS_BARIS,
         "total_cocok": 0,
@@ -93,9 +99,9 @@ def harga_wajar(q: str | None) -> dict[str, Any]:
                        t.uraian_pekerjaan                        AS uraian,
                        t.induk_uraian,
                        t.harga_satuan,
-                       t.volume_satuan                           AS satuan_tertulis,
-                       {satuan_baku_sql("t.volume_satuan")}      AS satuan_baku,
-                       {satuan_norm_sql("t.volume_satuan")}      AS satuan_rapi
+                       {satuan_katalog_tertulis_sql("t")}        AS satuan_tertulis,
+                       {satuan_katalog_baku_sql("t")}            AS satuan_baku,
+                       {satuan_katalog_sql("t")}                 AS satuan_rapi
                 FROM   {TABLE} t
                 LEFT   JOIN klien_induk ki ON ki.nama_perusahaan = t.nama_perusahaan
                 WHERE  t.harga_satuan > 0
@@ -109,14 +115,16 @@ def harga_wajar(q: str | None) -> dict[str, Any]:
         borongan = dict(conn.execute(text("SELECT nama, borongan FROM satuan")).all())
 
     if len(baris) > BATAS_BARIS:
-        hasil["total_cocok"] = len(baris)
+        # None, bukan len(baris): yang terbaca cuma BATAS_BARIS + 1 (LIMIT), jadi angka itu
+        # bukan jumlah sebenarnya. Layar menyebut "lebih dari `batas_baris`" sendiri.
+        hasil["total_cocok"] = None
         hasil["terlalu_banyak"] = True
         return hasil
     hasil["total_cocok"] = len(baris)
 
     # Kunci kelompok: nama satuan baku kalau ejaannya sudah dipetakan, kalau belum ejaan
     # yang dirapikan apa adanya -- satuan yang belum dikenal tetap tampil, tidak dibuang.
-    # None = baris yang `volume_satuan`-nya "-"/kosong: harganya per apa tidak diketahui.
+    # None = baris yang kedua kolom satuannya kosong/"-": harganya per apa tidak diketahui.
     per_satuan: dict[str | None, list[dict[str, Any]]] = defaultdict(list)
     for b in baris:
         d = dict(b)
@@ -185,6 +193,23 @@ def _kelompok(
         ringkas = {"median": round(tengah), "bawah": round(bawah), "atas": round(atas)}
         alasan = "menyebar" if bawah > 0 and atas >= RASIO_SEBAR * bawah else None
 
+    # Patokan "harga terakhir" (disepakati 22 Oktober 2026): bos lebih suka ada satu angka
+    # pegangan, juga ketika median disembunyikan. Yang dikirim SEMUA docking di tahun
+    # terbaru, bukan satu yang dipilih -- kalau dua kapal di 2026 harganya 4,5 jt dan 7 jt,
+    # memilih salah satu menurut abjad nama kapal sama saja dengan mengarang patokan. Asalnya
+    # (kapal, klien) selalu ikut, supaya angka dari satu nego yang alot bisa dinilai sendiri.
+    terakhir = None
+    if tahun:
+        tahun_terbaru = max(tahun)
+        terakhir = {
+            "tahun": tahun_terbaru,
+            "docking": [
+                {k: d[k] for k in ("nama_kapal", "klien", "harga", "n_baris")}
+                for d in docking
+                if d["tahun"] == tahun_terbaru
+            ],
+        }
+
     return {
         "satuan": satuan,
         # Dikenal = ejaannya ada di `satuan_alias`. Yang belum dikenal tetap jadi kelompok
@@ -200,5 +225,6 @@ def _kelompok(
         "ringkas": ringkas,
         "tampilkan_ringkas": ringkas is not None and alasan is None,
         "alasan": alasan,
+        "terakhir": terakhir,
         "docking": docking,
     }

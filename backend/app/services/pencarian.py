@@ -45,6 +45,12 @@ _MAKS_KATA = 8
 # hampir semua baris dan bikin filter AND-nya tidak ada gunanya.
 _POLA_KATA = re.compile(r"[a-z0-9]+(?:[.,][a-z0-9]+)*")
 
+# Mode ketat (layar Harga Wajar) juga menahan pecahan "3/4" utuh, dan TIDAK membuang angka
+# satu digit. Di kotak cari katalog membuang "2" tidak apa-apa -- hasilnya cuma lebih banyak.
+# Di Harga Wajar, "elbow 2" yang kehilangan "2"-nya mencari elbow SEMUA ukuran lalu
+# menyatukannya jadi satu median, dan angka itu terbaca seperti harga elbow 2 inci.
+_POLA_KATA_KETAT = re.compile(r"[a-z0-9]+(?:[.,/][a-z0-9]+)*")
+
 # Operator kemiripan-kata pg_trgm, ditulis dengan `%` GANDA dengan sengaja.
 #
 # pg8000 memakai paramstyle "format", jadi satu `%` di dalam teks SQL dibacanya sebagai awal
@@ -88,14 +94,14 @@ def rapat_sql(kolom: Sequence[str]) -> str:
     return f"regexp_replace({jerami_sql(kolom)}, '[^a-z0-9]+', '', 'g')"
 
 
-def pecah(q: str | None) -> list[str]:
+def pecah(q: str | None, *, ketat: bool = False) -> list[str]:
     """Kata kunci -> daftar kata unik, urutan pertama dipertahankan."""
     if not q:
         return []
-    kata = _POLA_KATA.findall(q.lower())
+    kata = (_POLA_KATA_KETAT if ketat else _POLA_KATA).findall(q.lower())
     hasil: list[str] = []
     for k in kata:
-        if len(k) >= 2 and k not in hasil:
+        if (len(k) >= 2 or (ketat and k.isdigit())) and k not in hasil:
             hasil.append(k)
     # Kalau yang tersisa cuma huruf tunggal (mis. orang mencari "A"), pakai apa adanya
     # daripada mengembalikan "cari apa saja".
@@ -112,6 +118,24 @@ def _esc(t: str) -> str:
     ke sini sama sekali -- ini jaring pengaman kalau `_POLA_KATA` nanti dilonggarkan.
     """
     return t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _pola_ukuran(k: str) -> str:
+    """Regex untuk satu kata berangka di mode ketat: "1,5" = "1.5", "8mm" = "8 mm", "sch40" =
+    "sch 40". Ditulis per potongan supaya tiap potongan di-escape sendiri -- kata kunci datang
+    dari pengguna, dan regex-nya tetap dikirim sebagai bind parameter, bukan ditempel ke SQL.
+    """
+    bagian = re.findall(r"[0-9]+|[a-z]+|[.,/]", k)
+    pola = ""
+    for i, p in enumerate(bagian):
+        if p in ".,":
+            pola += "[.,]"
+            continue
+        sebelum = bagian[i - 1] if i else ""
+        if sebelum.isalnum() and p.isalnum() and p[0].isdigit() != sebelum[0].isdigit():
+            pola += r"\s*"
+        pola += re.escape(p)
+    return pola
 
 
 @dataclass(frozen=True)
@@ -135,7 +159,7 @@ def bangun(
     tidak ketemu. `word_similarity('sandblasting', 'sweepblasting lambung')` = 0,54, di atas
     AMBANG, padahal harga kedua pekerjaan itu jauh berbeda.
     """
-    kata = pecah(q)
+    kata = pecah(q, ketat=not toleran)
     if not kata:
         return None
 
@@ -146,6 +170,21 @@ def bangun(
 
     for i, k in enumerate(kata):
         p_sub, p_rapat, p_kata = f"{prefix}{i}s", f"{prefix}{i}r", f"{prefix}{i}k"
+
+        if not toleran and any(c.isdigit() for c in k):
+            # Ukuran harus cocok sebagai ukuran, bukan sebagai potongan teks: "3" bukan bagian
+            # dari "13", "30", "1/3", atau "2,3"; "2" bukan awal dari "20", "2,5", atau "2/3".
+            # Bentuk rapat sengaja tidak dipakai di sini -- dia membuang pemisah, jadi
+            # "pipa 1 2" jadi "pipa12" dan batas angkanya hilang.
+            pola = _pola_ukuran(k)
+            if k[0].isdigit():
+                pola = r"(?<![0-9.,/])" + pola
+            if k[-1].isdigit():
+                pola = pola + r"(?![.,/]?[0-9])"
+            params[p_kata] = pola
+            kondisi.append(f"({jerami} ~ :{p_kata})")
+            skor.append("1.0::real")
+            continue
         params[p_sub] = f"%{_esc(k)}%"
         params[p_rapat] = "%" + _esc(re.sub(r"[^a-z0-9]", "", k)) + "%"
 
