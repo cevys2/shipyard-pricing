@@ -121,12 +121,19 @@ class Pencarian:
     params: dict[str, Any]
 
 
-def bangun(q: str | None, kolom: Sequence[str], *, prefix: str = "cari") -> Pencarian | None:
+def bangun(
+    q: str | None, kolom: Sequence[str], *, prefix: str = "cari", toleran: bool = True
+) -> Pencarian | None:
     """Rakit kondisi + ekspresi peringkat untuk satu kotak pencarian.
 
     `kolom` boleh pakai alias tabel ("sd.nama"); `prefix` cuma untuk memisahkan nama
     parameter kalau nanti ada dua pencarian dalam satu query.
     Mengembalikan None kalau kata kuncinya kosong -- pemanggil tidak menambah klausa apa pun.
+
+    `toleran=False` mematikan cara ke-3 (kemiripan trigram) walaupun pg_trgm terpasang.
+    Dipakai layar Harga Wajar: di sana hasil yang tercampur lebih mahal daripada hasil yang
+    tidak ketemu. `word_similarity('sandblasting', 'sweepblasting lambung')` = 0,54, di atas
+    AMBANG, padahal harga kedua pekerjaan itu jauh berbeda.
     """
     kata = pecah(q)
     if not kata:
@@ -150,7 +157,7 @@ def bangun(q: str | None, kolom: Sequence[str], *, prefix: str = "cari") -> Penc
             f"CASE WHEN {jerami} LIKE :{p_sub} THEN 1.0 ELSE 0.0 END::real",
             f"CASE WHEN {rapat} LIKE :{p_rapat} THEN 0.8 ELSE 0.0 END::real",
         ]
-        if _trgm_siap and len(k) >= _MIN_FUZZY:
+        if toleran and _trgm_siap and len(k) >= _MIN_FUZZY:
             params[p_kata] = k
             # CAST eksplisit: pg8000 mengirim parameter tanpa tipe, dan pola yang sama
             # sudah pernah bikin query lain gagal di file ini (lihat _LATERAL_HARGA).

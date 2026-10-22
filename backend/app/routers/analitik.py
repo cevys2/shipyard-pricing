@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.auth import get_current_user
 from app.services import analitik as analitik_service
 from app.services import audit as audit_service
+from app.services import harga_wajar as harga_wajar_service
 
 router = APIRouter(prefix="/analitik", tags=["analitik"])
 
@@ -34,6 +35,14 @@ def nilai_pekerjaan(_: Annotated[dict, Depends(get_current_user)]):
     # per tahun, per jenis kapal, per klien -- dikerjakan di layar. Menambah filter di
     # sini berarti dua tempat yang harus sepakat soal apa yang disaring.
     return analitik_service.nilai_pekerjaan()
+
+
+@router.get("/harga-wajar")
+def harga_wajar(_: Annotated[dict, Depends(get_current_user)], q: str = ""):
+    # Satu parameter saja. Ambang kapan median boleh tampil sengaja tidak bisa diatur dari
+    # request -- aturannya satu, di services/harga_wajar.py, dan layar membaca `aturan`
+    # dari respons supaya kalimat penjelasnya tidak bisa berbeda dari yang dihitung.
+    return harga_wajar_service.harga_wajar(q)
 
 
 @router.get("/tren-material")
