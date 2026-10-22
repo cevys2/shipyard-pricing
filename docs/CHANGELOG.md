@@ -8,6 +8,42 @@ langsung di GitHub.
 
 ---
 
+## 22 Oktober 2026 — Harga Wajar: harga pembanding untuk item yang tidak diingat
+
+**Tab baru: Harga Wajar.** Ketik nama pekerjaan ("sandblasting", "elbow 2"), lalu terlihat
+harga satuannya di kapal-kapal lain, dikelompokkan per satuan. Dibuat untuk saat menyusun
+penawaran: harga ditentukan bos, dan app ini dibuka untuk item yang harganya tidak diingat.
+
+**Harga tengah tidak selalu muncul, dan itu disengaja.** Median dari pekerjaan yang jarang dan
+harganya hasil nego -- misalnya bongkar pasang jendela marine grade, yang tidak dikerjakan tiap
+tahun -- terbaca seperti "harga pasar" padahal cuma rata-rata dari dua-tiga kesepakatan.
+Karena itu harga tengah cuma tampil kalau pembandingnya **minimal 3 kapal** dan harganya tidak
+**menyebar lebih dari 2× lipat**. Kalau tidak, layar menyebut alasannya terang-terangan.
+
+**Satu kapal per tahun = satu suara.** Lima belas baris Elbow dari satu berkas tidak boleh
+menentukan angkanya sendirian.
+
+**Selalu ada patokan.** Bos suka ada satu angka pegangan, jadi tiap kelompok menampilkan
+**harga terakhir** lengkap dengan kapal dan kliennya. Kalau tahun terbaru punya dua kapal,
+keduanya tampil -- memilih salah satu sama saja dengan mengarang patokan.
+
+**Pencariannya ketat, beda dari kotak cari katalog.** Salah ketik tidak dimaafkan, karena
+"sandblasting" dan "sweepblasting" dinilai 54% mirip -- cukup untuk tercampur jadi satu harga,
+padahal harganya jauh berbeda. Ukuran dicocokkan utuh: "elbow 2" tidak menarik elbow 12,
+2,5, atau 1/2. Kotak cari di tab Dashboard & Data tidak berubah.
+
+**m2 dan m² akhirnya satu kelompok.** Ejaan satuan dipetakan ke satuan baku (`m2`/`M2`/`m²` →
+m², `bh`/`buah`/`pc` → pcs, dan seterusnya) saat membaca; tabel harganya sendiri tidak
+disentuh. Ejaan yang belum dikenal tetap tampil dengan namanya, bertanda "ejaan belum
+diperiksa", supaya daftarnya bisa dilengkapi. `m'` sengaja dibiarkan terpisah sampai artinya
+dipastikan. Satuan borongan (Ls, Lot, Paket) ditandai.
+
+**Diperiksa empat arah sebelum dikirim.** Pemeriksaan terpisah menemukan ukuran pipa yang
+tercampur ("elbow 3/4"" ikut menarik semua ukuran) dan beberapa celah di tes; semuanya sudah
+diperbaiki, dan tiap celah tes dibuktikan tertutup dengan sengaja memasang kesalahannya lagi.
+
+---
+
 ## 22 September 2026 — analitik menjawab "uangnya ke mana", dan dua kapal yang ternyata satu
 
 **Seksi baru: Ke Mana Uangnya Pergi.** Analitik selama ini cuma bisa menjawab "harga

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Calculator, LayoutGrid, LogOut, Package, Search, TrendingUp, Upload } from "lucide-react";
+import { ArrowLeft, Calculator, LayoutGrid, LogOut, Package, Scale, Search, TrendingUp, Upload } from "lucide-react";
 import {
   api,
   PORTAL_URL,
@@ -13,6 +13,7 @@ import DockingImportPanel from "../components/DockingImportPanel";
 import RepairListImportPanel from "../components/RepairListImportPanel";
 import MaterialCatalogPanel from "../components/MaterialCatalogPanel";
 import AhspPanel from "../components/AhspPanel";
+import HargaWajarPanel from "../components/HargaWajarPanel";
 import PilihBerkas from "../components/PilihBerkas";
 // recharts itu dependensi terbesar di app ini (~100 kB gzip). Tab Analitik bukan
 // tampilan awal, jadi di-lazy supaya recharts tidak ikut di bundle pertama.
@@ -22,7 +23,7 @@ import logoIcon from "../assets/logo-icon.png";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
-type Tab = "view" | "material" | "ahsp" | "analitik" | "import";
+type Tab = "view" | "harga" | "material" | "ahsp" | "analitik" | "import";
 
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
@@ -120,6 +121,9 @@ export default function DashboardPage({ auth, onLogout }: Props) {
   // dari backend. Ini cuma tampilan -- yang benar-benar menjaga tetap backend.
   const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
+    // Tepat di bawah katalog: dibuka sambil menyusun penawaran, untuk item yang harganya
+    // tidak diingat. Terbuka untuk semua yang login, sama seperti endpoint-nya.
+    { key: "harga", label: "Harga Wajar", icon: Scale },
     { key: "material", label: "Katalog Material", icon: Package },
     ...(auth.role === "admin"
       ? [{ key: "ahsp" as Tab, label: "Struktur Biaya", icon: Calculator }]
@@ -270,6 +274,8 @@ export default function DashboardPage({ auth, onLogout }: Props) {
               />
             </>
           )}
+
+          {tab === "harga" && <HargaWajarPanel auth={auth} />}
 
           {tab === "material" && <MaterialCatalogPanel auth={auth} />}
 

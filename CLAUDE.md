@@ -1,9 +1,23 @@
 # shipyard-pricing — konteks untuk Claude Code
 
 Aplikasi internal PT Dukuh Raya (galangan kapal, Lombok). Katalog harga jasa, katalog
-material, dan analisa harga satuan (AHSP). Pengguna aktif: satu orang. Dikerjakan solo.
+material, dan analisa harga satuan (AHSP). Dipakai Lutfi, bos, dan kolega (lihat "Siapa
+memakai" di bawah). Dikerjakan solo.
 
-Terakhir diperbarui: 22 September 2026.
+Terakhir diperbarui: 22 Oktober 2026.
+
+## Siapa memakai, dan untuk apa (dipastikan 22 Oktober 2026)
+
+Dulu tercatat "satu pengguna aktif". Ternyata tidak: bos dan kolega juga membukanya.
+
+- **Harga penawaran ditentukan bos.** Lutfi menyusun file penawaran dari repair list yang
+  diberikan, memakai angka yang sudah ada, lalu menaikkannya supaya ada ruang nego. Menyusun
+  file dan menaikkan angka itu sengaja TETAP manual -- jangan dibangun tanpa ditanya dulu.
+- App ini dibuka untuk **item yang harganya tidak diingat bos** -- biasanya justru yang jarang
+  dikerjakan, jadi pembandingnya sedikit.
+- Yang paling mengganggu Lutfi: hasil cari kebanyakan/tercampur. Yang paling mengganggu bos
+  dan kolega: bingung harga mana yang dipakai. **Bos suka ada satu angka patokan** -- asal
+  asalnya (kapal, tahun) ikut tertulis.
 
 ## Stack
 
@@ -37,11 +51,12 @@ backend/app/
   auth.py           -- verifikasi JWT saja
   config.py         -- settings, termasuk catalog_table = "tabel_katalog_harga"
   seed_kategori.py  -- 11 kategori + 126 alias, dipakai ensure_kategori_table()
+  seed_satuan.py    -- 11 satuan baku + ejaannya, dipakai ensure_satuan_table()
   routers/          -- ahsp, analitik, catalog, kategori, material
-  services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian,
-                       repair_list_parser
+  services/         -- ahsp, analitik, audit, catalog, docking_parser, harga_wajar, material,
+                       pencarian, repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 266 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 320 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -106,8 +121,9 @@ nilainya dari layar dulu — jangan cukup menambahkannya di SQL.
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 analitik **nilai pekerjaan** (volume × harga; 22 September 2026), filter **jenis kapal**,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
-baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 alias), dan
-impor Repair List (mode ketiga di tab Import Excel).
+baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 alias),
+impor Repair List (mode ketiga di tab Import Excel), dan layar **Harga Wajar** (tab sendiri,
+22 Oktober 2026 -- lihat bagiannya di bawah).
 
 Diketahui terbatas:
 
@@ -122,10 +138,11 @@ Diketahui terbatas:
   pekerjaan terbaca sebagai nilai penuh. Dijaga `tests/test_nilai_pekerjaan.py`.
 - **`satuan` punya 37 ejaan untuk ~20 satuan nyata**: `m²`(206)/`m2`(160)/`m'`(5),
   `mtr`(214)/`m`(59)/`mter`(1), `pcs`/`pc`/`buah`/`bh`, `tangki`/`tanki`, `liter`/`ltr`,
-  `segel`/`shackle`. Belum dinormalisasi karena analitik yang ada tidak mengelompokkan per
-  satuan. Begitu ada layar yang menjawab "harga per m² wajarnya berapa", pemetaan satuan
-  kanonik (pola `kategori_alias`) jadi prasyarat mutlak — tanpa itu m² dan m2 jadi dua
-  kelompok yang masing-masing separuh.
+  `segel`/`shackle`. Sejak 22 Oktober 2026 dipetakan lewat `satuan` + `satuan_alias`, **saat
+  membaca** -- dipakai Harga Wajar saja; analitik lain belum mengelompokkan per satuan. Daftar
+  ejaannya baru disusun dari angka di atas, belum dari seluruh produksi: ejaan yang belum
+  dipetakan muncul di Harga Wajar bertanda "ejaan belum diperiksa" -- tambahkan ke
+  `seed_satuan.py`. `m'` sengaja belum dipetakan (meter lari atau m², belum dipastikan).
 - **Dua baris uji di produksi**: `KMP. TES` / `PT. TES FERRY`, nama yang sama dengan fixture
   di `tests/test_docking_volume.py`. Ikut terhitung di KPI dan dropdown. Belum dihapus.
 - Tab Struktur Biaya baru berisi satu analisa (13 komponen). `shift` dan `jml_hari` isinya 1
@@ -164,6 +181,39 @@ Diketahui terbatas:
   tapi tidak pernah tersentuh lagi. Perlu nama index baru + DROP yang lama.
 - Baris kembar identik di `tabel_katalog_harga` sengaja tidak didedup — tabelnya tidak punya
   kolom kuantitas, jadi tidak ada cara memastikan itu salah input atau dua pekerjaan sungguhan.
+
+### Harga Wajar (22 Oktober 2026)
+
+`GET /analitik/harga-wajar?q=...` (`services/harga_wajar.py`) + tab "Harga Wajar"
+(`HargaWajarPanel.tsx`). Baca-saja. Ketik nama pekerjaan, lihat harga satuannya di kapal lain,
+dikelompokkan per satuan baku. Aturannya disepakati dengan Lutfi, dan **cuma ditulis di
+backend** -- layar membaca `tampilkan_ringkas`/`alasan`, tidak menghitung ulang:
+
+- **Satu docking satu suara** (docking = kapal + tahun). Lima belas baris Elbow di satu berkas
+  = satu harga (nilai tengahnya).
+- Harga tengah cuma tampil kalau ada **minimal 3 kapal berbeda** (`MIN_KAPAL`) **dan** batas atas
+  rentang tengahnya < 2× batas bawah (`RASIO_SEBAR`). Sebabnya: median dari pekerjaan yang
+  jarang dan dinego (contoh dari lapangan: bongkar pasang jendela marine grade) terbaca seperti
+  harga pasar. Kedua ambang itu tebakan awal, **belum dicoba ke data produksi**.
+- **Patokan "harga terakhir"**: semua docking di tahun terbaru, selalu dengan kapal + klien.
+  Kalau dua kapal di tahun yang sama, keduanya tampil -- memilih satu = mengarang patokan.
+- **Pencarian ketat**, cuma ke `uraian_pekerjaan`: tanpa trigram (`word_similarity`
+  sandblasting vs sweepblasting = 0,54, di atas ambang 0,45), dan ukuran dicocokkan utuh
+  (`elbow 2` tidak menarik 12, 2,5, atau 1/2; `1,5` = `1.5`; `8mm` = `8 mm`). Lewat
+  `pencarian.bangun(toleran=False)` -- kotak cari katalog tidak berubah.
+- Satuan dibaca dari `volume_satuan`, lalu `satuan` kalau yang lama "-" (Format Rapi dengan
+  kolom `Vol`/`Sat` cuma mengisi `satuan`). `volume_satuan` menang kalau keduanya beda, karena
+  dialah yang disunting `bulk_patch()`.
+- Lebih dari 3.000 baris cocok → ditolak dan diminta memperjelas, bukan dihitung dari potongan.
+
+Belum ditangani, sengaja:
+- **Sebaran di dalam satu docking tidak terdeteksi.** Mencari "elbow" tanpa ukuran di tiga kapal
+  yang masing-masing punya Elbow Rp 300 rb – 2,1 jt tetap memberi harga tengah yang tampak
+  rapat. Menambah pemicu "menyebar" untuk ini mengubah aturan yang sudah disepakati, jadi
+  ditanyakan dulu ke Lutfi (22 Oktober 2026), belum dikerjakan.
+- **`KMP. X` dan `KMP X` (beda titik) terhitung dua kapal** -- di layar ini dan juga di dropdown
+  dan Analitik, karena `NAMA_KAPAL_NORM_SQL` cuma merapikan spasi. Jangan ditambal khusus di
+  Harga Wajar; cek dulu di produksi apakah memang terjadi, lalu perbaiki untuk seluruh app.
 
 ### Kuantitas: `volume`, dan kenapa dia tidak pernah ada sebelumnya
 

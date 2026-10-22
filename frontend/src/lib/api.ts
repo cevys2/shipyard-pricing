@@ -311,6 +311,9 @@ export const api = {
   nilaiPekerjaan(token: string) {
     return request<NilaiPekerjaan>("/analitik/nilai-pekerjaan", {}, token);
   },
+  hargaWajar(token: string, q: string) {
+    return request<HargaWajar>(`/analitik/harga-wajar?${new URLSearchParams({ q })}`, {}, token);
+  },
   auditLog(token: string, params: { entitas?: string; limit?: number } = {}) {
     const q = new URLSearchParams();
     if (params.entitas && params.entitas !== "Semua") q.set("entitas", params.entitas);
@@ -474,6 +477,66 @@ export type NilaiPekerjaan = {
   };
   per_kategori: NilaiKategori[];
   per_kapal: NilaiKapal[];
+};
+
+export type HargaWajarBaris = {
+  id: string;
+  uraian: string;
+  induk_uraian: string | null;
+  harga_satuan: number;
+  tipe_perjanjian: string | null;
+  /** Teks satuan persis seperti di berkas, sebelum dirapikan ("M2", "bh."). */
+  satuan_tertulis: string | null;
+};
+
+/** Satu docking = satu kapal di satu tahun. Inilah "satu suara" di Harga Wajar. */
+export type HargaWajarDocking = {
+  nama_kapal: string;
+  tahun: string;
+  klien: string[];
+  tipe: string[];
+  /** Nilai tengah baris-baris docking ini, dibulatkan ke rupiah. */
+  harga: number;
+  harga_min: number;
+  harga_max: number;
+  n_baris: number;
+  baris: HargaWajarBaris[];
+};
+
+export type HargaWajarKelompok = {
+  /** Satuan baku ("m²"), ejaan yang belum dipetakan apa adanya ("m'"), atau null kalau
+   * baris-barisnya tidak mencatat satuan sama sekali. */
+  satuan: string | null;
+  dikenali: boolean;
+  borongan: boolean;
+  ejaan: string[];
+  n_baris: number;
+  n_docking: number;
+  n_kapal: number;
+  tahun_min: string | null;
+  tahun_max: string | null;
+  /** Hanya ada kalau kapalnya cukup. Tetap ada waktu `alasan` = "menyebar", supaya layar
+   * bisa menyebut seberapa lebar rentangnya -- tapi jangan ditampilkan sebagai jawaban. */
+  ringkas: { median: number; bawah: number; atas: number } | null;
+  tampilkan_ringkas: boolean;
+  alasan: "kapal_kurang" | "menyebar" | "tanpa_satuan" | null;
+  /** Semua docking di tahun terbaru -- patokan untuk bos, selalu dengan asalnya. */
+  terakhir: {
+    tahun: string;
+    docking: { nama_kapal: string; klien: string[]; harga: number; n_baris: number }[];
+  } | null;
+  docking: HargaWajarDocking[];
+};
+
+export type HargaWajar = {
+  /** Kata yang benar-benar dicari, setelah dipecah. */
+  kata: string[];
+  aturan: { min_kapal: number; rasio_sebar: number };
+  batas_baris: number;
+  /** null kalau `terlalu_banyak` -- jumlah sebenarnya tidak dihitung. */
+  total_cocok: number | null;
+  terlalu_banyak: boolean;
+  kelompok: HargaWajarKelompok[];
 };
 
 export type PastePreviewRow = {
