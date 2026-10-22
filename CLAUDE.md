@@ -41,7 +41,7 @@ backend/app/
   services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian,
                        repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 201 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 266 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -53,7 +53,7 @@ ditiru: **`ensure_audit_table()`**. Untuk menambah kolom ke tabel yang sudah ber
 
 Urutan pemanggilan di `main.py`: `ensure_material_tables()`, `ensure_partno_unique()`,
 `ensure_katalog_kolom_rincian()`, `ensure_kategori_table()`, `ensure_ahsp_tables()`,
-`ensure_audit_table()`, `ensure_klien_induk()`, `ensure_pencarian_index()`.
+`ensure_audit_table()`, `ensure_klien_induk()`, `ensure_satuan_table()`, `ensure_pencarian_index()`.
 
 Urutannya bukan selera: `ahsp_komponen` punya FK ke `sumber_daya`, `ahsp.kategori_id` ke
 `kategori`, dan index pencarian menempel ke tabel yang harus sudah ada. Dipanggil di luar
@@ -72,6 +72,7 @@ seperti `chk_sdh_mata_uang`.
 | `ahsp`, `ahsp_komponen` | Analisa harga satuan. |
 | `audit_log` | Append-only, siapa mengubah apa. |
 | `klien_induk` | Pemetaan ejaan PT yang sebenarnya satu induk. Dipakai lewat `COALESCE` saat membaca; `nama_perusahaan` tidak pernah ditimpa. |
+| `satuan`, `satuan_alias` | Satuan baku + ejaannya (`m2` → `m²`, `bh` → `pcs`), seed di `seed_satuan.py`. Dicocokkan ke `volume_satuan` **saat membaca** lewat `database.satuan_baku_sql()` — tidak ada kolom `satuan_id` di `tabel_katalog_harga`. `m'` sengaja belum dipetakan. |
 
 ### Aturan `tabel_katalog_harga`
 

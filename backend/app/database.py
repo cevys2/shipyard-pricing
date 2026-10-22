@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from app import seed_satuan
 from app.config import settings
 from app.seed_kategori import baris_alias, baris_kategori
 from app.services import pencarian
@@ -805,4 +806,89 @@ def ensure_klien_induk() -> None:
                 "ke": "PT. AGUNG TAMA RAYA",
                 "catatan": "Satu induk dengan PT. AGUNG TAMA RAYA (dikonfirmasi 22 September 2026).",
             },
+        )
+
+
+# Satuan dirapikan saat MEMBACA, bukan dengan meng-UPDATE `volume_satuan` -- kolom itu catatan
+# apa yang tertulis di berkas, aturannya sama dengan `kategori_pekerjaan`. Beda dari kategori,
+# tidak ada kolom `satuan_id` di `tabel_katalog_harga`: kategori butuh koreksi manual per
+# baris (`kategori_sumber = 'manual'`), satuan belum. Tanpa kolom, tidak ada yang bisa basi.
+#
+# Langkahnya: spasi tak-putus jadi spasi, spasi beruntun jadi satu, titik di ujung dibuang
+# ("bh." = "bh"), lalu huruf kecil. "-" dan teks kosong jadi NULL -- `volume_satuan` memakai
+# "-" untuk "tidak tahu", dan itu bukan satuan yang boleh punya kelompok sendiri.
+#
+# Alias di `satuan_alias` tersimpan dalam bentuk hasil ekspresi ini, jadi keduanya harus
+# sepakat persis -- kegagalan yang sama tak bersuaranya dengan `kategori_norm_sql()`.
+def satuan_norm_sql(kolom: str = "volume_satuan") -> str:
+    if not _ARGUMEN_NORM.match(kolom):
+        raise ValueError(f"Bukan nama kolom atau bind parameter yang sah: {kolom!r}")
+    rapi = (
+        "lower(btrim(regexp_replace(btrim(regexp_replace("
+        f"replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')), '\\.+$', '')))"
+    )
+    return f"NULLIF(NULLIF({rapi}, ''), '-')"
+
+
+# Resolver satu baris: nama satuan baku, atau NULL kalau ejaannya belum dipetakan. Pemanggil
+# yang mengelompokkan memakai COALESCE ke `satuan_norm_sql()`, supaya ejaan yang belum
+# dipetakan tetap tampil dengan namanya sendiri, bukan hilang.
+def satuan_baku_sql(kolom: str = "volume_satuan") -> str:
+    return (
+        f"(SELECT s.nama FROM satuan_alias sa JOIN satuan s ON s.id = sa.satuan_id "
+        f"WHERE sa.alias = {satuan_norm_sql(kolom)})"
+    )
+
+
+def ensure_satuan_table() -> None:
+    """Master satuan baku + ejaan-ejaannya, untuk layar Harga Wajar.
+
+    Meniru `kategori` + `kategori_alias`, dengan satu beda yang disengaja: tidak ada kolom
+    yang ditambahkan ke `tabel_katalog_harga`. Satuan dicocokkan saat dibaca lewat
+    `satuan_baku_sql()`.
+
+    Seed-nya DO UPDATE dengan `IS DISTINCT FROM`, sama seperti alias kategori: memindahkan
+    satu ejaan ke satuan lain di `seed_satuan.py` benar-benar sampai ke database yang sudah
+    terisi, sementara jalan yang lazim (tidak ada yang berubah) tetap tidak menulis apa pun.
+    Ejaan yang dihapus dari seed TIDAK ikut terhapus dari tabel -- hapus manual kalau perlu.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS satuan (
+                    id       SERIAL PRIMARY KEY,
+                    nama     TEXT    NOT NULL UNIQUE,
+                    borongan BOOLEAN NOT NULL DEFAULT FALSE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS satuan_alias (
+                    id        SERIAL PRIMARY KEY,
+                    satuan_id INT  NOT NULL REFERENCES satuan(id) ON DELETE CASCADE,
+                    alias     TEXT NOT NULL UNIQUE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO satuan (nama, borongan) VALUES (:nama, :borongan) "
+                "ON CONFLICT (nama) DO UPDATE SET borongan = EXCLUDED.borongan "
+                "WHERE satuan.borongan IS DISTINCT FROM EXCLUDED.borongan"
+            ),
+            seed_satuan.baris_satuan(),
+        )
+        conn.execute(
+            text(
+                "INSERT INTO satuan_alias (satuan_id, alias) "
+                "SELECT id, :alias FROM satuan WHERE nama = :nama "
+                "ON CONFLICT (alias) DO UPDATE SET satuan_id = EXCLUDED.satuan_id "
+                "WHERE satuan_alias.satuan_id IS DISTINCT FROM EXCLUDED.satuan_id"
+            ),
+            seed_satuan.baris_alias(),
         )

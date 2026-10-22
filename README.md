@@ -85,7 +85,7 @@ lain dibuat oleh `ensure_*()`. Jalankan sekali dalam urutan `lifespan()` di `mai
 
 ```bash
 cd backend
-DATABASE_URL="postgresql://postgres:PASSWORD@127.0.0.1:5432/shipyard_test" JWT_SECRET=apa-saja   python -c "from app.database import *; [f() for f in (ensure_material_tables, ensure_partno_unique, ensure_katalog_kolom_rincian, ensure_kategori_table, ensure_ahsp_tables, ensure_audit_table, ensure_pencarian_index)]"
+DATABASE_URL="postgresql://postgres:PASSWORD@127.0.0.1:5432/shipyard_test" JWT_SECRET=apa-saja   python -c "from app.database import *; [f() for f in (ensure_material_tables, ensure_partno_unique, ensure_katalog_kolom_rincian, ensure_kategori_table, ensure_ahsp_tables, ensure_audit_table, ensure_klien_induk, ensure_satuan_table, ensure_pencarian_index)]"
 ```
 
 Baru setelah itu:
