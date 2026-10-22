@@ -127,7 +127,14 @@ def test_harga_terakhir_jadi_patokan_saat_median_disembunyikan():
     assert k["terakhir"] == {
         "tahun": "2026",
         "docking": [
-            {"nama_kapal": "KMP. B", "klien": ["PT. TES"], "harga": 7_000_000, "n_baris": 1}
+            {
+                "nama_kapal": "KMP. B",
+                "klien": ["PT. TES"],
+                "harga": 7_000_000,
+                "harga_min": 7_000_000,
+                "harga_max": 7_000_000,
+                "n_baris": 1,
+            }
         ],
     }
 
@@ -224,6 +231,12 @@ _ELBOW = (
     'Elbow 3/4"',
     'Elbow 1/4"',
     "Elbow 3 inch",
+    # Bilangan campuran -- cara paling lazim menulis ukuran pipa.
+    'Elbow 2 1/2"',
+    'Elbow 2-1/2"',
+    'Elbow 2½"',
+    'Elbow 1 1/2"',
+    'Elbow 1-1/2"',
 )
 
 
@@ -242,6 +255,9 @@ _ELBOW = (
         ("elbow 1/2", {'Elbow 1/2"'}),
         # Koma dan titik desimal dianggap sama.
         ("elbow 2.5", {"Elbow 2,5 inch"}),
+        # Bilangan campuran ditahan utuh, dan spasi = strip.
+        ("elbow 2 1/2", {'Elbow 2 1/2"', 'Elbow 2-1/2"'}),
+        ('elbow 1-1/2"', {'Elbow 1 1/2"', 'Elbow 1-1/2"'}),
     ],
 )
 def test_ukuran_tidak_tercampur(q, harapan):
@@ -266,6 +282,82 @@ def test_ukuran_berspasi_atau_tidak_tetap_ketemu(q, uraian):
     _baris("KMP. B", uraian.replace("8", "18").replace("40", "140"), 100_000, satuan="kg")
     ((d,),) = [k["docking"] for k in svc.harga_wajar(q)["kelompok"]]
     assert [b["uraian"] for b in d["baris"]] == [uraian]
+
+
+@pytest.mark.parametrize(
+    "q, cocok, tidak",
+    [
+        # Titik singkatan bukan titik desimal.
+        ("pipa sch 40", ['Pipa Sch. 40 uk 1,5"', "Pipa sch.40", "Pipa SCH-40"], ["Pipa sch 140"]),
+        ("pipa sch40", ['Pipa Sch. 40 uk 1,5"', "Pipa SCH-40"], ["Pipa sch 400"]),
+        # Titik singkatan yang DIKETIK di kotak cari juga bukan titik desimal.
+        ("pipa sch.40", ["Pipa sch 40", 'Pipa Sch. 40 uk 1,5"'], ["Pipa sch 140"]),
+        ("main engine no.2", ["Main Engine No 2", "Main Engine No.2"], ["Main Engine No.12"]),
+        ("main engine no 2", ["Main Engine No.2", "Main Engine No. 2"], ["Main Engine No.12"]),
+        ("baut m10x50", ["Baut M-10x50", "Baut M 10 x 50"], ["Baut M10x150"]),
+        ("plat 8mm", ["Plat 8\u00a0mm", "Plat 8 mm"], ["Plat 18 mm"]),
+        # "sch 40 1/2" bukan bilangan campuran -- pecahan setelah angka dua digit tetap ketemu.
+        ("pipa 1/2", ['Pipa sch 40 1/2"'], ['Pipa 1 1/2"']),
+    ],
+)
+def test_ukuran_dengan_singkatan_dan_pemisah(q, cocok, tidak):
+    for i, uraian in enumerate(cocok + tidak):
+        _baris(f"KMP. {i}", uraian, 100_000, satuan="pcs")
+    (k,) = svc.harga_wajar(q)["kelompok"]
+    assert {b["uraian"] for d in k["docking"] for b in d["baris"]} == set(cocok)
+
+
+def test_kata_kunci_panjang_tidak_dipotong_diam_diam():
+    """Di mode ketat tiap kata syarat AND; memotong "2" di ujung = mencari semua ukuran."""
+    q = "pasang elbow 90 derajat long radius sch 40 uk 2"
+    assert pencarian.pecah(q, ketat=True)[-1] == "2"
+    _baris("KMP. A", "Pasang elbow 90 derajat long radius sch 40 uk 2", 400_000, satuan="pcs")
+    _baris("KMP. B", "Pasang elbow 90 derajat long radius sch 40 uk 6", 1_900_000, satuan="pcs")
+    (k,) = svc.harga_wajar(q)["kelompok"]
+    assert [d["nama_kapal"] for d in k["docking"]] == ["KMP. A"]
+
+
+def test_garis_miring_di_antara_kata_berarti_dua_kata():
+    _baris("KMP. A", "Bongkar dan pasang jendela", 4_500_000, satuan="unit")
+    _baris("KMP. B", "Bongkar/Pasang jendela", 5_000_000, satuan="unit")
+    (k,) = svc.harga_wajar("bongkar/pasang jendela")["kelompok"]
+    assert k["n_kapal"] == 2
+    assert pencarian.pecah("ganti a/c", ketat=True) == ["ganti", "a/c"]
+
+
+def test_harga_terendah_tertinggi_adalah_harga_yang_tertulis():
+    """Bukan kuartil -- dengan 3 docking rentang kuartil cuma memuat satu di antaranya."""
+    # Harga terendah ada DI DALAM docking berbaris banyak (nilai tengahnya 18 jt).
+    _baris("KMP. A", "Docking dan undocking", 17_000_000, satuan="Ls")
+    _baris("KMP. A", "Docking dan undocking", 19_000_000, satuan="Ls")
+    _baris("KMP. B", "Docking dan undocking", 22_000_000, satuan="Ls")
+    _baris("KMP. C", "Docking dan undocking", 25_000_000, satuan="Ls")
+    _baris("KMP. C", "Docking dan undocking", 26_000_000, satuan="Ls")
+    k = _satu("undocking")
+    assert (k["harga_min"], k["harga_max"]) == (17_000_000, 26_000_000)
+
+
+def test_patokan_membawa_harga_asli_kalau_satu_docking_punya_beberapa_baris():
+    """365 rb (nilai tengah 350 rb dan 380 rb) tidak tertulis di dokumen mana pun."""
+    _baris("KMP. A", 'Elbow 2"', 350_000, satuan="pcs")
+    _baris("KMP. A", "Elbow 2 inch sch40", 380_000, satuan="pcs")
+    (d,) = _satu("elbow 2")["terakhir"]["docking"]
+    assert (d["harga"], d["harga_min"], d["harga_max"]) == (365_000, 350_000, 380_000)
+
+
+def test_kata_kunci_terlalu_panjang_ditolak_bukan_dipotong():
+    client = TestClient(app)
+    token = jwt.encode(
+        {"sub": "tes@contoh.com", "role": "user", "exp": int(time.time()) + 600},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    r = client.get(
+        "/analitik/harga-wajar",
+        params={"q": "elbow " * 40},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 422
 
 
 def test_kata_kunci_yang_dicari_dikembalikan_utuh():

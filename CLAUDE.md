@@ -56,7 +56,7 @@ backend/app/
   services/         -- ahsp, analitik, audit, catalog, docking_parser, harga_wajar, material,
                        pencarian, repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 320 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 335 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -199,8 +199,15 @@ backend** -- layar membaca `tampilkan_ringkas`/`alasan`, tidak menghitung ulang:
   Kalau dua kapal di tahun yang sama, keduanya tampil -- memilih satu = mengarang patokan.
 - **Pencarian ketat**, cuma ke `uraian_pekerjaan`: tanpa trigram (`word_similarity`
   sandblasting vs sweepblasting = 0,54, di atas ambang 0,45), dan ukuran dicocokkan utuh
-  (`elbow 2` tidak menarik 12, 2,5, atau 1/2; `1,5` = `1.5`; `8mm` = `8 mm`). Lewat
-  `pencarian.bangun(toleran=False)` -- kotak cari katalog tidak berubah.
+  (`elbow 2` tidak menarik 12, 2,5, 1/2, 2 1/2, 2-1/2, atau 2½; `1,5` = `1.5`; `sch40` =
+  `Sch. 40` = `SCH-40`; `no 2` = `No.2`). Bilangan campuran `2 1/2` ditahan utuh sebagai satu
+  kata. Lewat `pencarian.bangun(toleran=False)` -- kotak cari katalog tidak berubah. Di mode
+  ini kata kunci tidak dipotong 8 kata (memotong = melonggarkan); panjangnya dibatasi 200
+  karakter di router (422).
+- **Angka yang ditampilkan selalu angka yang tertulis di dokumen.** Patokan dan kalimat
+  rentang memakai harga terendah–tertinggi baris asli (`harga_min`/`harga_max`), bukan nilai
+  tengah per docking atau kuartil -- nilai tengah 350 rb dan 380 rb (365 rb) tidak ada di
+  berkas mana pun, dan dengan 3 docking rentang kuartil cuma memuat satu di antaranya.
 - Satuan dibaca dari `volume_satuan`, lalu `satuan` kalau yang lama "-" (Format Rapi dengan
   kolom `Vol`/`Sat` cuma mengisi `satuan`). `volume_satuan` menang kalau keduanya beda, karena
   dialah yang disunting `bulk_patch()`.

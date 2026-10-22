@@ -511,6 +511,9 @@ export type HargaWajarKelompok = {
   borongan: boolean;
   ejaan: string[];
   n_baris: number;
+  /** Harga terendah/tertinggi yang benar-benar tertulis di salah satu baris -- bukan kuartil. */
+  harga_min: number;
+  harga_max: number;
   n_docking: number;
   n_kapal: number;
   tahun_min: string | null;
@@ -523,7 +526,15 @@ export type HargaWajarKelompok = {
   /** Semua docking di tahun terbaru -- patokan untuk bos, selalu dengan asalnya. */
   terakhir: {
     tahun: string;
-    docking: { nama_kapal: string; klien: string[]; harga: number; n_baris: number }[];
+    docking: {
+      nama_kapal: string;
+      klien: string[];
+      /** Nilai tengah baris-baris docking ini -- bisa saja tidak tertulis di dokumen mana pun. */
+      harga: number;
+      harga_min: number;
+      harga_max: number;
+      n_baris: number;
+    }[];
   } | null;
   docking: HargaWajarDocking[];
 };

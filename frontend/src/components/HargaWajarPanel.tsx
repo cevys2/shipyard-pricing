@@ -88,7 +88,7 @@ export default function HargaWajarPanel({ auth }: Props) {
         <p className="mt-3 text-xs text-slate-500">
           Ejaannya harus tepat. Pencarian di sini sengaja tidak memaafkan salah ketik, supaya pekerjaan
           yang namanya mirip (sandblasting dan sweepblasting) tidak tercampur jadi satu harga. Ukuran
-          dicocokkan utuh: "elbow 2" tidak ikut menarik elbow 12 atau 2,5.
+          dicocokkan utuh: "elbow 2" tidak ikut menarik elbow 12, 2,5, atau 2 1/2.
         </p>
       </section>
 
@@ -96,8 +96,9 @@ export default function HargaWajarPanel({ auth }: Props) {
         <div className="flex gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <p>
-            Pencarian gagal: {error} Coba tekan <strong>Cari harga</strong> sekali lagi. Kalau tetap
-            gagal, kemungkinan server sedang tidak bisa dihubungi.
+            Pencarian gagal: {error.replace(/[.\s]+$/, "")}. Coba tekan <strong>Cari harga</strong>{" "}
+            sekali lagi. Kalau tetap gagal, muat ulang halaman, atau masuk lagi lewat Portal kalau
+            sesinya sudah habis.
           </p>
         </div>
       )}
@@ -155,13 +156,24 @@ function Hasil({ hasil }: { hasil: HargaWajar }) {
     );
   }
 
+  if (hasil.kata.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 px-6 py-8 text-sm text-slate-600">
+        <p className="font-medium text-slate-800">Ketik nama pekerjaan dengan huruf atau angka.</p>
+      </div>
+    );
+  }
+
   if (hasil.kelompok.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 px-6 py-8 text-sm text-slate-600">
-        <p className="font-medium text-slate-800">Tidak ada baris yang uraiannya memuat {dicari}.</p>
+        <p className="font-medium text-slate-800">
+          Tidak ada baris berharga yang uraiannya memuat {dicari}.
+        </p>
         <p className="mt-1">
           Periksa ejaannya dulu, karena salah satu huruf saja sudah membuat baris tidak ketemu. Kalau
-          ejaannya sudah benar, coba kata yang lebih umum, misalnya tanpa ukuran.
+          ejaannya sudah benar, coba kata yang lebih umum, misalnya tanpa ukuran. Baris yang harganya
+          kosong atau nol memang tidak ikut.
         </p>
       </div>
     );
@@ -238,9 +250,13 @@ function Ringkasan({ k, per, minKapal }: { k: HargaWajarKelompok; per: string; m
             {formatRp(k.ringkas.median)}
             <span className="text-base font-medium text-slate-500">{per}</span>
           </p>
+          {/* Harga terendah-tertinggi yang benar-benar tertulis, bukan kuartil: dengan 3 docking,
+              rentang kuartil cuma memuat satu di antaranya, jadi kalimat "separuh docking ada di
+              X – Y" tidak benar justru di kasus yang paling sering. */}
           <p className="mt-1 text-sm text-slate-600">
-            Separuh docking ada di {formatRp(k.ringkas.bawah)} – {formatRp(k.ringkas.atas)}. Dihitung dari{" "}
-            {k.n_docking} docking di {k.n_kapal} kapal; satu kapal per tahun dihitung satu suara.
+            Harga yang tercatat {formatRp(k.harga_min)} – {formatRp(k.harga_max)}, dari{" "}
+            {k.n_baris.toLocaleString("id-ID")} baris di {k.n_kapal} kapal. Harga tengahnya dihitung
+            dengan satu suara per kapal per tahun.
           </p>
         </div>
         {k.terakhir && (
@@ -260,13 +276,14 @@ function Ringkasan({ k, per, minKapal }: { k: HargaWajarKelompok; per: string; m
           {minKapal}. Pakai harga terakhir di bawah sebagai patokan, dan lihat daftarnya per kapal.
         </Kotak>
       )}
-      {k.alasan === "menyebar" && k.ringkas && (
+      {k.alasan === "menyebar" && (
         <Kotak nada="amber">
-          <strong>Harganya sangat bervariasi antar kapal.</strong> Separuh docking ada di{" "}
-          {formatRp(k.ringkas.bawah)} – {formatRp(k.ringkas.atas)}, beda{" "}
-          {(k.ringkas.atas / k.ringkas.bawah).toLocaleString("id-ID", { maximumFractionDigits: 1 })}× lipat.
-          Biasanya karena hasil nego atau lingkup kerja yang beda, jadi harga tengahnya tidak dipakai
-          sebagai jawaban. Lihat per kapal.
+          <strong>Harganya sangat bervariasi antar kapal:</strong> yang tercatat dari{" "}
+          {formatRp(k.harga_min)} sampai {formatRp(k.harga_max)}
+          {k.harga_min > 0 &&
+            ` (${(k.harga_max / k.harga_min).toLocaleString("id-ID", { maximumFractionDigits: 1 })}× lipat)`}
+          . Biasanya karena hasil nego atau lingkup kerja yang beda, jadi harga tengahnya tidak
+          dipakai sebagai jawaban. Lihat per kapal.
         </Kotak>
       )}
       {k.alasan === "tanpa_satuan" && (
@@ -306,12 +323,18 @@ function Patokan({
             <span
               className={`font-display font-bold text-slate-900 ${kecil ? "text-base" : "text-2xl"}`}
             >
-              {formatRp(d.harga)}
+              {/* Kalau docking ini punya beberapa baris berbeda harga, nilai tengahnya tidak
+                  tertulis di dokumen mana pun -- padahal angka inilah yang disalin ke penawaran.
+                  Jadi yang ditampilkan harga aslinya. */}
+              {d.harga_min === d.harga_max
+                ? formatRp(d.harga_min)
+                : `${formatRp(d.harga_min)} – ${formatRp(d.harga_max)}`}
               <span className="text-sm font-medium text-slate-500">{per}</span>
             </span>{" "}
             <span className="ml-1.5 text-sm text-slate-600">
               — {d.nama_kapal || "kapal tidak tercatat"}
               {d.klien.length > 0 && ` · ${d.klien.join(" / ")}`}
+              {d.n_baris > 1 && ` (${d.n_baris} baris)`}
             </span>
           </li>
         ))}
@@ -323,8 +346,8 @@ function Patokan({
       )}
       {!kecil && (
         <p className="mt-2 text-xs text-slate-500">
-          Ini kesepakatan dengan satu kapal, bukan harga pasar. Bisa saja hasil nego yang alot, jadi
-          cek asalnya sebelum dipakai.
+          Ini kesepakatan dengan kapal di atas, bukan harga pasar. Bisa saja hasil nego yang alot,
+          jadi cek asalnya sebelum dipakai.
         </p>
       )}
     </div>

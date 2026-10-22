@@ -25,12 +25,16 @@ menentukan angkanya sendirian.
 
 **Selalu ada patokan.** Bos suka ada satu angka pegangan, jadi tiap kelompok menampilkan
 **harga terakhir** lengkap dengan kapal dan kliennya. Kalau tahun terbaru punya dua kapal,
-keduanya tampil -- memilih salah satu sama saja dengan mengarang patokan.
+keduanya tampil -- memilih salah satu sama saja dengan mengarang patokan. Angkanya selalu
+harga yang benar-benar tertulis: kalau satu kapal punya dua baris (Rp 350.000 dan
+Rp 380.000), yang tampil "Rp 350.000 – Rp 380.000", bukan Rp 365.000 yang tidak ada di
+dokumen mana pun.
 
 **Pencariannya ketat, beda dari kotak cari katalog.** Salah ketik tidak dimaafkan, karena
 "sandblasting" dan "sweepblasting" dinilai 54% mirip -- cukup untuk tercampur jadi satu harga,
 padahal harganya jauh berbeda. Ukuran dicocokkan utuh: "elbow 2" tidak menarik elbow 12,
-2,5, atau 1/2. Kotak cari di tab Dashboard & Data tidak berubah.
+2,5, 1/2, atau 2 1/2, dan "sch 40" tetap menemukan "Sch. 40" dan "SCH-40". Kotak cari di
+tab Dashboard & Data tidak berubah.
 
 **m2 dan m² akhirnya satu kelompok.** Ejaan satuan dipetakan ke satuan baku (`m2`/`M2`/`m²` →
 m², `bh`/`buah`/`pc` → pcs, dan seterusnya) saat membaca; tabel harganya sendiri tidak
@@ -38,9 +42,11 @@ disentuh. Ejaan yang belum dikenal tetap tampil dengan namanya, bertanda "ejaan 
 diperiksa", supaya daftarnya bisa dilengkapi. `m'` sengaja dibiarkan terpisah sampai artinya
 dipastikan. Satuan borongan (Ls, Lot, Paket) ditandai.
 
-**Diperiksa empat arah sebelum dikirim.** Pemeriksaan terpisah menemukan ukuran pipa yang
-tercampur ("elbow 3/4"" ikut menarik semua ukuran) dan beberapa celah di tes; semuanya sudah
-diperbaiki, dan tiap celah tes dibuktikan tertutup dengan sengaja memasang kesalahannya lagi.
+**Diperiksa dua putaran sebelum dikirim.** Pemeriksaan terpisah menemukan ukuran pipa yang
+tercampur ("elbow 3/4"" ikut menarik semua ukuran, lalu "elbow 2" ikut menarik 2 1/2"),
+patokan yang menampilkan angka buatan, kalimat "separuh docking ada di …" yang tidak benar
+untuk 3 kapal, dan beberapa celah di tes. Semuanya sudah diperbaiki, dan tiap celah tes
+dibuktikan tertutup dengan sengaja memasang kesalahannya lagi.
 
 ---
 

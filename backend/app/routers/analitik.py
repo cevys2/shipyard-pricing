@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth import get_current_user
 from app.services import analitik as analitik_service
@@ -38,10 +38,17 @@ def nilai_pekerjaan(_: Annotated[dict, Depends(get_current_user)]):
 
 
 @router.get("/harga-wajar")
-def harga_wajar(_: Annotated[dict, Depends(get_current_user)], q: str = ""):
+def harga_wajar(
+    _: Annotated[dict, Depends(get_current_user)],
+    q: Annotated[str, Query(max_length=200)] = "",
+):
     # Satu parameter saja. Ambang kapan median boleh tampil sengaja tidak bisa diatur dari
     # request -- aturannya satu, di services/harga_wajar.py, dan layar membaca `aturan`
     # dari respons supaya kalimat penjelasnya tidak bisa berbeda dari yang dihitung.
+    #
+    # max_length menggantikan pemotongan 8 kata: di mode ketat tiap kata adalah syarat AND,
+    # jadi memotong diam-diam justru melonggarkan hasil. Kata kunci yang terlalu panjang
+    # ditolak terang-terangan (422), bukan dipotong.
     return harga_wajar_service.harga_wajar(q)
 
 

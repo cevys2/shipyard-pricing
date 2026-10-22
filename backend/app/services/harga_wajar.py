@@ -204,7 +204,13 @@ def _kelompok(
         terakhir = {
             "tahun": tahun_terbaru,
             "docking": [
-                {k: d[k] for k in ("nama_kapal", "klien", "harga", "n_baris")}
+                # harga_min/harga_max ikut: kalau satu docking punya dua baris (350 rb dan
+                # 380 rb), nilai tengahnya (365 rb) tidak tertulis di dokumen mana pun, dan
+                # angka patokan inilah yang disalin ke penawaran. Layar menampilkan aslinya.
+                {
+                    k: d[k]
+                    for k in ("nama_kapal", "klien", "harga", "harga_min", "harga_max", "n_baris")
+                }
                 for d in docking
                 if d["tahun"] == tahun_terbaru
             ],
@@ -218,6 +224,11 @@ def _kelompok(
         "borongan": bool(borongan.get(satuan, False)),
         "ejaan": sorted({r["satuan_tertulis"].strip() for r in rows if r["satuan_tertulis"]}),
         "n_baris": len(rows),
+        # Harga terendah dan tertinggi yang BENAR-BENAR tertulis di baris mana pun. Bukan
+        # kuartil: dengan 3 docking, rentang kuartil cuma memuat 1 di antaranya, jadi
+        # kalimat "separuh docking ada di X – Y" yang dulu dipasang di layar tidak benar.
+        "harga_min": min(r["harga_satuan"] for r in rows),
+        "harga_max": max(r["harga_satuan"] for r in rows),
         "n_docking": len(docking),
         "n_kapal": n_kapal,
         "tahun_min": min(tahun) if tahun else None,
