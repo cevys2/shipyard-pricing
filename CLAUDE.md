@@ -41,6 +41,23 @@ Dulu tercatat "satu pengguna aktif". Ternyata tidak: bos dan kolega juga membuka
   Build command frontend **harus** `npm install && npm run build` — `npm ci` selalu gagal
   EBUSY karena Railpack me-mount cache di dalam `node_modules`. Setelan build/start cuma
   terbaca oleh deployment BARU; tombol redeploy memutar ulang snapshot yang lama.
+  Start command frontend yang disarankan: `./node_modules/.bin/serve dist -s -l $PORT` —
+  tanpa pembungkus `npm start`, memorinya 89 MB alih-alih 156 MB (diukur 23 Oktober 2026).
+
+## Biaya Railway = memori (23 Oktober 2026)
+
+~97% tagihan adalah **memori yang terpakai selama service menyala**, bukan CPU. Grafik dan
+analitik tidak menambah biaya berarti: semuanya cuma dihitung saat tabnya dibuka, dan tidak
+ada pekerjaan latar belakang apa pun di backend. Yang dijaga:
+
+- **pandas dan openpyxl di-import DI DALAM fungsi impor**, bukan di atas berkas (pola yang
+  sama dengan `xlrd`). Di atas berkas keduanya menetap ~50 MB selama service menyala, padahal
+  cuma dipakai waktu impor. Backend diam: 133 MB → 81 MB. Dijaga `tests/test_hemat_memori.py`.
+- **Backend harus cepat bangun**, karena rencananya service ditidurkan saat tidak dipakai dan
+  tiap pembukaan pertama membayar waktu nyala. `selaraskan_kategori()` dulu memakan ~2,3 detik
+  di setiap app start; sekarang ~0,01 detik (resolver dihitung sekali per teks kategori).
+  Nyala total 3,6–4,2 detik → ~1,5 detik dengan 8.068 baris. Jangan tambahkan kerja berat
+  ke `lifespan()` tanpa mengukur waktunya.
 
 ## Struktur backend
 
@@ -56,7 +73,7 @@ backend/app/
   services/         -- ahsp, analitik, audit, catalog, docking_parser, harga_wajar, material,
                        pencarian, repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 339 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 343 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic

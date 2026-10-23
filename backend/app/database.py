@@ -487,19 +487,53 @@ def selaraskan_kategori() -> int:
 
     `IS DISTINCT FROM` di akhir bikin pemanggilan kedua jadi nol baris, bukan menulis ulang
     isi yang sama. Jadi aman dipanggil tiap app start.
+
+    Resolver dihitung SEKALI PER TEKS KATEGORI YANG BERBEDA, lalu hasilnya ditempel ke semua
+    baris berteks sama (23 Oktober 2026). Versi lama memanggil resolver per baris: 8.068 kali
+    mencari di 126 alias sambil merapikan teks yang sama berulang-ulang, ~2,3 detik di SETIAP
+    app start walaupun hasilnya nol baris berubah. Itu yang membuat backend lambat bangun --
+    dan app yang tidur saat tidak dipakai (untuk menghemat memori di Railway) membayar
+    lambatnya tiap kali dibuka. Sekarang ~0,01 detik. Resolvernya tetap `kategori_id_sql()`
+    yang sama, jadi aturannya tidak bercabang.
+
+    `MATERIALIZED` itu wajib: tanpanya Postgres boleh melebur CTE ke dalam join dan kembali
+    memanggil resolver per baris -- sudah dicoba, waktunya balik ke 2,4 detik.
+    Teks NULL tidak bisa ikut join `=`, jadi diurus pernyataan kedua dengan resolver per baris;
+    jumlahnya nol atau hampir nol, jadi murah.
     """
+    tabel = settings.catalog_table
     with engine.begin() as conn:
-        hasil = conn.execute(
+        per_teks = conn.execute(
             text(
                 f"""
-                UPDATE {settings.catalog_table} t
+                WITH peta AS MATERIALIZED (
+                    SELECT s.k, {kategori_id_sql("s.k")} AS baru
+                    FROM   (SELECT DISTINCT kategori_pekerjaan AS k
+                            FROM   {tabel}
+                            WHERE  kategori_sumber = 'alias'
+                              AND  kategori_pekerjaan IS NOT NULL) s
+                )
+                UPDATE {tabel} t
+                SET    kategori_id = p.baru
+                FROM   peta p
+                WHERE  t.kategori_pekerjaan = p.k
+                  AND  t.kategori_sumber = 'alias'
+                  AND  t.kategori_id IS DISTINCT FROM p.baru
+                """
+            )
+        ).rowcount
+        teks_null = conn.execute(
+            text(
+                f"""
+                UPDATE {tabel} t
                 SET    kategori_id = {kategori_id_sql("t.kategori_pekerjaan")}
-                WHERE  t.kategori_sumber = 'alias'
+                WHERE  t.kategori_pekerjaan IS NULL
+                  AND  t.kategori_sumber = 'alias'
                   AND  t.kategori_id IS DISTINCT FROM {kategori_id_sql("t.kategori_pekerjaan")}
                 """
             )
-        )
-    return hasil.rowcount
+        ).rowcount
+    return per_teks + teks_null
 
 
 def ensure_ahsp_tables() -> None:

@@ -8,6 +8,24 @@ langsung di GitHub.
 
 ---
 
+## 23 Oktober 2026 — backend bangun 2,5× lebih cepat dan memakai 40% lebih sedikit memori
+
+Hampir seluruh tagihan Railway adalah memori yang terpakai selama service menyala. Dua
+perbaikan, tanpa ada fitur yang berubah:
+
+- **Pustaka pembaca Excel baru dimuat saat impor**, bukan sejak backend menyala. Memori backend
+  saat diam turun dari 133 MB ke 81 MB.
+- **Backend menyala dalam ~1,5 detik**, bukan 3,6–4,2 detik. Setiap kali menyala, backend
+  mencocokkan ulang kategori seluruh 8.000-an baris satu per satu (~2,3 detik) walaupun
+  hasilnya hampir selalu "tidak ada yang berubah". Sekarang dicocokkan sekali per teks
+  kategori, hasilnya sama persis. Ini syarat supaya service bisa ditidurkan saat tidak dipakai
+  tanpa membuat pembukaan pertama terasa lambat.
+
+Frontend bisa ikut berhemat dari 156 MB ke 89 MB dengan mengganti start command di Railway
+(lihat CLAUDE.md, bagian Deploy) — itu pengaturan, bukan kode.
+
+---
+
 ## 23 Oktober 2026 — Harga Wajar tidak memberi harga tengah untuk kata kunci yang campur
 
 Mencari "elbow" tanpa ukuran dulu tetap memberi satu harga tengah, padahal isinya campuran
