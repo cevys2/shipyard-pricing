@@ -8,6 +8,19 @@ langsung di GitHub.
 
 ---
 
+## 23 Oktober 2026 — grafik Tren Harga Jual Jasa dibuang
+
+Grafik median harga jual per kategori per tahun di tab Analitik dihapus. Peringatannya sendiri
+sudah mengakui masalahnya: jumlah kapal per tahun berbeda jauh, jadi naik-turunnya garis bisa
+sekadar efek berubahnya campuran kapal, bukan bukti harga naik. Grafik yang tidak bisa
+disimpulkan cuma menambah bacaan. Untuk "pekerjaan ini harganya berapa", pakai tab Harga Wajar.
+
+Satu hal yang **tidak** ikut hilang: peringatan "N baris belum punya kategori" dulu menumpang
+di grafik itu, dan itu satu-satunya tempat baris tanpa kategori kelihatan. Sekarang dia pindah
+ke bagian "Ke Mana Uangnya Pergi". Tab Analitik juga jadi memanggil server 3 kali, bukan 5.
+
+---
+
 ## 23 Oktober 2026 — backend bangun 2,5× lebih cepat dan memakai 40% lebih sedikit memori
 
 Hampir seluruh tagihan Railway adalah memori yang terpakai selama service menyala. Dua

@@ -26,106 +26,10 @@ TABLE = settings.catalog_table
 # JOIN -- ekspresi normalisasinya tidak lagi punya pemakai di sini.
 
 
-def tren_harga_jasa(*, kategori: str | None = None, min_sampel: int = 3) -> dict[str, Any]:
-    """Median harga jual per kategori pekerjaan per tahun, plus data untuk peringatan bias.
-
-    Median (bukan rata-rata) karena data realisasi docking punya baris ekstrem -- satu
-    pekerjaan replating besar bisa menarik rata-rata sekategori.
-
-    `min_sampel` menyaring kombinasi kategori-tahun yang datanya terlalu tipis untuk
-    dibaca sebagai tren.
-    """
-    where_kat = ""
-    params: dict[str, Any] = {"min_sampel": min_sampel}
-    if kategori and kategori != "Semua":
-        where_kat = "AND k.nama = :kategori"
-        params["kategori"] = kategori
-
-    with engine.connect() as conn:
-        # `kapal` ikut dikembalikan karena median tanpa tahu kapal mana yang menyusunnya
-        # tidak bisa ditindaklanjuti: angka Rp 65.000 untuk Sweepblasting jadi tidak jelas
-        # itu rata-rata dari kapal besar, kapal kecil, atau campuran keduanya.
-        #
-        # Pengelompokan lewat `kategori_id`, bukan lewat normalisasi teks. Sepuluh sebutan
-        # "PIPA-PIPA"/"Pipa - Pipa"/"PIPING" dulu jadi sepuluh kelompok tipis yang
-        # masing-masing bisa gugur di `min_sampel`; sekarang satu kelompok tebal.
-        #
-        # JOIN (bukan LEFT JOIN) menyaring baris yang `kategori_id`-nya masih NULL. Itu
-        # disengaja -- median dari kategori "tidak diketahui" tidak ada artinya -- tapi
-        # jumlahnya ikut dilaporkan di `cakupan.tanpa_kategori` supaya penyusutannya
-        # kelihatan, bukan hilang diam-diam.
-        seri = conn.execute(
-            text(
-                f"""
-                SELECT k.nama AS kategori,
-                       t.tahun,
-                       COUNT(*)                                                     AS n_baris,
-                       COUNT(DISTINCT t.nama_kapal)                                 AS n_kapal,
-                       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY t.harga_satuan)  AS median,
-                       MIN(t.harga_satuan)                                          AS minimum,
-                       MAX(t.harga_satuan)                                          AS maksimum,
-                       -- Agregat biasa, bukan subquery berkorelasi: grup di sini SUDAH
-                       -- (kategori, tahun), jadi array_agg atas grup tepat berisi kapal
-                       -- yang menyusun median tersebut.
-                       array_agg(DISTINCT t.nama_kapal ORDER BY t.nama_kapal)
-                           FILTER (WHERE t.nama_kapal IS NOT NULL)                  AS kapal
-                FROM   {TABLE} t
-                JOIN   kategori k ON k.id = t.kategori_id
-                WHERE  t.harga_satuan > 0
-                  {where_kat}
-                GROUP  BY k.nama, k.urutan, t.tahun
-                HAVING COUNT(*) >= :min_sampel
-                ORDER  BY k.urutan, t.tahun
-                """
-            ),
-            params,
-        ).mappings().all()
-
-        # Komposisi kapal per tahun: dasar peringatan bahwa "kenaikan harga" bisa
-        # sekadar efek berubahnya campuran kapal, bukan inflasi harga.
-        per_tahun = conn.execute(
-            text(
-                f"""
-                SELECT tahun,
-                       COUNT(*)                   AS n_baris,
-                       COUNT(DISTINCT nama_kapal) AS n_kapal
-                FROM   {TABLE}
-                WHERE  harga_satuan > 0
-                GROUP  BY tahun
-                ORDER  BY tahun
-                """
-            )
-        ).mappings().all()
-
-        # `tanpa_kategori` baru: baris yang belum punya kategori_id sama sekali tidak masuk
-        # `seri`. Yang lazim bikin ini naik adalah impor Excel dengan sebutan kategori yang
-        # belum ada aliasnya -- resolver baru jalan lagi saat aplikasi start berikutnya.
-        # Tanpa angka ini, baris-baris itu cuma raib dari grafik tanpa memberi tahu siapa pun.
-        cakupan = conn.execute(
-            text(
-                f"""
-                SELECT COUNT(*) AS total_baris,
-                       COUNT(DISTINCT kategori_id) AS total_kategori,
-                       COUNT(DISTINCT tahun) AS total_tahun,
-                       COUNT(*) FILTER (WHERE kategori_id IS NULL) AS tanpa_kategori
-                FROM   {TABLE}
-                WHERE  harga_satuan > 0
-                """
-            )
-        ).mappings().first()
-
-    return {
-        "seri": [dict(r) for r in seri],
-        "per_tahun": [dict(r) for r in per_tahun],
-        "cakupan": dict(cakupan) if cakupan else {},
-    }
-
-
 def nilai_pekerjaan() -> dict[str, Any]:
     """Nilai pekerjaan (volume x harga_satuan) per kategori/tahun dan per kapal/klien.
 
-    Beda dari `tren_harga_jasa()`, yang menjawab "harga satuannya berapa". Yang ini
-    menjawab "uangnya pergi ke mana" -- dan itu baru mungkin sejak kolom `volume` ada,
+    Pertanyaan "harga satuannya berapa" dijawab layar Harga Wajar. Yang ini menjawab "uangnya pergi ke mana" -- dan itu baru mungkin sejak kolom `volume` ada,
     karena tanpa kuantitas satu baris Rp 300.000 bisa berarti Rp 300.000 atau
     Rp 90.000.000.
 
@@ -146,9 +50,10 @@ def nilai_pekerjaan() -> dict[str, Any]:
     # float dan menyisakan ekor seperti "...577,972507". Rupiah tidak sepecah itu, dan
     # angka yang memamerkan ketelitian palsu bikin orang ragu pada seluruh layarnya.
     with engine.connect() as conn:
-        # JOIN (bukan LEFT JOIN) ke `kategori` konsisten dengan `tren_harga_jasa()`:
-        # nilai dari kategori "tidak diketahui" tidak bisa ditindaklanjuti. Yang tersaring
-        # ikut dilaporkan di `cakupan.tanpa_kategori`.
+        # JOIN (bukan LEFT JOIN) ke `kategori`: nilai dari kategori "tidak diketahui" tidak
+        # bisa ditindaklanjuti. Yang tersaring ikut dilaporkan di `cakupan.tanpa_kategori`,
+        # dan layar menampilkannya -- sejak grafik Tren Harga Jual Jasa dibuang (23 Oktober
+        # 2026), itu satu-satunya tempat baris tanpa kategori kelihatan.
         per_kategori = conn.execute(
             text(
                 f"""
@@ -211,39 +116,6 @@ def nilai_pekerjaan() -> dict[str, Any]:
         "per_kategori": [dict(r) for r in per_kategori],
         "per_kapal": [dict(r) for r in per_kapal],
     }
-
-
-def kategori_options(*, min_sampel: int = 3) -> list[str]:
-    """Kategori dari master (aktif saja, urut `urutan`) yang punya data lolos `min_sampel`.
-
-    Namanya sekarang datang dari tabel `kategori`, bukan dari memindai teks bebas -- itu
-    inti Sesi K2. Yang sengaja DIPERTAHANKAN dari versi lama: saringan `min_sampel`-nya
-    tetap sama persis dengan `tren_harga_jasa()`. Mengembalikan seluruh isi master apa
-    adanya akan memunculkan lagi bug yang dulu diperbaiki di sini -- kategori yang bisa
-    dipilih tapi grafiknya kosong, karena tiap tahunnya kurang dari `min_sampel` baris
-    sehingga tersaring habis di sisi data.
-    """
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT k.nama
-                FROM   kategori k
-                WHERE  k.aktif
-                  AND  EXISTS (
-                           SELECT 1
-                           FROM   {TABLE} t
-                           WHERE  t.kategori_id = k.id
-                             AND  t.harga_satuan > 0
-                           GROUP  BY t.tahun
-                           HAVING COUNT(*) >= :min_sampel
-                       )
-                ORDER  BY k.urutan
-                """
-            ),
-            {"min_sampel": min_sampel},
-        ).scalars().all()
-    return ["Semua"] + [r for r in rows if r]
 
 
 def tren_material() -> dict[str, Any]:

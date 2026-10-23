@@ -289,19 +289,8 @@ export const api = {
   ahspHitung(token: string, id: number) {
     return request<AhspHitung>(`/ahsp/${id}/hitung`, {}, token);
   },
-  trenJasa(token: string, params: { kategori?: string; min_sampel?: number } = {}) {
-    const q = new URLSearchParams();
-    if (params.kategori && params.kategori !== "Semua") q.set("kategori", params.kategori);
-    if (params.min_sampel != null) q.set("min_sampel", String(params.min_sampel));
-    const qs = q.toString();
-    return request<TrenJasa>(`/analitik/tren-jasa${qs ? `?${qs}` : ""}`, {}, token);
-  },
-  trenJasaKategori(token: string) {
-    return request<string[]>("/analitik/tren-jasa/kategori", {}, token);
-  },
-  /** Master kategori, buat mengisi dropdown. Beda dari `trenJasaKategori`, yang cuma memuat
-   * kategori dengan data cukup untuk digambar grafiknya -- kategori yang belum punya satu
-   * baris pun tetap harus bisa dipilih waktu mengisi, kalau tidak tidak akan pernah ada isinya. */
+  /** Master kategori, buat mengisi dropdown -- termasuk kategori yang belum punya satu baris
+   * pun, karena yang belum pernah bisa dipilih tidak akan pernah ada isinya. */
   kategoriMaster(token: string) {
     return request<Kategori[]>("/kategori", {}, token);
   },
@@ -384,34 +373,6 @@ export type PriceHistoryRow = {
 };
 
 export type Kategori = { id: number; nama: string };
-
-export type TrenJasaPoint = {
-  kategori: string;
-  tahun: string;
-  n_baris: number;
-  n_kapal: number;
-  median: number;
-  minimum: number;
-  maksimum: number;
-  /** Kapal yang menyusun median ini. Median tanpa ini tidak bisa ditindaklanjuti:
-   * tidak jelas angkanya dari kapal besar, kapal kecil, atau campuran. */
-  kapal: string[] | null;
-};
-
-export type TrenJasa = {
-  seri: TrenJasaPoint[];
-  per_tahun: { tahun: string; n_baris: number; n_kapal: number }[];
-  cakupan: {
-    total_baris: number;
-    total_kategori: number;
-    total_tahun: number;
-    /** Baris yang belum punya kategori kanonik, jadi tidak masuk `seri` sama sekali.
-     * Biasanya naik sesudah impor Excel dengan sebutan kategori yang belum ada aliasnya;
-     * resolver baru menjalankannya lagi saat backend start berikutnya. Ditampilkan supaya
-     * penyusutan datanya kelihatan, bukan raib diam-diam. */
-    tanpa_kategori: number;
-  };
-};
 
 export type TrenMaterialKandidat = {
   id: number;

@@ -71,8 +71,8 @@ KOLOM_CARI = ("t.uraian_pekerjaan",)
 def _nilai_tengah(nilai: list[float]) -> tuple[float, float, float]:
     """(batas bawah rentang tengah, median, batas atas) -- kuartil 1, 2, 3.
 
-    `method="inclusive"` = interpolasi linear, sama dengan PERCENTILE_CONT di Postgres yang
-    dipakai `analitik.tren_harga_jasa()`. `statistics.quantiles` butuh minimal dua titik.
+    `method="inclusive"` = interpolasi linear, sama dengan PERCENTILE_CONT di Postgres.
+    `statistics.quantiles` butuh minimal dua titik.
     """
     if len(nilai) == 1:
         return nilai[0], nilai[0], nilai[0]

@@ -142,6 +142,13 @@ baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 ali
 impor Repair List (mode ketiga di tab Import Excel), dan layar **Harga Wajar** (tab sendiri,
 22 Oktober 2026 -- lihat bagiannya di bawah).
 
+**Dibuang 23 Oktober 2026: grafik Tren Harga Jual Jasa** (median per kategori per tahun, plus
+endpoint `/analitik/tren-jasa` dan `/analitik/tren-jasa/kategori`). Kesimpulannya tidak bisa
+diambil: jumlah dan campuran kapal per tahun berubah jauh, jadi naik-turun garisnya bisa
+sekadar efek campuran kapal. Pertanyaan "pekerjaan ini harganya berapa" dijawab Harga Wajar.
+Kalau suatu saat perlu "harga kita naik berapa persen", bandingkan **kapal yang sama** antar
+tahun (like-for-like), jangan menghidupkan lagi median gabungan.
+
 Diketahui terbatas:
 
 - Aplikasi belum menghasilkan keluaran apa pun — penawaran masih disusun manual di Excel.
@@ -172,7 +179,8 @@ Diketahui terbatas:
   `kategori_id` di dalam INSERT `_insert_rows()` — semua jalur simpan lewat situ — dan di
   UPDATE `bulk_patch()` untuk baris `kategori_sumber = 'alias'`. `selaraskan_kategori()` tetap
   jalan saat app start untuk alias yang baru ditambahkan. Yang masih bisa kosong hanyalah
-  sebutan yang belum punya alias. Kelihatan di tab Analitik (`cakupan.tanpa_kategori`).
+  sebutan yang belum punya alias. Kelihatan di tab Analitik, bagian "Ke Mana Uangnya Pergi"
+  (`nilai_pekerjaan().cakupan.tanpa_kategori`) -- satu-satunya tempat di layar; jangan dibuang.
   **Fallback PEKERJAAN TAMBAHAN** (5 Oktober 2026): seksi tambahan ditulis bertanggal
   (`PEKERJAAN TAMBAHAN/ Senin, 25-05-2026`), jadi tiap berkas membawa teks yang tidak akan
   pernah punya alias persis — 303 baris kosong. `kategori_id_sql()` sekarang mencoba alias

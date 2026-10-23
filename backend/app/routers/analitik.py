@@ -10,25 +10,6 @@ from app.services import harga_wajar as harga_wajar_service
 router = APIRouter(prefix="/analitik", tags=["analitik"])
 
 
-@router.get("/tren-jasa")
-def tren_jasa(
-    _: Annotated[dict, Depends(get_current_user)],
-    kategori: str | None = None,
-    min_sampel: int = 3,
-):
-    return analitik_service.tren_harga_jasa(kategori=kategori, min_sampel=max(1, min_sampel))
-
-
-@router.get("/tren-jasa/kategori")
-def tren_jasa_kategori(
-    _: Annotated[dict, Depends(get_current_user)],
-    min_sampel: int = 3,
-):
-    # min_sampel harus sama dengan yang dipakai /tren-jasa, kalau tidak daftar opsinya
-    # bisa memuat kategori yang grafiknya kosong.
-    return analitik_service.kategori_options(min_sampel=max(1, min_sampel))
-
-
 @router.get("/nilai-pekerjaan")
 def nilai_pekerjaan(_: Annotated[dict, Depends(get_current_user)]):
     # Tanpa parameter: agregatnya sudah kecil (puluhan baris) dan seluruh pengirisan --
