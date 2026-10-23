@@ -186,13 +186,13 @@ function Hasil({ hasil }: { hasil: HargaWajar }) {
         cocok dengan {dicari}, dalam {hasil.kelompok.length} kelompok satuan.
       </p>
       {hasil.kelompok.map((k) => (
-        <KelompokKartu key={k.satuan ?? "-"} k={k} minKapal={hasil.aturan.min_kapal} />
+        <KelompokKartu key={k.satuan ?? "-"} k={k} aturan={hasil.aturan} />
       ))}
     </div>
   );
 }
 
-function KelompokKartu({ k, minKapal }: { k: HargaWajarKelompok; minKapal: number }) {
+function KelompokKartu({ k, aturan }: { k: HargaWajarKelompok; aturan: HargaWajar["aturan"] }) {
   const per = k.satuan ? ` / ${k.satuan}` : "";
   const rentangTahun =
     k.tahun_min && k.tahun_max
@@ -232,7 +232,7 @@ function KelompokKartu({ k, minKapal }: { k: HargaWajarKelompok; minKapal: numbe
       </header>
 
       <div className="px-5 py-4">
-        <Ringkasan k={k} per={per} minKapal={minKapal} />
+        <Ringkasan k={k} per={per} aturan={aturan} />
       </div>
 
       <TabelDocking docking={k.docking} per={per} />
@@ -240,7 +240,15 @@ function KelompokKartu({ k, minKapal }: { k: HargaWajarKelompok; minKapal: numbe
   );
 }
 
-function Ringkasan({ k, per, minKapal }: { k: HargaWajarKelompok; per: string; minKapal: number }) {
+function Ringkasan({
+  k,
+  per,
+  aturan,
+}: {
+  k: HargaWajarKelompok;
+  per: string;
+  aturan: HargaWajar["aturan"];
+}) {
   if (k.tampilkan_ringkas && k.ringkas) {
     return (
       <div className="space-y-4">
@@ -273,7 +281,8 @@ function Ringkasan({ k, per, minKapal }: { k: HargaWajarKelompok; per: string; m
       {k.alasan === "kapal_kurang" && (
         <Kotak nada="biru">
           Pembandingnya baru <strong>{k.n_kapal} kapal</strong>, sedangkan harga tengah butuh minimal{" "}
-          {minKapal}. Pakai harga terakhir di bawah sebagai patokan, dan lihat daftarnya per kapal.
+          {aturan.min_kapal}. Pakai harga terakhir di bawah sebagai patokan, dan lihat daftarnya per
+          kapal.
         </Kotak>
       )}
       {k.alasan === "menyebar" && (
@@ -284,6 +293,17 @@ function Ringkasan({ k, per, minKapal }: { k: HargaWajarKelompok; per: string; m
             ` (${(k.harga_max / k.harga_min).toLocaleString("id-ID", { maximumFractionDigits: 1 })}× lipat)`}
           . Biasanya karena hasil nego atau lingkup kerja yang beda, jadi harga tengahnya tidak
           dipakai sebagai jawaban. Lihat per kapal.
+        </Kotak>
+      )}
+      {/* Ditampilkan walau harga tengah sudah tersembunyi sebab lain (mis. kapalnya kurang):
+          saran menambah ukuran tetap berguna. */}
+      {k.campur && (
+        <Kotak nada="amber">
+          <strong>Kata kunci ini sepertinya mencakup beberapa ukuran atau pekerjaan berbeda:</strong>{" "}
+          di dalam satu kapal saja harganya bisa beda{" "}
+          {aturan.rasio_sebar.toLocaleString("id-ID")}× lipat atau lebih
+          {k.alasan === "campur" && ", jadi harga tengahnya tidak dipakai sebagai jawaban"}. Tambahkan
+          ukuran atau detail, misalnya "elbow 2" bukan "elbow".
         </Kotak>
       )}
       {k.alasan === "tanpa_satuan" && (

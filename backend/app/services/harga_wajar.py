@@ -21,11 +21,17 @@ datanya, bukan dari daftar kategori yang ditulis tangan:
 3. Kalau menyebar (batas atas rentang tengah >= `RASIO_SEBAR` x batas bawahnya), angka
    ringkas tidak ditampilkan sebagai jawaban. Rentangnya tetap dikirim supaya layar bisa
    menyebut seberapa lebar.
+4. Kalau kata kuncinya mencakup beberapa pekerjaan berbeda ("campur", disepakati 23 Oktober
+   2026): separuh docking atau lebih punya harga termahal >= `RASIO_SEBAR` x harga
+   termurahnya SENDIRI. Mencari "elbow" tanpa ukuran memberi Elbow Rp 300 rb - 2,1 jt di
+   tiap kapal; nilai tengah per docking-nya jadi mirip-mirip, aturan ke-3 tidak berbunyi,
+   padahal angkanya campuran semua ukuran. Tanda jujurnya ada di dalam docking, bukan antar
+   docking.
 
 Daftar per docking SELALU dikirim. Untuk pekerjaan yang dinego, pertanyaan yang berguna
 adalah "dulu dengan klien ini sepakat berapa", dan daftar itulah jawabannya.
 
-Kedua ambang di atas tebakan awal, belum dicoba ke data produksi. Kalau perlu disetel,
+Ambang-ambang di atas tebakan awal, belum dicoba ke data produksi. Kalau perlu disetel,
 cukup di sini.
 
 PENCARIAN KETAT dan cuma ke `uraian_pekerjaan`. Tanpa toleransi salah ketik (lihat
@@ -183,6 +189,12 @@ def _kelompok(
     n_kapal = len({d["nama_kapal"] for d in docking if d["nama_kapal"]})
     tahun = [d["tahun"] for d in docking if d["tahun"]]
 
+    # Aturan ke-4. Dihitung untuk semua kelompok -- juga yang kapalnya kurang -- karena saran
+    # "tambahkan ukuran" tetap berguna walaupun harga tengahnya sudah disembunyikan sebab lain.
+    # Docking berbaris satu tidak pernah "campur" (termahal = termurah).
+    n_campur = sum(d["harga_max"] >= RASIO_SEBAR * d["harga_min"] for d in docking)
+    campur = n_campur > 0 and n_campur * 2 >= len(docking)
+
     ringkas = None
     if satuan is None:
         alasan = "tanpa_satuan"
@@ -191,7 +203,12 @@ def _kelompok(
     else:
         bawah, tengah, atas = _nilai_tengah([float(d["harga"]) for d in docking])
         ringkas = {"median": round(tengah), "bawah": round(bawah), "atas": round(atas)}
-        alasan = "menyebar" if bawah > 0 and atas >= RASIO_SEBAR * bawah else None
+        if bawah > 0 and atas >= RASIO_SEBAR * bawah:
+            alasan = "menyebar"
+        elif campur:
+            alasan = "campur"
+        else:
+            alasan = None
 
     # Patokan "harga terakhir" (disepakati 22 Oktober 2026): bos lebih suka ada satu angka
     # pegangan, juga ketika median disembunyikan. Yang dikirim SEMUA docking di tahun
@@ -236,6 +253,7 @@ def _kelompok(
         "ringkas": ringkas,
         "tampilkan_ringkas": ringkas is not None and alasan is None,
         "alasan": alasan,
+        "campur": campur,
         "terakhir": terakhir,
         "docking": docking,
     }

@@ -56,7 +56,7 @@ backend/app/
   services/         -- ahsp, analitik, audit, catalog, docking_parser, harga_wajar, material,
                        pencarian, repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 335 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 339 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -195,6 +195,12 @@ backend** -- layar membaca `tampilkan_ringkas`/`alasan`, tidak menghitung ulang:
   rentang tengahnya < 2× batas bawah (`RASIO_SEBAR`). Sebabnya: median dari pekerjaan yang
   jarang dan dinego (contoh dari lapangan: bongkar pasang jendela marine grade) terbaca seperti
   harga pasar. Kedua ambang itu tebakan awal, **belum dicoba ke data produksi**.
+- **Kata kunci yang mencakup beberapa pekerjaan** ("campur", 23 Oktober 2026): kalau separuh
+  docking atau lebih punya harga termahal >= 2× harga termurahnya SENDIRI, harga tengah juga
+  disembunyikan dan layar menyarankan menambah ukuran. Sebabnya: "elbow" tanpa ukuran memberi
+  Elbow Rp 300 rb – 2,1 jt di tiap kapal, nilai tengah per docking jadi mirip-mirip, dan aturan
+  "menyebar" antar docking tidak berbunyi. `campur` dikirim terpisah dari `alasan`, jadi
+  sarannya tetap muncul walau harga tengah sudah tersembunyi sebab lain.
 - **Patokan "harga terakhir"**: semua docking di tahun terbaru, selalu dengan kapal + klien.
   Kalau dua kapal di tahun yang sama, keduanya tampil -- memilih satu = mengarang patokan.
 - **Pencarian ketat**, cuma ke `uraian_pekerjaan`: tanpa trigram (`word_similarity`
@@ -214,10 +220,6 @@ backend** -- layar membaca `tampilkan_ringkas`/`alasan`, tidak menghitung ulang:
 - Lebih dari 3.000 baris cocok → ditolak dan diminta memperjelas, bukan dihitung dari potongan.
 
 Belum ditangani, sengaja:
-- **Sebaran di dalam satu docking tidak terdeteksi.** Mencari "elbow" tanpa ukuran di tiga kapal
-  yang masing-masing punya Elbow Rp 300 rb – 2,1 jt tetap memberi harga tengah yang tampak
-  rapat. Menambah pemicu "menyebar" untuk ini mengubah aturan yang sudah disepakati, jadi
-  ditanyakan dulu ke Lutfi (22 Oktober 2026), belum dikerjakan.
 - **`KMP. X` dan `KMP X` (beda titik) terhitung dua kapal** -- di layar ini dan juga di dropdown
   dan Analitik, karena `NAMA_KAPAL_NORM_SQL` cuma merapikan spasi. Jangan ditambal khusus di
   Harga Wajar; cek dulu di produksi apakah memang terjadi, lalu perbaiki untuk seluruh app.

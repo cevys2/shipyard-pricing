@@ -522,7 +522,10 @@ export type HargaWajarKelompok = {
    * bisa menyebut seberapa lebar rentangnya -- tapi jangan ditampilkan sebagai jawaban. */
   ringkas: { median: number; bawah: number; atas: number } | null;
   tampilkan_ringkas: boolean;
-  alasan: "kapal_kurang" | "menyebar" | "tanpa_satuan" | null;
+  alasan: "kapal_kurang" | "menyebar" | "campur" | "tanpa_satuan" | null;
+  /** Separuh docking atau lebih punya selisih harga >= rasio_sebar di dalamnya sendiri: kata
+   * kuncinya kemungkinan mencakup beberapa ukuran/pekerjaan. Bisa true walau `alasan` lain. */
+  campur: boolean;
   /** Semua docking di tahun terbaru -- patokan untuk bos, selalu dengan asalnya. */
   terakhir: {
     tahun: string;

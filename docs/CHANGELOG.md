@@ -8,6 +8,17 @@ langsung di GitHub.
 
 ---
 
+## 23 Oktober 2026 — Harga Wajar tidak memberi harga tengah untuk kata kunci yang campur
+
+Mencari "elbow" tanpa ukuran dulu tetap memberi satu harga tengah, padahal isinya campuran
+semua ukuran: di tiap kapal ada Elbow Rp 300.000 sampai Rp 2.100.000, jadi nilai tengah per
+kapalnya mirip-mirip dan terlihat "rapat". Sekarang, kalau separuh kapal atau lebih punya
+selisih harga 2× lipat atau lebih **di dalam berkasnya sendiri**, harga tengahnya disembunyikan
+dan layar menyarankan menambah ukuran ("elbow 2", bukan "elbow"). Pekerjaan yang memang satu
+jenis, seperti pengecatan lambung, tidak terpengaruh.
+
+---
+
 ## 22 Oktober 2026 — Harga Wajar: harga pembanding untuk item yang tidak diingat
 
 **Tab baru: Harga Wajar.** Ketik nama pekerjaan ("sandblasting", "elbow 2"), lalu terlihat

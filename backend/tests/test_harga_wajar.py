@@ -565,3 +565,56 @@ def test_ukuran_desimal_tidak_cocok_dengan_ukuran_lain():
 
     (k,) = svc.harga_wajar("elbow 1,5")["kelompok"]
     assert [d["nama_kapal"] for d in k["docking"]] == ["KMP. A"]
+
+
+def _elbow_campur(kapal: str, *harga: int) -> None:
+    """Satu docking berisi Elbow berbagai ukuran -- uraiannya sama, harganya jauh beda."""
+    for h in harga:
+        _baris(kapal, "Elbow", h, satuan="pcs")
+
+
+def test_kata_kunci_yang_mencakup_banyak_ukuran_tidak_diberi_harga_tengah():
+    """Aturan ke-4 (23 Oktober 2026). Nilai tengah tiap docking sama (900 rb), jadi aturan
+    "menyebar" antar docking tidak berbunyi -- padahal tiap docking campuran 300 rb s/d 2,1 jt."""
+    for kapal in ("KMP. A", "KMP. B", "KMP. C"):
+        _elbow_campur(kapal, 300_000, 900_000, 2_100_000)
+
+    k = _satu("elbow")
+    assert k["ringkas"]["bawah"] == k["ringkas"]["atas"] == 900_000, "antar docking rapat"
+    assert k["alasan"] == "campur"
+    assert k["campur"] is True
+    assert k["tampilkan_ringkas"] is False
+
+
+def test_satu_docking_campur_di_antara_banyak_yang_rapat_tidak_menyembunyikan():
+    """Satu docking yang kebetulan berisi dua harga jauh beda belum berarti kata kuncinya campur."""
+    _baris("KMP. A", "Pengecatan lambung", 60_000)
+    _baris("KMP. A", "Pengecatan lambung", 130_000)
+    for kapal, h in (("KMP. B", 62_000), ("KMP. C", 64_000), ("KMP. D", 66_000)):
+        _baris(kapal, "Pengecatan lambung", h)
+
+    k = _satu("pengecatan")
+    assert k["campur"] is False
+    assert k["tampilkan_ringkas"] is True
+
+
+def test_campur_mulai_dari_separuh_docking_dan_tepat_dua_kali():
+    """Batasnya: separuh docking (bukan lebih dari separuh), dan selisih tepat 2x sudah dihitung."""
+    _elbow_campur("KMP. A", 50_000, 100_000)  # tepat 2x
+    _elbow_campur("KMP. B", 50_000, 100_000)
+    _elbow_campur("KMP. C", 70_000)
+    _elbow_campur("KMP. D", 80_000)
+
+    k = _satu("elbow")
+    assert k["campur"] is True
+    assert k["alasan"] == "campur"
+
+
+def test_campur_tetap_dilaporkan_walau_kapalnya_kurang():
+    """Saran "tambahkan ukuran" tetap berguna walau harga tengah sudah tersembunyi sebab lain."""
+    _elbow_campur("KMP. A", 300_000, 2_100_000)
+    _elbow_campur("KMP. B", 300_000, 2_100_000)
+
+    k = _satu("elbow")
+    assert k["alasan"] == "kapal_kurang"
+    assert k["campur"] is True
