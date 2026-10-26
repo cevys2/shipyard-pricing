@@ -294,19 +294,8 @@ export const api = {
   ahspHitung(token: string, id: number) {
     return request<AhspHitung>(`/ahsp/${id}/hitung`, {}, token);
   },
-  trenJasa(token: string, params: { kategori?: string; min_sampel?: number } = {}) {
-    const q = new URLSearchParams();
-    if (params.kategori && params.kategori !== "Semua") q.set("kategori", params.kategori);
-    if (params.min_sampel != null) q.set("min_sampel", String(params.min_sampel));
-    const qs = q.toString();
-    return request<TrenJasa>(`/analitik/tren-jasa${qs ? `?${qs}` : ""}`, {}, token);
-  },
-  trenJasaKategori(token: string) {
-    return request<string[]>("/analitik/tren-jasa/kategori", {}, token);
-  },
-  /** Master kategori, buat mengisi dropdown. Beda dari `trenJasaKategori`, yang cuma memuat
-   * kategori dengan data cukup untuk digambar grafiknya -- kategori yang belum punya satu
-   * baris pun tetap harus bisa dipilih waktu mengisi, kalau tidak tidak akan pernah ada isinya. */
+  /** Master kategori, buat mengisi dropdown -- termasuk kategori yang belum punya satu baris
+   * pun, karena yang belum pernah bisa dipilih tidak akan pernah ada isinya. */
   kategoriMaster(token: string) {
     return request<Kategori[]>("/kategori", {}, token);
   },
@@ -315,6 +304,9 @@ export const api = {
   },
   nilaiPekerjaan(token: string) {
     return request<NilaiPekerjaan>("/analitik/nilai-pekerjaan", {}, token);
+  },
+  hargaWajar(token: string, q: string) {
+    return request<HargaWajar>(`/analitik/harga-wajar?${new URLSearchParams({ q })}`, {}, token);
   },
   auditLog(token: string, params: { entitas?: string; limit?: number } = {}) {
     const q = new URLSearchParams();
@@ -387,34 +379,6 @@ export type PriceHistoryRow = {
 
 export type Kategori = { id: number; nama: string };
 
-export type TrenJasaPoint = {
-  kategori: string;
-  tahun: string;
-  n_baris: number;
-  n_kapal: number;
-  median: number;
-  minimum: number;
-  maksimum: number;
-  /** Kapal yang menyusun median ini. Median tanpa ini tidak bisa ditindaklanjuti:
-   * tidak jelas angkanya dari kapal besar, kapal kecil, atau campuran. */
-  kapal: string[] | null;
-};
-
-export type TrenJasa = {
-  seri: TrenJasaPoint[];
-  per_tahun: { tahun: string; n_baris: number; n_kapal: number }[];
-  cakupan: {
-    total_baris: number;
-    total_kategori: number;
-    total_tahun: number;
-    /** Baris yang belum punya kategori kanonik, jadi tidak masuk `seri` sama sekali.
-     * Biasanya naik sesudah impor Excel dengan sebutan kategori yang belum ada aliasnya;
-     * resolver baru menjalankannya lagi saat backend start berikutnya. Ditampilkan supaya
-     * penyusutan datanya kelihatan, bukan raib diam-diam. */
-    tanpa_kategori: number;
-  };
-};
-
 export type TrenMaterialKandidat = {
   id: number;
   nama: string;
@@ -479,6 +443,80 @@ export type NilaiPekerjaan = {
   };
   per_kategori: NilaiKategori[];
   per_kapal: NilaiKapal[];
+};
+
+export type HargaWajarBaris = {
+  id: string;
+  uraian: string;
+  induk_uraian: string | null;
+  harga_satuan: number;
+  tipe_perjanjian: string | null;
+  /** Teks satuan persis seperti di berkas, sebelum dirapikan ("M2", "bh."). */
+  satuan_tertulis: string | null;
+};
+
+/** Satu docking = satu kapal di satu tahun. Inilah "satu suara" di Harga Wajar. */
+export type HargaWajarDocking = {
+  nama_kapal: string;
+  tahun: string;
+  klien: string[];
+  tipe: string[];
+  /** Nilai tengah baris-baris docking ini, dibulatkan ke rupiah. */
+  harga: number;
+  harga_min: number;
+  harga_max: number;
+  n_baris: number;
+  baris: HargaWajarBaris[];
+};
+
+export type HargaWajarKelompok = {
+  /** Satuan baku ("m²"), ejaan yang belum dipetakan apa adanya ("m'"), atau null kalau
+   * baris-barisnya tidak mencatat satuan sama sekali. */
+  satuan: string | null;
+  dikenali: boolean;
+  borongan: boolean;
+  ejaan: string[];
+  n_baris: number;
+  /** Harga terendah/tertinggi yang benar-benar tertulis di salah satu baris -- bukan kuartil. */
+  harga_min: number;
+  harga_max: number;
+  n_docking: number;
+  n_kapal: number;
+  tahun_min: string | null;
+  tahun_max: string | null;
+  /** Hanya ada kalau kapalnya cukup. Tetap ada waktu `alasan` = "menyebar", supaya layar
+   * bisa menyebut seberapa lebar rentangnya -- tapi jangan ditampilkan sebagai jawaban. */
+  ringkas: { median: number; bawah: number; atas: number } | null;
+  tampilkan_ringkas: boolean;
+  alasan: "kapal_kurang" | "menyebar" | "campur" | "tanpa_satuan" | null;
+  /** Separuh docking atau lebih punya selisih harga >= rasio_sebar di dalamnya sendiri: kata
+   * kuncinya kemungkinan mencakup beberapa ukuran/pekerjaan. Bisa true walau `alasan` lain. */
+  campur: boolean;
+  /** Semua docking di tahun terbaru -- patokan untuk bos, selalu dengan asalnya. */
+  terakhir: {
+    tahun: string;
+    docking: {
+      nama_kapal: string;
+      klien: string[];
+      /** Nilai tengah baris-baris docking ini -- bisa saja tidak tertulis di dokumen mana pun. */
+      harga: number;
+      harga_min: number;
+      harga_max: number;
+      n_baris: number;
+    }[];
+  } | null;
+  docking: HargaWajarDocking[];
+};
+
+export type HargaWajar = {
+  /** Kata yang benar-benar dicari, setelah dipecah. */
+  kata: string[];
+  aturan: { min_kapal: number; rasio_sebar: number };
+  batas_baris: number;
+  /** null kalau `terlalu_banyak` -- jumlah sebenarnya tidak dihitung. */
+  total_cocok: number | null;
+  terlalu_banyak: boolean;
+  kelompok: HargaWajarKelompok[];
 };
 
 export type PastePreviewRow = {

@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from app import seed_satuan
 from app.config import settings
 from app.seed_kategori import baris_alias, baris_kategori
 from app.services import pencarian
@@ -486,19 +487,53 @@ def selaraskan_kategori() -> int:
 
     `IS DISTINCT FROM` di akhir bikin pemanggilan kedua jadi nol baris, bukan menulis ulang
     isi yang sama. Jadi aman dipanggil tiap app start.
+
+    Resolver dihitung SEKALI PER TEKS KATEGORI YANG BERBEDA, lalu hasilnya ditempel ke semua
+    baris berteks sama (23 Oktober 2026). Versi lama memanggil resolver per baris: 8.068 kali
+    mencari di 126 alias sambil merapikan teks yang sama berulang-ulang, ~2,3 detik di SETIAP
+    app start walaupun hasilnya nol baris berubah. Itu yang membuat backend lambat bangun --
+    dan app yang tidur saat tidak dipakai (untuk menghemat memori di Railway) membayar
+    lambatnya tiap kali dibuka. Sekarang ~0,01 detik. Resolvernya tetap `kategori_id_sql()`
+    yang sama, jadi aturannya tidak bercabang.
+
+    `MATERIALIZED` itu wajib: tanpanya Postgres boleh melebur CTE ke dalam join dan kembali
+    memanggil resolver per baris -- sudah dicoba, waktunya balik ke 2,4 detik.
+    Teks NULL tidak bisa ikut join `=`, jadi diurus pernyataan kedua dengan resolver per baris;
+    jumlahnya nol atau hampir nol, jadi murah.
     """
+    tabel = settings.catalog_table
     with engine.begin() as conn:
-        hasil = conn.execute(
+        per_teks = conn.execute(
             text(
                 f"""
-                UPDATE {settings.catalog_table} t
+                WITH peta AS MATERIALIZED (
+                    SELECT s.k, {kategori_id_sql("s.k")} AS baru
+                    FROM   (SELECT DISTINCT kategori_pekerjaan AS k
+                            FROM   {tabel}
+                            WHERE  kategori_sumber = 'alias'
+                              AND  kategori_pekerjaan IS NOT NULL) s
+                )
+                UPDATE {tabel} t
+                SET    kategori_id = p.baru
+                FROM   peta p
+                WHERE  t.kategori_pekerjaan = p.k
+                  AND  t.kategori_sumber = 'alias'
+                  AND  t.kategori_id IS DISTINCT FROM p.baru
+                """
+            )
+        ).rowcount
+        teks_null = conn.execute(
+            text(
+                f"""
+                UPDATE {tabel} t
                 SET    kategori_id = {kategori_id_sql("t.kategori_pekerjaan")}
-                WHERE  t.kategori_sumber = 'alias'
+                WHERE  t.kategori_pekerjaan IS NULL
+                  AND  t.kategori_sumber = 'alias'
                   AND  t.kategori_id IS DISTINCT FROM {kategori_id_sql("t.kategori_pekerjaan")}
                 """
             )
-        )
-    return hasil.rowcount
+        ).rowcount
+    return per_teks + teks_null
 
 
 def ensure_ahsp_tables() -> None:
@@ -805,4 +840,120 @@ def ensure_klien_induk() -> None:
                 "ke": "PT. AGUNG TAMA RAYA",
                 "catatan": "Satu induk dengan PT. AGUNG TAMA RAYA (dikonfirmasi 22 September 2026).",
             },
+        )
+
+
+# Satuan dirapikan saat MEMBACA, bukan dengan meng-UPDATE `volume_satuan` -- kolom itu catatan
+# apa yang tertulis di berkas, aturannya sama dengan `kategori_pekerjaan`. Beda dari kategori,
+# tidak ada kolom `satuan_id` di `tabel_katalog_harga`: kategori butuh koreksi manual per
+# baris (`kategori_sumber = 'manual'`), satuan belum. Tanpa kolom, tidak ada yang bisa basi.
+#
+# Langkahnya: spasi tak-putus jadi spasi, spasi beruntun jadi satu, titik di ujung dibuang
+# ("bh." = "bh"), lalu huruf kecil. "-" dan teks kosong jadi NULL -- `volume_satuan` memakai
+# "-" untuk "tidak tahu", dan itu bukan satuan yang boleh punya kelompok sendiri.
+#
+# Alias di `satuan_alias` tersimpan dalam bentuk hasil ekspresi ini, jadi keduanya harus
+# sepakat persis -- kegagalan yang sama tak bersuaranya dengan `kategori_norm_sql()`.
+def satuan_norm_sql(kolom: str = "volume_satuan") -> str:
+    if not _ARGUMEN_NORM.match(kolom):
+        raise ValueError(f"Bukan nama kolom atau bind parameter yang sah: {kolom!r}")
+    rapi = (
+        "lower(btrim(regexp_replace(btrim(regexp_replace("
+        f"replace({kolom}, chr(160), ' '), '\\s+', ' ', 'g')), '\\.+$', '')))"
+    )
+    return f"NULLIF(NULLIF({rapi}, ''), '-')"
+
+
+# Resolver satu baris: nama satuan baku, atau NULL kalau ejaannya belum dipetakan. Pemanggil
+# yang mengelompokkan memakai COALESCE ke `satuan_norm_sql()`, supaya ejaan yang belum
+# dipetakan tetap tampil dengan namanya sendiri, bukan hilang.
+def _satuan_baku_dari(norm: str) -> str:
+    return (
+        f"(SELECT s.nama FROM satuan_alias sa JOIN satuan s ON s.id = sa.satuan_id "
+        f"WHERE sa.alias = {norm})"
+    )
+
+
+def satuan_baku_sql(kolom: str = "volume_satuan") -> str:
+    return _satuan_baku_dari(satuan_norm_sql(kolom))
+
+
+# Satuan SATU BARIS KATALOG, sudah dirapikan. Dua kolom menyimpan satuan, dan tidak semua jalur
+# impor mengisi keduanya: Format Rapi dengan kolom `Vol`/`Sat` (tanpa kolom `Satuan`) mengisi
+# `satuan`, sementara `volume_satuan` tetap "-". Kalau cuma `volume_satuan` yang dibaca, baris
+# itu jatuh ke kelompok "tanpa satuan" tanpa ada yang terlihat salah.
+#
+# `volume_satuan` didahulukan karena dialah yang ikut berubah waktu baris disunting di layar --
+# `bulk_patch()` sengaja tidak menyentuh `satuan` (lihat CLAUDE.md), jadi kalau keduanya beda,
+# yang lama yang lebih baru.
+def satuan_katalog_sql(alias: str = "t") -> str:
+    return (
+        f"COALESCE({satuan_norm_sql(f'{alias}.volume_satuan')}, "
+        f"{satuan_norm_sql(f'{alias}.satuan')})"
+    )
+
+
+def satuan_katalog_baku_sql(alias: str = "t") -> str:
+    return _satuan_baku_dari(satuan_katalog_sql(alias))
+
+
+def satuan_katalog_tertulis_sql(alias: str = "t") -> str:
+    """Teks asli kolom yang dipakai `satuan_katalog_sql()` -- buat ditampilkan apa adanya."""
+    return (
+        f"CASE WHEN {satuan_norm_sql(f'{alias}.volume_satuan')} IS NOT NULL "
+        f"THEN {alias}.volume_satuan ELSE {alias}.satuan END"
+    )
+
+
+def ensure_satuan_table() -> None:
+    """Master satuan baku + ejaan-ejaannya, untuk layar Harga Wajar.
+
+    Meniru `kategori` + `kategori_alias`, dengan satu beda yang disengaja: tidak ada kolom
+    yang ditambahkan ke `tabel_katalog_harga`. Satuan dicocokkan saat dibaca lewat
+    `satuan_baku_sql()`.
+
+    Seed-nya DO UPDATE dengan `IS DISTINCT FROM`, sama seperti alias kategori: memindahkan
+    satu ejaan ke satuan lain di `seed_satuan.py` benar-benar sampai ke database yang sudah
+    terisi, sementara jalan yang lazim (tidak ada yang berubah) tetap tidak menulis apa pun.
+    Ejaan yang dihapus dari seed TIDAK ikut terhapus dari tabel -- hapus manual kalau perlu.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS satuan (
+                    id       SERIAL PRIMARY KEY,
+                    nama     TEXT    NOT NULL UNIQUE,
+                    borongan BOOLEAN NOT NULL DEFAULT FALSE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS satuan_alias (
+                    id        SERIAL PRIMARY KEY,
+                    satuan_id INT  NOT NULL REFERENCES satuan(id) ON DELETE CASCADE,
+                    alias     TEXT NOT NULL UNIQUE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO satuan (nama, borongan) VALUES (:nama, :borongan) "
+                "ON CONFLICT (nama) DO UPDATE SET borongan = EXCLUDED.borongan "
+                "WHERE satuan.borongan IS DISTINCT FROM EXCLUDED.borongan"
+            ),
+            seed_satuan.baris_satuan(),
+        )
+        conn.execute(
+            text(
+                "INSERT INTO satuan_alias (satuan_id, alias) "
+                "SELECT id, :alias FROM satuan WHERE nama = :nama "
+                "ON CONFLICT (alias) DO UPDATE SET satuan_id = EXCLUDED.satuan_id "
+                "WHERE satuan_alias.satuan_id IS DISTINCT FROM EXCLUDED.satuan_id"
+            ),
+            seed_satuan.baris_alias(),
         )

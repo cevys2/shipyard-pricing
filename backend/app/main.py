@@ -16,6 +16,7 @@ from app.database import (
     ensure_material_tables,
     ensure_partno_unique,
     ensure_pencarian_index,
+    ensure_satuan_table,
 )
 from app.routers.ahsp import router as ahsp_router
 from app.routers.analitik import router as analitik_router
@@ -40,6 +41,9 @@ async def lifespan(_: FastAPI):
     # Tidak bergantung pada apa pun -- tabelnya berdiri sendiri dan cuma dibaca lewat
     # LEFT JOIN, jadi urutannya bebas. Ditaruh di sini supaya tetap sebelum index.
     ensure_klien_induk()
+    # Juga berdiri sendiri: satuan dicocokkan ke `volume_satuan` saat membaca, tidak ada
+    # kolom atau foreign key ke tabel lain.
+    ensure_satuan_table()
     # Paling akhir: index pencarian menempel ke sumber_daya dan tabel_katalog_harga,
     # jadi keduanya harus sudah ada.
     ensure_pencarian_index()

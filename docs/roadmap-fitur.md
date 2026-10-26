@@ -67,6 +67,9 @@ Begitu ada layar yang menjawab **"harga sandblasting per m² wajarnya berapa"** 
 layar yang langsung kepakai waktu menyusun penawaran — pemetaan satuan kanonik jadi
 prasyarat mutlak. Polanya sudah ada dan terbukti: `kategori` + `kategori_alias`.
 
+**Dikerjakan 22 Oktober 2026**, bersama layar Harga Wajar yang membutuhkannya: `satuan` +
+`satuan_alias`, dicocokkan saat membaca (tidak ada kolom baru di `tabel_katalog_harga`).
+
 ### Keluaran penawaran — jurang terbesar yang tersisa
 Belum disentuh. Aplikasi masih belum menghasilkan dokumen apa pun; penawaran tetap disusun
 manual di Excel. Analitik "Ke Mana Uangnya Pergi" mempersempit jaraknya sedikit (sekarang

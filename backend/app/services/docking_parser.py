@@ -17,8 +17,6 @@ import datetime
 import io
 import re
 
-import openpyxl
-
 ROMAN_TOKEN_RE = re.compile(r'^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$', re.IGNORECASE)
 YEAR_RE = re.compile(r'\b(20\d{2})\b')
 
@@ -658,6 +656,11 @@ def _load_values(file_bytes: bytes, filename: str):
         values = [sheet.row_values(r) for r in range(min(sheet.nrows, 5000))]
         values = [[(c if c != '' else None) for c in row] for row in values]
         return values, sheetname
+    # Dimuat saat dibutuhkan, sama seperti xlrd di atas: openpyxl makan ~20 MB memori yang
+    # kalau di-import di atas berkas ikut menetap selama service menyala, padahal cuma
+    # dipakai waktu impor. Memori adalah 97% tagihan Railway (23 Oktober 2026).
+    import openpyxl
+
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     sheetname = wb.sheetnames[-1]
     ws = wb[sheetname]

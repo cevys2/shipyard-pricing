@@ -51,8 +51,6 @@ import io
 import re
 from datetime import datetime, timedelta
 
-import openpyxl
-
 from app.services.docking_parser import (
     PEMISAH_INDUK,
     build_group_labels,
@@ -443,6 +441,9 @@ def _muat_lembar(file_bytes: bytes, filename: str):
             values = [sheet.row_values(r) for r in range(min(sheet.nrows, 5000))]
             yield nama, [[(c if c != "" else None) for c in row] for row in values]
         return
+    # Dimuat saat dibutuhkan -- alasannya di `docking_parser._load_values()`.
+    import openpyxl
+
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     for nama in wb.sheetnames:
         ws = wb[nama]

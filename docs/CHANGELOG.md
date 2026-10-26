@@ -21,6 +21,48 @@ tanggal naik dock dibaca dari repair list, dengan ejaan label owner yang macam-m
 
 ---
 
+## 23 Oktober 2026 — grafik Tren Harga Jual Jasa dibuang
+
+Grafik median harga jual per kategori per tahun di tab Analitik dihapus. Peringatannya sendiri
+sudah mengakui masalahnya: jumlah kapal per tahun berbeda jauh, jadi naik-turunnya garis bisa
+sekadar efek berubahnya campuran kapal, bukan bukti harga naik. Grafik yang tidak bisa
+disimpulkan cuma menambah bacaan. Untuk "pekerjaan ini harganya berapa", pakai tab Harga Wajar.
+
+Satu hal yang **tidak** ikut hilang: peringatan "N baris belum punya kategori" dulu menumpang
+di grafik itu, dan itu satu-satunya tempat baris tanpa kategori kelihatan. Sekarang dia pindah
+ke bagian "Ke Mana Uangnya Pergi". Tab Analitik juga jadi memanggil server 3 kali, bukan 5.
+
+---
+
+## 23 Oktober 2026 — backend bangun 2,5× lebih cepat dan memakai 40% lebih sedikit memori
+
+Hampir seluruh tagihan Railway adalah memori yang terpakai selama service menyala. Dua
+perbaikan, tanpa ada fitur yang berubah:
+
+- **Pustaka pembaca Excel baru dimuat saat impor**, bukan sejak backend menyala. Memori backend
+  saat diam turun dari 133 MB ke 81 MB.
+- **Backend menyala dalam ~1,5 detik**, bukan 3,6–4,2 detik. Setiap kali menyala, backend
+  mencocokkan ulang kategori seluruh 8.000-an baris satu per satu (~2,3 detik) walaupun
+  hasilnya hampir selalu "tidak ada yang berubah". Sekarang dicocokkan sekali per teks
+  kategori, hasilnya sama persis. Ini syarat supaya service bisa ditidurkan saat tidak dipakai
+  tanpa membuat pembukaan pertama terasa lambat.
+
+Frontend bisa ikut berhemat dari 156 MB ke 89 MB dengan mengganti start command di Railway
+(lihat CLAUDE.md, bagian Deploy) — itu pengaturan, bukan kode.
+
+---
+
+## 23 Oktober 2026 — Harga Wajar tidak memberi harga tengah untuk kata kunci yang campur
+
+Mencari "elbow" tanpa ukuran dulu tetap memberi satu harga tengah, padahal isinya campuran
+semua ukuran: di tiap kapal ada Elbow Rp 300.000 sampai Rp 2.100.000, jadi nilai tengah per
+kapalnya mirip-mirip dan terlihat "rapat". Sekarang, kalau separuh kapal atau lebih punya
+selisih harga 2× lipat atau lebih **di dalam berkasnya sendiri**, harga tengahnya disembunyikan
+dan layar menyarankan menambah ukuran ("elbow 2", bukan "elbow"). Pekerjaan yang memang satu
+jenis, seperti pengecatan lambung, tidak terpengaruh.
+
+---
+
 ## 23 Oktober 2026 — aplikasi menghasilkan file pertamanya: Biaya Docking
 
 **Tab baru: Biaya Docking.** Pilih repair list Excel, dan file Biaya Docking (Pekerjaan Induk)
@@ -35,6 +77,48 @@ Excel. Begitu harga diisi, Jumlah per baris, TOTAL, dan terbilang ikut berubah s
 **Terbilang tidak bisa salah ketik lagi.** Dihitung rumus dari TOTAL, bukan diketik. Waktu
 dicoba dengan harga Biaya Docking GS3 final, TOTAL-nya persis sama (Rp 733.961.970) — tapi
 terbilang di GS3 final ternyata kehilangan kata "Ribu". Versi dari aplikasi benar.
+
+---
+
+## 22 Oktober 2026 — Harga Wajar: harga pembanding untuk item yang tidak diingat
+
+**Tab baru: Harga Wajar.** Ketik nama pekerjaan ("sandblasting", "elbow 2"), lalu terlihat
+harga satuannya di kapal-kapal lain, dikelompokkan per satuan. Dibuat untuk saat menyusun
+penawaran: harga ditentukan bos, dan app ini dibuka untuk item yang harganya tidak diingat.
+
+**Harga tengah tidak selalu muncul, dan itu disengaja.** Median dari pekerjaan yang jarang dan
+harganya hasil nego -- misalnya bongkar pasang jendela marine grade, yang tidak dikerjakan tiap
+tahun -- terbaca seperti "harga pasar" padahal cuma rata-rata dari dua-tiga kesepakatan.
+Karena itu harga tengah cuma tampil kalau pembandingnya **minimal 3 kapal** dan harganya tidak
+**menyebar lebih dari 2× lipat**. Kalau tidak, layar menyebut alasannya terang-terangan.
+
+**Satu kapal per tahun = satu suara.** Lima belas baris Elbow dari satu berkas tidak boleh
+menentukan angkanya sendirian.
+
+**Selalu ada patokan.** Bos suka ada satu angka pegangan, jadi tiap kelompok menampilkan
+**harga terakhir** lengkap dengan kapal dan kliennya. Kalau tahun terbaru punya dua kapal,
+keduanya tampil -- memilih salah satu sama saja dengan mengarang patokan. Angkanya selalu
+harga yang benar-benar tertulis: kalau satu kapal punya dua baris (Rp 350.000 dan
+Rp 380.000), yang tampil "Rp 350.000 – Rp 380.000", bukan Rp 365.000 yang tidak ada di
+dokumen mana pun.
+
+**Pencariannya ketat, beda dari kotak cari katalog.** Salah ketik tidak dimaafkan, karena
+"sandblasting" dan "sweepblasting" dinilai 54% mirip -- cukup untuk tercampur jadi satu harga,
+padahal harganya jauh berbeda. Ukuran dicocokkan utuh: "elbow 2" tidak menarik elbow 12,
+2,5, 1/2, atau 2 1/2, dan "sch 40" tetap menemukan "Sch. 40" dan "SCH-40". Kotak cari di
+tab Dashboard & Data tidak berubah.
+
+**m2 dan m² akhirnya satu kelompok.** Ejaan satuan dipetakan ke satuan baku (`m2`/`M2`/`m²` →
+m², `bh`/`buah`/`pc` → pcs, dan seterusnya) saat membaca; tabel harganya sendiri tidak
+disentuh. Ejaan yang belum dikenal tetap tampil dengan namanya, bertanda "ejaan belum
+diperiksa", supaya daftarnya bisa dilengkapi. `m'` sengaja dibiarkan terpisah sampai artinya
+dipastikan. Satuan borongan (Ls, Lot, Paket) ditandai.
+
+**Diperiksa dua putaran sebelum dikirim.** Pemeriksaan terpisah menemukan ukuran pipa yang
+tercampur ("elbow 3/4"" ikut menarik semua ukuran, lalu "elbow 2" ikut menarik 2 1/2"),
+patokan yang menampilkan angka buatan, kalimat "separuh docking ada di …" yang tidak benar
+untuk 3 kapal, dan beberapa celah di tes. Semuanya sudah diperbaiki, dan tiap celah tes
+dibuktikan tertutup dengan sengaja memasang kesalahannya lagi.
 
 ---
 

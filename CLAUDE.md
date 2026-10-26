@@ -1,9 +1,23 @@
 # shipyard-pricing — konteks untuk Claude Code
 
 Aplikasi internal PT Dukuh Raya (galangan kapal, Lombok). Katalog harga jasa, katalog
-material, dan analisa harga satuan (AHSP). Pengguna aktif: satu orang. Dikerjakan solo.
+material, dan analisa harga satuan (AHSP). Dipakai Lutfi, bos, dan kolega (lihat "Siapa
+memakai" di bawah). Dikerjakan solo.
 
-Terakhir diperbarui: 22 September 2026.
+Terakhir diperbarui: 22 Oktober 2026.
+
+## Siapa memakai, dan untuk apa (dipastikan 22 Oktober 2026)
+
+Dulu tercatat "satu pengguna aktif". Ternyata tidak: bos dan kolega juga membukanya.
+
+- **Harga penawaran ditentukan bos.** Lutfi menyusun file penawaran dari repair list yang
+  diberikan, memakai angka yang sudah ada, lalu menaikkannya supaya ada ruang nego. Menyusun
+  file dan menaikkan angka itu sengaja TETAP manual -- jangan dibangun tanpa ditanya dulu.
+- App ini dibuka untuk **item yang harganya tidak diingat bos** -- biasanya justru yang jarang
+  dikerjakan, jadi pembandingnya sedikit.
+- Yang paling mengganggu Lutfi: hasil cari kebanyakan/tercampur. Yang paling mengganggu bos
+  dan kolega: bingung harga mana yang dipakai. **Bos suka ada satu angka patokan** -- asal
+  asalnya (kapal, tahun) ikut tertulis.
 
 ## Stack
 
@@ -27,6 +41,23 @@ Terakhir diperbarui: 22 September 2026.
   Build command frontend **harus** `npm install && npm run build` — `npm ci` selalu gagal
   EBUSY karena Railpack me-mount cache di dalam `node_modules`. Setelan build/start cuma
   terbaca oleh deployment BARU; tombol redeploy memutar ulang snapshot yang lama.
+  Start command frontend yang disarankan: `./node_modules/.bin/serve dist -s -l $PORT` —
+  tanpa pembungkus `npm start`, memorinya 89 MB alih-alih 156 MB (diukur 23 Oktober 2026).
+
+## Biaya Railway = memori (23 Oktober 2026)
+
+~97% tagihan adalah **memori yang terpakai selama service menyala**, bukan CPU. Grafik dan
+analitik tidak menambah biaya berarti: semuanya cuma dihitung saat tabnya dibuka, dan tidak
+ada pekerjaan latar belakang apa pun di backend. Yang dijaga:
+
+- **pandas dan openpyxl di-import DI DALAM fungsi impor**, bukan di atas berkas (pola yang
+  sama dengan `xlrd`). Di atas berkas keduanya menetap ~50 MB selama service menyala, padahal
+  cuma dipakai waktu impor. Backend diam: 133 MB → 81 MB. Dijaga `tests/test_hemat_memori.py`.
+- **Backend harus cepat bangun**, karena rencananya service ditidurkan saat tidak dipakai dan
+  tiap pembukaan pertama membayar waktu nyala. `selaraskan_kategori()` dulu memakan ~2,3 detik
+  di setiap app start; sekarang ~0,01 detik (resolver dihitung sekali per teks kategori).
+  Nyala total 3,6–4,2 detik → ~1,5 detik dengan 8.068 baris. Jangan tambahkan kerja berat
+  ke `lifespan()` tanpa mengukur waktunya.
 
 ## Struktur backend
 
@@ -37,11 +68,12 @@ backend/app/
   auth.py           -- verifikasi JWT saja
   config.py         -- settings, termasuk catalog_table = "tabel_katalog_harga"
   seed_kategori.py  -- 11 kategori + 126 alias, dipakai ensure_kategori_table()
+  seed_satuan.py    -- 11 satuan baku + ejaannya, dipakai ensure_satuan_table()
   routers/          -- ahsp, analitik, catalog, kategori, material
-  services/         -- ahsp, analitik, audit, biaya_docking, catalog, docking_parser, material,
-                       pencarian, repair_list_parser
+  services/         -- ahsp, analitik, audit, biaya_docking, catalog, docking_parser,
+                       harga_wajar, material, pencarian, repair_list_parser
   schemas/          -- pydantic
-backend/tests/      -- 201 tes, harus tetap lulus setelah perubahan apa pun
+backend/tests/      -- 343 tes, harus tetap lulus setelah perubahan apa pun
 ```
 
 ## Perubahan skema — TIDAK ada Alembic
@@ -53,7 +85,7 @@ ditiru: **`ensure_audit_table()`**. Untuk menambah kolom ke tabel yang sudah ber
 
 Urutan pemanggilan di `main.py`: `ensure_material_tables()`, `ensure_partno_unique()`,
 `ensure_katalog_kolom_rincian()`, `ensure_kategori_table()`, `ensure_ahsp_tables()`,
-`ensure_audit_table()`, `ensure_klien_induk()`, `ensure_pencarian_index()`.
+`ensure_audit_table()`, `ensure_klien_induk()`, `ensure_satuan_table()`, `ensure_pencarian_index()`.
 
 Urutannya bukan selera: `ahsp_komponen` punya FK ke `sumber_daya`, `ahsp.kategori_id` ke
 `kategori`, dan index pencarian menempel ke tabel yang harus sudah ada. Dipanggil di luar
@@ -72,6 +104,7 @@ seperti `chk_sdh_mata_uang`.
 | `ahsp`, `ahsp_komponen` | Analisa harga satuan. |
 | `audit_log` | Append-only, siapa mengubah apa. |
 | `klien_induk` | Pemetaan ejaan PT yang sebenarnya satu induk. Dipakai lewat `COALESCE` saat membaca; `nama_perusahaan` tidak pernah ditimpa. |
+| `satuan`, `satuan_alias` | Satuan baku + ejaannya (`m2` → `m²`, `bh` → `pcs`), seed di `seed_satuan.py`. Dicocokkan ke `volume_satuan` **saat membaca** lewat `database.satuan_baku_sql()` — tidak ada kolom `satuan_id` di `tabel_katalog_harga`. `m'` sengaja belum dipetakan. |
 
 ### Aturan `tabel_katalog_harga`
 
@@ -105,8 +138,16 @@ nilainya dari layar dulu — jangan cukup menambahkannya di SQL.
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 analitik **nilai pekerjaan** (volume × harga; 22 September 2026), filter **jenis kapal**,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
-baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 alias), dan
-impor Repair List (mode ketiga di tab Import Excel).
+baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 alias),
+impor Repair List (mode ketiga di tab Import Excel), dan layar **Harga Wajar** (tab sendiri,
+22 Oktober 2026 -- lihat bagiannya di bawah).
+
+**Dibuang 23 Oktober 2026: grafik Tren Harga Jual Jasa** (median per kategori per tahun, plus
+endpoint `/analitik/tren-jasa` dan `/analitik/tren-jasa/kategori`). Kesimpulannya tidak bisa
+diambil: jumlah dan campuran kapal per tahun berubah jauh, jadi naik-turun garisnya bisa
+sekadar efek campuran kapal. Pertanyaan "pekerjaan ini harganya berapa" dijawab Harga Wajar.
+Kalau suatu saat perlu "harga kita naik berapa persen", bandingkan **kapal yang sama** antar
+tahun (like-for-like), jangan menghidupkan lagi median gabungan.
 
 Diketahui terbatas:
 
@@ -141,10 +182,11 @@ Diketahui terbatas:
   (Excel di luar repo, kolom tanggal naik/turun dock).
 - **`satuan` punya 37 ejaan untuk ~20 satuan nyata**: `m²`(206)/`m2`(160)/`m'`(5),
   `mtr`(214)/`m`(59)/`mter`(1), `pcs`/`pc`/`buah`/`bh`, `tangki`/`tanki`, `liter`/`ltr`,
-  `segel`/`shackle`. Belum dinormalisasi karena analitik yang ada tidak mengelompokkan per
-  satuan. Begitu ada layar yang menjawab "harga per m² wajarnya berapa", pemetaan satuan
-  kanonik (pola `kategori_alias`) jadi prasyarat mutlak — tanpa itu m² dan m2 jadi dua
-  kelompok yang masing-masing separuh.
+  `segel`/`shackle`. Sejak 22 Oktober 2026 dipetakan lewat `satuan` + `satuan_alias`, **saat
+  membaca** -- dipakai Harga Wajar saja; analitik lain belum mengelompokkan per satuan. Daftar
+  ejaannya baru disusun dari angka di atas, belum dari seluruh produksi: ejaan yang belum
+  dipetakan muncul di Harga Wajar bertanda "ejaan belum diperiksa" -- tambahkan ke
+  `seed_satuan.py`. `m'` sengaja belum dipetakan (meter lari atau m², belum dipastikan).
 - **Dua baris uji di produksi**: `KMP. TES` / `PT. TES FERRY`, nama yang sama dengan fixture
   di `tests/test_docking_volume.py`. Ikut terhitung di KPI dan dropdown. Belum dihapus.
 - Tab Struktur Biaya baru berisi satu analisa (13 komponen). `shift` dan `jml_hari` isinya 1
@@ -157,7 +199,8 @@ Diketahui terbatas:
   `kategori_id` di dalam INSERT `_insert_rows()` — semua jalur simpan lewat situ — dan di
   UPDATE `bulk_patch()` untuk baris `kategori_sumber = 'alias'`. `selaraskan_kategori()` tetap
   jalan saat app start untuk alias yang baru ditambahkan. Yang masih bisa kosong hanyalah
-  sebutan yang belum punya alias. Kelihatan di tab Analitik (`cakupan.tanpa_kategori`).
+  sebutan yang belum punya alias. Kelihatan di tab Analitik, bagian "Ke Mana Uangnya Pergi"
+  (`nilai_pekerjaan().cakupan.tanpa_kategori`) -- satu-satunya tempat di layar; jangan dibuang.
   **Fallback PEKERJAAN TAMBAHAN** (5 Oktober 2026): seksi tambahan ditulis bertanggal
   (`PEKERJAAN TAMBAHAN/ Senin, 25-05-2026`), jadi tiap berkas membawa teks yang tidak akan
   pernah punya alias persis — 303 baris kosong. `kategori_id_sql()` sekarang mencoba alias
@@ -183,6 +226,48 @@ Diketahui terbatas:
   tapi tidak pernah tersentuh lagi. Perlu nama index baru + DROP yang lama.
 - Baris kembar identik di `tabel_katalog_harga` sengaja tidak didedup — tabelnya tidak punya
   kolom kuantitas, jadi tidak ada cara memastikan itu salah input atau dua pekerjaan sungguhan.
+
+### Harga Wajar (22 Oktober 2026)
+
+`GET /analitik/harga-wajar?q=...` (`services/harga_wajar.py`) + tab "Harga Wajar"
+(`HargaWajarPanel.tsx`). Baca-saja. Ketik nama pekerjaan, lihat harga satuannya di kapal lain,
+dikelompokkan per satuan baku. Aturannya disepakati dengan Lutfi, dan **cuma ditulis di
+backend** -- layar membaca `tampilkan_ringkas`/`alasan`, tidak menghitung ulang:
+
+- **Satu docking satu suara** (docking = kapal + tahun). Lima belas baris Elbow di satu berkas
+  = satu harga (nilai tengahnya).
+- Harga tengah cuma tampil kalau ada **minimal 3 kapal berbeda** (`MIN_KAPAL`) **dan** batas atas
+  rentang tengahnya < 2× batas bawah (`RASIO_SEBAR`). Sebabnya: median dari pekerjaan yang
+  jarang dan dinego (contoh dari lapangan: bongkar pasang jendela marine grade) terbaca seperti
+  harga pasar. Kedua ambang itu tebakan awal, **belum dicoba ke data produksi**.
+- **Kata kunci yang mencakup beberapa pekerjaan** ("campur", 23 Oktober 2026): kalau separuh
+  docking atau lebih punya harga termahal >= 2× harga termurahnya SENDIRI, harga tengah juga
+  disembunyikan dan layar menyarankan menambah ukuran. Sebabnya: "elbow" tanpa ukuran memberi
+  Elbow Rp 300 rb – 2,1 jt di tiap kapal, nilai tengah per docking jadi mirip-mirip, dan aturan
+  "menyebar" antar docking tidak berbunyi. `campur` dikirim terpisah dari `alasan`, jadi
+  sarannya tetap muncul walau harga tengah sudah tersembunyi sebab lain.
+- **Patokan "harga terakhir"**: semua docking di tahun terbaru, selalu dengan kapal + klien.
+  Kalau dua kapal di tahun yang sama, keduanya tampil -- memilih satu = mengarang patokan.
+- **Pencarian ketat**, cuma ke `uraian_pekerjaan`: tanpa trigram (`word_similarity`
+  sandblasting vs sweepblasting = 0,54, di atas ambang 0,45), dan ukuran dicocokkan utuh
+  (`elbow 2` tidak menarik 12, 2,5, 1/2, 2 1/2, 2-1/2, atau 2½; `1,5` = `1.5`; `sch40` =
+  `Sch. 40` = `SCH-40`; `no 2` = `No.2`). Bilangan campuran `2 1/2` ditahan utuh sebagai satu
+  kata. Lewat `pencarian.bangun(toleran=False)` -- kotak cari katalog tidak berubah. Di mode
+  ini kata kunci tidak dipotong 8 kata (memotong = melonggarkan); panjangnya dibatasi 200
+  karakter di router (422).
+- **Angka yang ditampilkan selalu angka yang tertulis di dokumen.** Patokan dan kalimat
+  rentang memakai harga terendah–tertinggi baris asli (`harga_min`/`harga_max`), bukan nilai
+  tengah per docking atau kuartil -- nilai tengah 350 rb dan 380 rb (365 rb) tidak ada di
+  berkas mana pun, dan dengan 3 docking rentang kuartil cuma memuat satu di antaranya.
+- Satuan dibaca dari `volume_satuan`, lalu `satuan` kalau yang lama "-" (Format Rapi dengan
+  kolom `Vol`/`Sat` cuma mengisi `satuan`). `volume_satuan` menang kalau keduanya beda, karena
+  dialah yang disunting `bulk_patch()`.
+- Lebih dari 3.000 baris cocok → ditolak dan diminta memperjelas, bukan dihitung dari potongan.
+
+Belum ditangani, sengaja:
+- **`KMP. X` dan `KMP X` (beda titik) terhitung dua kapal** -- di layar ini dan juga di dropdown
+  dan Analitik, karena `NAMA_KAPAL_NORM_SQL` cuma merapikan spasi. Jangan ditambal khusus di
+  Harga Wajar; cek dulu di produksi apakah memang terjadi, lalu perbaiki untuk seluruh app.
 
 ### Kuantitas: `volume`, dan kenapa dia tidak pernah ada sebelumnya
 

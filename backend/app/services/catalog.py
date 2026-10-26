@@ -3,7 +3,6 @@ import re
 from collections import Counter
 from typing import Any
 
-import pandas as pd
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -524,6 +523,11 @@ def parse_spreadsheet(file_bytes: bytes, filename: str) -> tuple[BulkCatalogCrea
     Otomatis: upload Excel/CSV → Pydantic validasi per baris.
     Format kolom: Kategori | Uraian | Satuan | Harga (+ sheet/header opsional untuk kapal/tahun).
     """
+    # Dimuat di sini, bukan di atas berkas: pandas makan ~30 MB memori begitu di-import, dan
+    # cuma fungsi impor ini yang memakainya. Memori yang terpakai terus selama service menyala
+    # adalah 97% tagihan Railway (23 Oktober 2026), jadi dia tidak boleh ikut menetap.
+    import pandas as pd
+
     errors: list[str] = []
     name = filename.lower()
 

@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import {
   api,
   formatMoney,
@@ -20,8 +20,6 @@ import {
   type AuditRow,
   type NilaiKapal,
   type NilaiPekerjaan,
-  type TrenJasa,
-  type TrenJasaPoint,
   type TrenMaterial,
 } from "../lib/api";
 
@@ -34,14 +32,11 @@ const MAKS_SERI = 6;
 type Props = { auth: AuthUser };
 
 export default function AnalitikPanel({ auth }: Props) {
-  const [jasa, setJasa] = useState<TrenJasa | null>(null);
   const [nilai, setNilai] = useState<NilaiPekerjaan | null>(null);
   const [banding, setBanding] = useState<"kapal" | "klien">("kapal");
   const [jenisBanding, setJenisBanding] = useState("Semua");
   const [tahunBanding, setTahunBanding] = useState("Semua");
   const [material, setMaterial] = useState<TrenMaterial | null>(null);
-  const [kategoriOpts, setKategoriOpts] = useState<string[]>(["Semua"]);
-  const [kategori, setKategori] = useState("Semua");
   const [log, setLog] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -79,57 +74,24 @@ export default function AnalitikPanel({ auth }: Props) {
     setLoading(true);
     setError("");
     try {
-      const [tj, tm, opts, lg, np] = await Promise.all([
-        api.trenJasa(auth.token, { kategori }),
+      const [tm, lg, np] = await Promise.all([
         api.trenMaterial(auth.token),
-        api.trenJasaKategori(auth.token),
         api.auditLog(auth.token, { limit: 25 }),
         api.nilaiPekerjaan(auth.token),
       ]);
-      setJasa(tj);
       setNilai(np);
       setMaterial(tm);
-      setKategoriOpts(opts);
       setLog(lg);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal memuat analitik");
     } finally {
       setLoading(false);
     }
-  }, [auth.token, kategori]);
+  }, [auth.token]);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  /** Recharts butuh satu baris per titik sumbu-X dengan tiap seri sebagai kolom.
-   * Kategori yang ditampilkan dibatasi MAKS_SERI teratas berdasar jumlah baris data.
-   * Sejak kategori kanonik dipakai, jumlahnya 11 dan bukan lagi 78, jadi batas ini
-   * jarang tersentuh -- tetap dipertahankan karena master kategori boleh bertambah. */
-  const { dataChart, seriTampil } = useMemo(() => {
-    if (!jasa) return { dataChart: [], seriTampil: [] as string[] };
-
-    const volume = new Map<string, number>();
-    jasa.seri.forEach((s) => volume.set(s.kategori, (volume.get(s.kategori) ?? 0) + s.n_baris));
-    const terpilih = [...volume.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, MAKS_SERI)
-      .map(([k]) => k);
-
-    const perTahun = new Map<string, Record<string, string | number>>();
-    jasa.seri
-      .filter((s) => terpilih.includes(s.kategori))
-      .forEach((s) => {
-        const baris = perTahun.get(s.tahun) ?? { tahun: s.tahun };
-        baris[s.kategori] = s.median;
-        perTahun.set(s.tahun, baris);
-      });
-
-    return {
-      seriTampil: terpilih,
-      dataChart: [...perTahun.values()].sort((a, b) => String(a.tahun).localeCompare(String(b.tahun))),
-    };
-  }, [jasa]);
 
   /** Batang bertumpuk: sumbu-X tahun, tiap kategori satu potongan. Kategori di luar
    * MAKS_SERI teratas digabung jadi "Lainnya" alih-alih dibuang -- kalau dibuang, tinggi
@@ -264,11 +226,6 @@ export default function AnalitikPanel({ auth }: Props) {
     }));
   }, [material, kandidatTampil, supplierMat]);
 
-  const kategoriTersembunyi = useMemo(() => {
-    if (!jasa) return 0;
-    return new Set(jasa.seri.map((s) => s.kategori)).size - seriTampil.length;
-  }, [jasa, seriTampil]);
-
   if (loading) return <p className="p-8 text-center text-slate-500">Memuat analitik...</p>;
   if (error) return <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>;
 
@@ -308,6 +265,20 @@ export default function AnalitikPanel({ auth }: Props) {
               diimpor sebelum parser bisa membaca kolom Qty, angkanya masih ada di berkas aslinya dan
               ikut terbaca kalau berkasnya diimpor ulang.
             </Peringatan>
+
+            {/* Satu-satunya tempat di app yang menyebut baris tanpa kategori. Dulu duduk di
+                grafik Tren Harga Jual Jasa (dibuang 23 Oktober 2026); tanpa ini, impor yang
+                memakai sebutan kategori baru membuat baris raib dari grafik tanpa kabar. */}
+            {nilai.cakupan.tanpa_kategori > 0 && (
+              <Peringatan>
+                <strong>
+                  {nilai.cakupan.tanpa_kategori.toLocaleString("id-ID")} baris belum punya kategori
+                  kanonik
+                </strong>{" "}
+                dan tidak masuk grafik per kategori di bawah — biasanya karena impor terakhir
+                memakai sebutan kategori yang belum ada padanannya.
+              </Peringatan>
+            )}
 
             {dataBatang.length === 0 ? (
               <div className="mt-4 rounded-xl border border-dashed border-slate-300 px-5 py-8 text-center text-sm text-slate-500">
@@ -668,146 +639,6 @@ export default function AnalitikPanel({ auth }: Props) {
         )}
       </section>
 
-      {/* ---------------- Tren harga jual jasa ---------------- */}
-      <section>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
-              Tren Harga Jual Jasa (Realisasi)
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Median harga satuan per kategori pekerjaan per tahun, dari data realisasi docking.
-            </p>
-          </div>
-          <label className="block text-xs font-medium text-slate-600">
-            Kategori
-            <select
-              className="mt-1 w-72 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-blue-100"
-              value={kategori}
-              onChange={(e) => setKategori(e.target.value)}
-            >
-              {kategoriOpts.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <Peringatan>
-          <strong>Baca grafik ini dengan hati-hati.</strong> Jumlah kapal per tahun berbeda jauh
-          {jasa && (
-            <>
-              {" ("}
-              {jasa.per_tahun.map((t, i) => (
-                <span key={t.tahun}>
-                  {i > 0 && ", "}
-                  {t.tahun}: {t.n_kapal} kapal
-                </span>
-              ))}
-              {")"}
-            </>
-          )}
-          , jadi naik-turunnya garis bisa sekadar efek berubahnya campuran kapal — bukan bukti harga
-          naik.
-          {jasa && jasa.cakupan.tanpa_kategori > 0 && (
-            <>
-              {" "}
-              Selain itu {jasa.cakupan.tanpa_kategori.toLocaleString("id-ID")} baris belum punya
-              kategori kanonik dan sama sekali tidak masuk grafik ini — biasanya karena impor
-              terakhir memakai sebutan kategori yang belum ada padanannya.
-            </>
-          )}
-        </Peringatan>
-
-        {dataChart.length < 2 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-slate-300 px-5 py-8 text-center text-sm text-slate-500">
-            Data yang lolos filter belum cukup untuk digambar sebagai tren (butuh minimal 2 tahun).
-          </div>
-        ) : (
-          <div className="mt-4 rounded-xl border border-slate-200 p-5">
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={dataChart} margin={{ top: 5, right: 20, bottom: 5, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="tahun" tick={{ fontSize: 12, fill: "#64748b" }} tickMargin={8} />
-                <YAxis
-                  tick={{ fontSize: 12, fill: "#64748b" }}
-                  width={72}
-                  tickFormatter={(v: number) =>
-                    new Intl.NumberFormat("id-ID", { notation: "compact" }).format(v)
-                  }
-                />
-                <Tooltip content={<TooltipJasa seri={jasa?.seri ?? []} />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
-                {seriTampil.map((k, i) => (
-                  <Line
-                    key={k}
-                    type="monotone"
-                    dataKey={k}
-                    name={k}
-                    stroke={WARNA_SERI[i]}
-                    strokeWidth={2}
-                    dot={{ r: 3.5, fill: WARNA_SERI[i] }}
-                    activeDot={{ r: 5.5 }}
-                    connectNulls
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-
-            {kategoriTersembunyi > 0 && (
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
-                <Info size={13} />
-                Menampilkan {seriTampil.length} kategori dengan data terbanyak; {kategoriTersembunyi}{" "}
-                kategori lain disembunyikan. Pilih satu kategori di atas untuk melihatnya sendiri.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Angka mentahnya tetap bisa dibaca tanpa mengandalkan warna. */}
-        {jasa && jasa.seri.length > 0 && (
-          <details className="mt-3">
-            <summary className="cursor-pointer text-sm font-medium text-slate-600 hover:text-slate-900">
-              Lihat angkanya sebagai tabel ({jasa.seri.length} baris)
-            </summary>
-            <div className="mt-2 max-h-80 overflow-auto rounded-xl border border-slate-200">
-              <table className="min-w-full text-left text-sm">
-                <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-4 py-2.5">Kategori</th>
-                    <th className="px-4 py-2.5">Tahun</th>
-                    <th className="px-4 py-2.5 text-right">Median</th>
-                    <th className="px-4 py-2.5 text-right">Rentang</th>
-                    <th className="px-4 py-2.5 text-right">Baris</th>
-                    <th className="px-4 py-2.5">Kapal yang menyusun median</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jasa.seri.map((s) => (
-                    <tr key={`${s.kategori}-${s.tahun}`} className="border-t border-slate-100 align-top">
-                      <td className="px-4 py-2">{s.kategori}</td>
-                      <td className="px-4 py-2 tabular-nums">{s.tahun}</td>
-                      <td className="px-4 py-2 text-right font-medium tabular-nums">
-                        {formatRp(s.median)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2 text-right text-xs tabular-nums text-slate-500">
-                        {formatRp(s.minimum)} – {formatRp(s.maksimum)}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums text-slate-500">{s.n_baris}</td>
-                      <td className="px-4 py-2 text-xs text-slate-600">
-                        <DaftarKapal kapal={s.kapal} n={s.n_kapal} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        )}
-      </section>
-
       {/* ---------------- Log perubahan ---------------- */}
       <section>
         <h2 className="font-display text-lg font-bold text-slate-900">Log Perubahan Data</h2>
@@ -871,95 +702,6 @@ function BadgeAksi({ aksi }: { aksi: string }) {
       className={`rounded px-2 py-0.5 text-xs font-semibold ${GAYA_AKSI[aksi] ?? "bg-slate-100 text-slate-700"}`}
     >
       {aksi}
-    </span>
-  );
-}
-
-/** Tooltip kustom, bukan `formatter` + `labelFormatter`: keduanya dipanggil terpisah dan
- * urutannya tidak dijamin, jadi menitipkan tahun dari satu ke lainnya mudah rusak. Komponen
- * ini menerima label (tahun) dan payload (nilai tiap kategori) sekaligus, sehingga jumlah
- * baris dan kapal penyusun median bisa ikut ditampilkan dengan andal. */
-function TooltipJasa({
-  seri,
-  active,
-  label,
-  payload,
-}: {
-  seri: TrenJasaPoint[];
-  active?: boolean;
-  label?: string | number;
-  payload?: { name?: string | number; value?: string | number }[];
-}) {
-  if (!active || !payload?.length) return null;
-  const tahun = String(label);
-
-  return (
-    <div className="max-w-xs rounded-lg border border-slate-200 bg-white p-2.5 text-xs shadow-lg">
-      <p className="mb-1.5 font-semibold text-slate-900">Tahun {tahun}</p>
-      <div className="flex flex-col gap-1.5">
-        {payload.map((p) => {
-          const nama = String(p.name);
-          const s = seri.find((x) => x.kategori === nama && x.tahun === tahun);
-          return (
-            <div key={nama}>
-              <p className="font-medium text-slate-700">{nama}</p>
-              <p className="tabular-nums text-slate-900">{formatRp(Number(p.value))}</p>
-              {s && (
-                <p className="text-slate-500">
-                  {s.n_baris} baris · {s.n_kapal} kapal
-                  {s.n_kapal === 1 && s.kapal?.[0] ? ` (${s.kapal[0]})` : ""}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/** Median dari 2 kapal dan median dari 20 kapal punya bobot yang sangat berbeda, tapi
- * angkanya terlihat sama meyakinkan. Daftar kapalnya ditampilkan supaya bobot itu kelihatan
- * tanpa harus menebak. */
-function DaftarKapal({ kapal, n }: { kapal: string[] | null; n: number }) {
-  const [buka, setBuka] = useState(false);
-  const list = kapal ?? [];
-  if (list.length === 0) return <span className="text-slate-400">tidak tercatat</span>;
-
-  const BATAS = 3;
-  const tampil = buka ? list : list.slice(0, BATAS);
-  const sisa = list.length - tampil.length;
-
-  return (
-    <span className="flex flex-wrap items-center gap-1">
-      {n === 1 && (
-        <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
-          1 kapal saja
-        </span>
-      )}
-      {tampil.map((k) => (
-        <span key={k} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-700">
-          {k}
-        </span>
-      ))}
-      {sisa > 0 && (
-        <button
-          type="button"
-          onClick={() => setBuka(true)}
-          className="rounded px-1 text-slate-500 underline hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
-        >
-          +{sisa} lagi
-        </button>
-      )}
-      {buka && list.length > BATAS && (
-        <button
-          type="button"
-          onClick={() => setBuka(false)}
-          className="rounded px-1 text-slate-500 underline hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
-        >
-          ringkas
-        </button>
-      )}
     </span>
   );
 }

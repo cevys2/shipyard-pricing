@@ -16,7 +16,6 @@ from app.schemas.catalog import (
     RepairListPreview,
     TipePerjanjian,
 )
-from app.services import biaya_docking
 from app.services import catalog as catalog_service
 from app.services import docking_parser, repair_list_parser
 
@@ -239,6 +238,10 @@ async def biaya_docking_dari_repair_list(
     ikut terbawa ke layar, dan nama berkas tidak butuh header Content-Disposition yang harus
     dibuka dulu lewat CORS (frontend dan backend beda domain di Railway).
     """
+    # Di sini, bukan di atas berkas: biaya_docking memuat openpyxl (~20 MB) begitu di-import,
+    # dan pustaka Excel tidak boleh menetap sejak backend menyala (tests/test_hemat_memori.py).
+    from app.services import biaya_docking
+
     content = await file.read()
     try:
         lingkup = repair_list_parser.baca_lingkup(content, file.filename or "upload.xlsx")

@@ -1,10 +1,7 @@
 """Master kategori pekerjaan, buat mengisi dropdown.
 
-Sengaja terpisah dari `/analitik/tren-jasa/kategori`, yang kelihatannya mirip tapi menjawab
-pertanyaan lain: yang di analitik adalah "kategori mana yang punya cukup data untuk
-digambar grafiknya", jadi isinya lebih sedikit dan ikut berubah kalau `min_sampel` berubah.
-Yang di sini adalah daftar pilihan yang sah untuk diisi orang -- kategori yang belum punya
-satu baris data pun tetap harus bisa dipilih, kalau tidak tidak akan pernah ada barisnya.
+Isinya daftar pilihan yang sah untuk diisi orang -- kategori yang belum punya satu baris
+data pun tetap harus bisa dipilih, kalau tidak tidak akan pernah ada barisnya.
 """
 
 from typing import Annotated

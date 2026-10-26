@@ -184,6 +184,60 @@ def test_resolver_tidak_menyentuh_baris_bertanda_manual():
     assert _kategori_dari("M2") == "PIPA - PIPA"
 
 
+def test_teks_kategori_null_ikut_diselaraskan():
+    """Teks NULL tidak bisa ikut join `=` di jalur cepat per-teks, jadi diurus terpisah.
+
+    Baris NULL yang terlanjur memegang kategori (mis. dari alias yang sudah dihapus) harus
+    dikosongkan, persis seperti yang dilakukan resolver per baris versi lama."""
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO tabel_katalog_harga "
+                "(id, nama_kapal, tahun, uraian_pekerjaan, kategori_pekerjaan, harga_satuan, "
+                " kategori_id) "
+                "VALUES ('N1', 'KMP. TES', '2025', 'tes', NULL, 1, "
+                " (SELECT id FROM kategori WHERE nama = 'LAIN-LAIN'))"
+            )
+        )
+    assert selaraskan_kategori() == 1
+    assert _kategori_dari("N1") is None
+    assert selaraskan_kategori() == 0
+
+
+def test_banyak_baris_berteks_sama_diselaraskan_semua():
+    """Jalur cepat menghitung resolver sekali per teks, lalu menempelkannya ke semua baris
+    berteks sama -- termasuk ejaan yang berbeda tapi bermuara ke kategori yang sama."""
+    _tulis(
+        [{"id": f"S{i}", "kategori": "Pipa-Pipa"} for i in range(5)]
+        + [{"id": "S9", "kategori": "PIPA - PIPA"}]
+    )
+    assert selaraskan_kategori() == 6
+    assert {_kategori_dari(f"S{i}") for i in (0, 1, 2, 3, 4, 9)} == {"PIPA - PIPA"}
+
+
+def test_selaraskan_tidak_menghitung_resolver_per_baris():
+    """Penjaga kecepatan nyala backend (23 Oktober 2026). Versi per baris butuh ~1,2 detik
+    untuk 4.000 baris (2,3 detik untuk 8.000 di produksi) di SETIAP app start; versi per teks
+    ~0,01 detik. Batasnya sengaja longgar -- yang ditangkap kembalinya ke per baris, mis.
+    karena `MATERIALIZED` terhapus, bukan selisih milidetik."""
+    import time
+
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO tabel_katalog_harga "
+                "(id, nama_kapal, tahun, uraian_pekerjaan, kategori_pekerjaan, harga_satuan) "
+                "SELECT 'P' || g, 'KMP. TES', '2025', 'tes', "
+                "       (ARRAY['Pipa-Pipa', 'REPLATING', 'TIDAK ADA ALIAS'])[1 + g % 3], 1 "
+                "FROM generate_series(1, 4000) g"
+            )
+        )
+    selaraskan_kategori()
+    mulai = time.perf_counter()
+    assert selaraskan_kategori() == 0
+    assert time.perf_counter() - mulai < 0.5, "resolver kembali dihitung per baris"
+
+
 def test_resolver_idempoten():
     """Panggilan kedua harus nol baris, bukan menulis ulang isi yang sama."""
     _tulis([{"id": "I1", "kategori": "REPLATING"}, {"id": "I2", "kategori": "Konstruksi"}])

@@ -103,7 +103,7 @@ def test_jenis_kapal_diturunkan_dari_nama(conn, kapal, jenis):
 
 
 def test_baris_berharga_nol_tidak_ikut_menghitung_apa_pun(conn):
-    """`harga_satuan > 0` dipakai seragam dengan `tren_harga_jasa()`."""
+    """`harga_satuan > 0` dipakai seragam dengan analitik lain dan Harga Wajar."""
     _baris(conn, "T-1", "KMP. TES", "PT. TES", volume=5, harga=0)
     conn.commit()
 
