@@ -37,6 +37,8 @@ export default function AnalitikPanel({ auth }: Props) {
   const [jasa, setJasa] = useState<TrenJasa | null>(null);
   const [nilai, setNilai] = useState<NilaiPekerjaan | null>(null);
   const [banding, setBanding] = useState<"kapal" | "klien">("kapal");
+  const [jenisBanding, setJenisBanding] = useState("Semua");
+  const [tahunBanding, setTahunBanding] = useState("Semua");
   const [material, setMaterial] = useState<TrenMaterial | null>(null);
   const [kategoriOpts, setKategoriOpts] = useState<string[]>(["Semua"]);
   const [kategori, setKategori] = useState("Semua");
@@ -166,6 +168,18 @@ export default function AnalitikPanel({ auth }: Props) {
    * TETAP ikut, di bawah, bertanda "belum terukur" -- menyembunyikannya akan membuat
    * KMP. MUNIC 1 (716 baris, nol bervolume) raib tanpa jejak, dan perbandingan yang
    * kehilangan pesertanya terlihat lengkap padahal tidak. */
+  /** Pilihan diambil dari data, bukan daftar tetap: jenis baru (TB, misalnya) langsung ikut
+   * muncul begitu barisnya diimpor. */
+  const { jenisOpts, tahunOpts } = useMemo(() => {
+    const jenis = new Set<string>();
+    const tahun = new Set<string>();
+    nilai?.per_kapal.forEach((r) => {
+      jenis.add(r.jenis);
+      tahun.add(r.tahun);
+    });
+    return { jenisOpts: ["Semua", ...[...jenis].sort()], tahunOpts: ["Semua", ...[...tahun].sort()] };
+  }, [nilai]);
+
   const barisBanding = useMemo(() => {
     if (!nilai) return [];
     type Gabung = {
@@ -179,7 +193,14 @@ export default function AnalitikPanel({ auth }: Props) {
       nilai: number;
     };
     const gabung = new Map<string, Gabung>();
-    nilai.per_kapal.forEach((r: NilaiKapal) => {
+    // Disaring SEBELUM dijumlahkan: sesudah digabung, tahun dan jenisnya sudah lebur jadi
+    // satu angka dan tidak bisa dipisah lagi.
+    const tersaring = nilai.per_kapal.filter(
+      (r) =>
+        (jenisBanding === "Semua" || r.jenis === jenisBanding) &&
+        (tahunBanding === "Semua" || r.tahun === tahunBanding),
+    );
+    tersaring.forEach((r: NilaiKapal) => {
       const kunci = banding === "kapal" ? `${r.nama_kapal}|${r.klien}` : r.klien;
       const ada: Gabung = gabung.get(kunci) ?? {
         kunci,
@@ -202,7 +223,7 @@ export default function AnalitikPanel({ auth }: Props) {
     return [...gabung.values()]
       .map((g) => ({ ...g, tahun: [...g.tahun].sort().join(", ") }))
       .sort((a, b) => b.nilai - a.nilai || b.n_baris - a.n_baris);
-  }, [nilai, banding]);
+  }, [nilai, banding, jenisBanding, tahunBanding]);
 
   /** Satu grafik per mata uang. EUR dan IDR tidak boleh berbagi sumbu Y -- selisihnya
    * ribuan kali dan garisnya jadi tak terbaca, selain memberi kesan angkanya sebanding. */
@@ -333,11 +354,40 @@ export default function AnalitikPanel({ auth }: Props) {
                   Bandingkan {banding === "kapal" ? "Kapal" : "Klien"}
                 </h3>
                 <p className="mt-0.5 text-sm text-slate-500">
-                  Dijumlahkan lintas tahun. Yang cakupannya tipis ditandai — angkanya benar untuk
-                  baris yang terhitung, tapi jauh di bawah nilai pekerjaan sesungguhnya.
+                  {tahunBanding === "Semua" ? "Dijumlahkan lintas tahun." : `Tahun ${tahunBanding} saja.`}{" "}
+                  Yang cakupannya tipis ditandai — angkanya benar untuk baris yang terhitung, tapi
+                  jauh di bawah nilai pekerjaan sesungguhnya.
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="block text-xs font-medium text-slate-600">
+                  Jenis Kapal
+                  <select
+                    className="mt-1 w-28 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                    value={jenisBanding}
+                    onChange={(e) => setJenisBanding(e.target.value)}
+                  >
+                    {jenisOpts.map((j) => (
+                      <option key={j} value={j}>
+                        {j}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-slate-600">
+                  Tahun
+                  <select
+                    className="mt-1 w-28 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                    value={tahunBanding}
+                    onChange={(e) => setTahunBanding(e.target.value)}
+                  >
+                    {tahunOpts.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   type="button"
                   onClick={() => setBanding("kapal")}
@@ -368,6 +418,17 @@ export default function AnalitikPanel({ auth }: Props) {
                   </tr>
                 </thead>
                 <tbody>
+                  {barisBanding.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={banding === "kapal" ? 6 : 4}
+                        className="px-4 py-8 text-center text-sm text-slate-500"
+                      >
+                        Belum ada kapal{jenisBanding !== "Semua" && ` ${jenisBanding}`}
+                        {tahunBanding !== "Semua" && ` di ${tahunBanding}`} yang tercatat.
+                      </td>
+                    </tr>
+                  )}
                   {barisBanding.map((r) => (
                     <tr
                       key={r.kunci}

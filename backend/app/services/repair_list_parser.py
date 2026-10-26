@@ -49,6 +49,7 @@ rekonsiliasi: jumlah baris yang diambil harus persis sama dengan angka JUMLAH di
 """
 import io
 import re
+from datetime import datetime, timedelta
 
 import openpyxl
 
@@ -484,3 +485,211 @@ def parse_repair_list_file(file_bytes: bytes, filename: str) -> dict:
         )
         return hasil
     raise ValueError("; ".join(gagal) or "Tidak ada sheet yang bisa dibaca")
+
+
+# -- Lingkup pekerjaan untuk file Biaya Docking ------------------------------------------
+#
+# Jalur impor di atas cuma mengambil baris BERHARGA, karena yang disimpan ke katalog adalah
+# harga. Repair list yang dikirim owner sebelum penawaran justru belum punya harga sama
+# sekali -- di jalur impor dia gagal di "Kolom harga satuan tidak ketemu". Biaya Docking
+# butuh kebalikannya: SEMUA baris, persis urutan berkasnya, karena judul seksi dan baris
+# induk tanpa QTY juga ikut tercetak di penawaran.
+
+_KUNCI_TANGGAL = ("naik_dock", "turun_dock")
+
+# Awalan label setelah semua yang bukan huruf dibuang ("K L A S S" -> "klass"). AWALAN, bukan
+# "memuat": _data_kapal() menguji SETIAP sel teks, termasuk nilai dan satuan, jadi "memuat
+# dock" akan menangkap PERIODE DOCKING dan "memuat engine" AUXILIARY ENGINE. Satuan "GRT"
+# sengaja tidak cocok dengan gt -- kalau cocok, dia dibaca sebagai label baru dan satuan
+# "500 GRT" hilang.
+_LABEL_DATA_KAPAL = (
+    (("nomororder",), "nomor_order"),
+    (("namakapal",), "nama_kapal"),
+    (("pemilik",), "pemilik"),
+    (("tahunpembuatan",), "tahun_pembuatan"),
+    (("klas",), "klasifikasi"),
+    (("konstruksi",), "konstruksi"),
+    (("jenistype", "jeniskapal"), "jenis_kapal"),
+    (("wilayahoperasi",), "wilayah_operasi"),
+    (("statussurvey", "jenissurvey"), "status_survey"),
+    (("panjangseluruh",), "loa"),
+    (("panjanggaris",), "lbp"),
+    (("lebar",), "lebar"),
+    (("dalam",), "dalam"),
+    (("draft", "draught", "sarat"), "sarat"),
+    (("gtgrt", "grtnrt"), "gt"),
+    (("dayamesin", "mainengine"), "daya_mesin"),
+    (("naikdock",), "naik_dock"),
+    (("turundock",), "turun_dock"),
+)
+
+
+def kunci_data_kapal(label: str) -> str | None:
+    """Label data kapal di repair list -> nama kolom tetapnya di Biaya Docking.
+
+    Tiap owner menulis label yang sama dengan cara berbeda. Fungsi ini menyeragamkannya ke
+    salah satu kunci berikut, atau None kalau teksnya bukan label data kapal (nilai, satuan,
+    judul seperti "UKURAN UTAMA KAPAL", atau label yang tidak punya tempat di Biaya Docking):
+
+        nomor_order, nama_kapal, pemilik, tahun_pembuatan, klasifikasi, konstruksi,
+        jenis_kapal, wilayah_operasi, status_survey, loa, lbp, lebar, dalam, sarat, gt,
+        daya_mesin, naik_dock, turun_dock
+
+    >>> kunci_data_kapal("PANJANG SELURUHNYA ( LOA )")
+    'loa'
+    >>> kunci_data_kapal("K L A S S")
+    'klasifikasi'
+    >>> kunci_data_kapal("KMP. GERBANG SAMUDRA 3")
+    """
+    huruf = re.sub(r"[^a-z]", "", str(label).lower())
+    return next((kunci for awalan, kunci in _LABEL_DATA_KAPAL if huruf and huruf.startswith(awalan)), None)
+
+
+def _cari_judul_lingkup(values) -> int | None:
+    """Baris judul tabel: memuat "uraian" DAN kolom kuantitas (QTY / VOL / VOLUME)."""
+    for i, row in enumerate(values):
+        label = [norm_nospace(c) for c in row if c is not None]
+        if any("uraian" in lb for lb in label) and any(lb.startswith(("qty", "vol")) for lb in label):
+            return i
+    return None
+
+
+def _petakan_lingkup(header_row, sub_row) -> dict[str, int | None]:
+    judul = {ci: norm_nospace(v) for ci, v in enumerate(header_row) if v is not None and str(v).strip()}
+    uraian = next(ci for ci, lb in judul.items() if "uraian" in lb)
+    qty = next((ci for ci, lb in judul.items() if ci > uraian and lb.startswith(("qty", "vol"))), None)
+    if qty is None:
+        raise ValueError("Kolom QTY / VOL ada di sebelah kiri URAIAN -- susunan ini belum dikenali.")
+    sat = next((ci for ci, lb in judul.items() if ci > qty and lb.startswith("sat")), None)
+    # Gaya Basarnas: grup VOLUME berkolom dua dengan VOL | SAT di baris sub-judul, dan
+    # "SATUAN" di baris judul justru kolom HARGA satuan. Tanpa cabang ini satuan pekerjaan
+    # terbaca dari kolom harga.
+    sub = {ci: norm_nospace(v) for ci, v in enumerate(sub_row) if v is not None}
+    sat_sub = [ci for ci, lb in sub.items() if ci >= qty and lb.startswith("sat")]
+    if judul[qty].startswith("volume") and sat_sub:
+        qty = next((ci for ci, lb in sub.items() if ci >= qty and lb.startswith(("vol", "qty"))), qty)
+        sat = sat_sub[0]
+    return {
+        "no": next((ci for ci, lb in judul.items() if ci < uraian and lb.startswith("no")), None),
+        "uraian": uraian,
+        "qty": qty,
+        "sat": sat,
+        "ket": next((ci for ci, lb in judul.items() if ci > qty and lb.startswith("ket")), None),
+    }
+
+
+def _teks_nomor(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
+
+
+def _baris_lingkup(rows, kolom, nomor_awal: int) -> tuple[list[dict], list[str]]:
+    baris: list[dict] = []
+    peringatan: list[str] = []
+    romawi_terakhir = 0
+    for nomor, row in enumerate(rows, start=nomor_awal):
+        # Uraian boleh melebar beberapa kolom (berkas Basarnas menggeser teks satu kolom ke
+        # kanan tiap turun tingkat). Semua sel di antara kolom URAIAN dan QTY ikut, dan
+        # geseran kolom pertamanya dipakai sebagai indentasi.
+        wilayah = [
+            (j, str(c).strip())
+            for j, c in enumerate(row[kolom["uraian"] : kolom["qty"]])
+            if c is not None and str(c).strip()
+        ]
+        if not wilayah or _baris_penomoran(row, kolom["uraian"]):
+            continue
+        mentah = _sel(row, kolom["qty"])
+        qty = baca_angka(mentah)
+        if qty is None and mentah is not None and str(mentah).strip():
+            qty = str(mentah).strip()
+            peringatan.append(
+                f"Baris {nomor}: QTY '{qty}' bukan angka -- ditulis apa adanya, Jumlah baris "
+                f"itu akan error sampai QTY-nya dibetulkan di Excel."
+            )
+        no = _teks_nomor(_sel(row, kolom["no"]))
+        # Urutan, bukan bentuk, yang menentukan seksi -- sama dengan jebakan #3 di atas.
+        seksi = False
+        if no.isupper() and is_roman(no):
+            nilai = nilai_romawi(no)
+            if nilai == romawi_terakhir + 1 or len(no) > 1:
+                romawi_terakhir, seksi = nilai, True
+        baris.append(
+            {
+                "no": no,
+                "uraian": " ".join(t for _, t in wilayah),
+                "indent": wilayah[0][0],
+                "qty": qty,
+                "satuan": _teks_sel(row, kolom["sat"]) or None,
+                "keterangan": _teks_sel(row, kolom["ket"]) or None,
+                "seksi": seksi,
+            }
+        )
+
+    # Blok tanda tangan di bawah tabel kadang menaruh teks di kolom uraian ("Mengetahui,").
+    # Yang dibuang cuma ekor SESUDAH baris ber-QTY terakhir, dan disebut -- bukan aturan
+    # "berhenti di baris kosong", yang akan memotong tabel diam-diam kalau ada baris kosong
+    # di tengahnya.
+    berqty = [k for k, b in enumerate(baris) if b["qty"] is not None]
+    if not berqty:
+        raise ValueError(
+            "Tidak ada satu baris pun yang punya QTY -- kolom QTY/VOL kemungkinan salah "
+            "terbaca. Cek judul kolomnya di berkas."
+        )
+    ekor = baris[berqty[-1] + 1 :]
+    if ekor:
+        peringatan.append(
+            f"{len(ekor)} baris tanpa QTY di bawah item terakhir tidak ikut (dianggap bukan "
+            f"pekerjaan), mulai dari '{ekor[0]['uraian'][:60]}'."
+        )
+    return baris[: berqty[-1] + 1], peringatan
+
+
+def _data_kapal(rows) -> dict[str, dict]:
+    """Data kapal di atas tabel: {kunci: {"nilai": ..., "satuan": ...}}.
+
+    Nilai label = sel-sel sesudahnya sampai label berikutnya di baris yang sama, tanda ":"
+    dilewati. Sel pertama nilainya, sel kedua satuannya kalau pendek ("Meter", "GRT", "HP").
+    ponytail: tata letak dua blok (kiri-kanan dalam satu baris) dengan nomor urut di depan
+    label kanan bisa membaca nomor itu sebagai nilai label kiri yang kosong. Terlihat di
+    header dan disunting di Excel; perbaiki kalau berkas seperti itu benar-benar datang.
+    """
+    kapal: dict[str, dict] = {}
+    for row in rows:
+        sel = [c for c in row if c is not None and str(c).strip() not in ("", ":")]
+        kunci = [kunci_data_kapal(c.split(":")[0]) if isinstance(c, str) else None for c in sel]
+        for p, k in enumerate(kunci):
+            if not k or k in kapal:
+                continue
+            ujung = next((q for q in range(p + 1, len(sel)) if kunci[q]), len(sel))
+            isi = sel[p + 1 : ujung]
+            # "NAMA KAPAL : KMP X" dalam satu sel.
+            if ":" in sel[p] and sel[p].split(":", 1)[1].strip():
+                isi = [sel[p].split(":", 1)[1].strip()] + isi
+            nilai = isi[0] if isi else None
+            # Berkas .xls: xlrd mengembalikan tanggal sebagai nomor seri Excel, bukan tanggal.
+            if k in _KUNCI_TANGGAL and isinstance(nilai, float) and 20000 < nilai < 80000:
+                nilai = datetime(1899, 12, 30) + timedelta(days=nilai)
+            satuan = isi[1] if len(isi) > 1 and isinstance(isi[1], str) and len(isi[1]) <= 8 else None
+            kapal[k] = {"nilai": nilai, "satuan": satuan}
+    return kapal
+
+
+def baca_lingkup(file_bytes: bytes, filename: str) -> dict:
+    """Repair list -> data kapal + SEMUA baris lingkup pekerjaan, untuk file Biaya Docking.
+
+    Sheet pertama yang punya baris judul URAIAN + QTY/VOLUME. Tidak ada yang disimpan.
+    """
+    for _, values in _muat_lembar(file_bytes, filename):
+        i = _cari_judul_lingkup(values)
+        if i is None:
+            continue
+        kolom = _petakan_lingkup(values[i], values[i + 1] if i + 1 < len(values) else [])
+        baris, peringatan = _baris_lingkup(values[i + 1 :], kolom, nomor_awal=i + 2)
+        return {"kapal": _data_kapal(values[:i]), "baris": baris, "peringatan": peringatan}
+    raise ValueError(
+        "Tabel repair list tidak ketemu: butuh satu baris judul yang memuat URAIAN dan "
+        "QTY (atau VOL / VOLUME)."
+    )

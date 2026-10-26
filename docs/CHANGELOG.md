@@ -8,6 +8,36 @@ langsung di GitHub.
 
 ---
 
+## 26 Oktober 2026 — Bandingkan Kapal bisa disaring per jenis dan per tahun
+
+**Dua pilihan baru di atas tabel Bandingkan: Jenis Kapal dan Tahun.** Sebelumnya semua tahun
+dan semua jenis kapal tercampur dalam satu daftar. Sekarang bisa dilihat, misalnya, KLM saja di
+2025. Pilihannya diambil dari data, jadi jenis kapal baru ikut muncul sendiri. Kalau kombinasi
+yang dipilih tidak punya data, layar mengatakannya, tidak cuma menampilkan tabel kosong.
+
+**Data kapal di file Biaya Docking sekarang terisi.** Nama kapal, pemilik, ukuran, mesin, dan
+tanggal naik dock dibaca dari repair list, dengan ejaan label owner yang macam-macam
+("K L A S S", "Panjang Seluruh ( L.O.A )"). Nama berkasnya ikut memuat nama kapal.
+
+---
+
+## 23 Oktober 2026 — aplikasi menghasilkan file pertamanya: Biaya Docking
+
+**Tab baru: Biaya Docking.** Pilih repair list Excel, dan file Biaya Docking (Pekerjaan Induk)
+langsung terunduh: data kapal, description, seluruh baris repair list persis urutan dan
+penomorannya, lalu Jumlah, PPN 11%, TOTAL, terbilang, dan tanda tangan. Tidak ada yang
+disimpan ke katalog.
+
+**Kolom harga satuan sengaja kosong.** Biaya Docking adalah harga pembuka nego, sedangkan
+katalog berisi harga yang sudah disepakati — jadi harganya tetap diputuskan manusia, di
+Excel. Begitu harga diisi, Jumlah per baris, TOTAL, dan terbilang ikut berubah sendiri.
+
+**Terbilang tidak bisa salah ketik lagi.** Dihitung rumus dari TOTAL, bukan diketik. Waktu
+dicoba dengan harga Biaya Docking GS3 final, TOTAL-nya persis sama (Rp 733.961.970) — tapi
+terbilang di GS3 final ternyata kehilangan kata "Ribu". Versi dari aplikasi benar.
+
+---
+
 ## 22 September 2026 — analitik menjawab "uangnya ke mana", dan dua kapal yang ternyata satu
 
 **Seksi baru: Ke Mana Uangnya Pergi.** Analitik selama ini cuma bisa menjawab "harga

@@ -193,6 +193,11 @@ export const api = {
       5 * 60 * 1000,
     );
   },
+  biayaDocking(token: string, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<BiayaDockingHasil>("/catalog/biaya-docking", { method: "POST", body: fd }, token);
+  },
   dockingCommit(token: string, body: DockingImportCommit) {
     // Satu-satunya panggilan yang diberi batas waktu: ini yang menulis ratusan baris
     // sekaligus, dan satu-satunya yang pernah menggantung sampai proxy menyerah.
@@ -551,6 +556,14 @@ export type RepairListRekonsiliasi = {
   jumlah_terbaca: number;
   selisih: number | null;
   cocok: boolean;
+};
+
+/** File Biaya Docking dari repair list. `isi` = berkas .xlsx dalam base64. */
+export type BiayaDockingHasil = {
+  nama_berkas: string;
+  jumlah_baris: number;
+  peringatan: string[];
+  isi: string;
 };
 
 export type RepairListPreview = {

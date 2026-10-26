@@ -38,8 +38,8 @@ backend/app/
   config.py         -- settings, termasuk catalog_table = "tabel_katalog_harga"
   seed_kategori.py  -- 11 kategori + 126 alias, dipakai ensure_kategori_table()
   routers/          -- ahsp, analitik, catalog, kategori, material
-  services/         -- ahsp, analitik, audit, catalog, docking_parser, material, pencarian,
-                       repair_list_parser
+  services/         -- ahsp, analitik, audit, biaya_docking, catalog, docking_parser, material,
+                       pencarian, repair_list_parser
   schemas/          -- pydantic
 backend/tests/      -- 201 tes, harus tetap lulus setelah perubahan apa pun
 ```
@@ -110,8 +110,20 @@ impor Repair List (mode ketiga di tab Import Excel).
 
 Diketahui terbatas:
 
-- Aplikasi belum menghasilkan keluaran apa pun — penawaran masih disusun manual di Excel.
-  Ini jurang terbesar yang tersisa antara "katalog" dan "alat yang menyelesaikan pekerjaan".
+- **Keluaran pertama: file Biaya Docking** (23 Oktober 2026, tab "Biaya Docking"). Repair list
+  Excel masuk → `.xlsx` berformat Biaya Docking GS3 final keluar, tidak ada yang disimpan.
+  `repair_list_parser.baca_lingkup()` mengambil SEMUA baris (jalur impor cuma yang berharga),
+  `services/biaya_docking.py` menulis filenya. **Harga satuan sengaja kosong**: Biaya Docking
+  itu harga PEMBUKA nego (AS propeller GS3 ditawarkan 100 jt untuk mendarat di ~25 jt), katalog
+  berisi harga DEAL — mengisinya dari katalog berarti menawarkan harga akhir sebagai harga awal,
+  dan harga tawar tidak boleh pernah masuk katalog. Terbilang = rumus di sheet tersembunyi
+  `terbilang` (ikut TOTAL begitu harga diisi di Excel), bukan teks mati. Dicek terhadap berkas
+  asli: 74/74 baris sama dengan GS3 final, TOTAL di Excel persis Rp 733.961.970 — dan terbilang
+  GS3 final ternyata kehilangan kata "Ribu". Data kapal di header dibaca
+  `kunci_data_kapal()`: label dicocokkan lewat AWALAN setelah semua yang bukan huruf dibuang,
+  bukan "memuat", karena dia diuji ke setiap sel termasuk nilai dan satuan (dijaga
+  `tests/test_kunci_data_kapal.py`). Repair list GS3 asli: 17/18 kunci terisi (nomor order
+  memang tidak ada di berkasnya). Format klien sendiri (repair list Basarnas, SPPBJ) belum didukung.
 - **Analitik "Ke Mana Uangnya Pergi" cuma mencakup 40,4% baris** (3.243 dari 8.024,
   per 22 September 2026), dan cakupannya **tidak acak** — dia mengikuti jalur impor, jadi
   per kapal melompat dari 24% (SINDU TRITAMA) sampai 100% (PRATHITA IV). Karena itu
@@ -119,6 +131,14 @@ Diketahui terbatas:
   per baris. **Jangan pernah menambahkan `WHERE volume IS NOT NULL` ke query per-kapal** —
   penyebutnya hilang, tiap kapal terlihat 100% terukur, dan nilai yang memotret seperempat
   pekerjaan terbaca sebagai nilai penuh. Dijaga `tests/test_nilai_pekerjaan.py`.
+  Tabel Bandingkan bisa disaring per jenis kapal dan per tahun (26 Oktober 2026), di frontend
+  saja: `per_kapal` sudah per kapal × jenis × tahun, dan saringannya jalan SEBELUM baris
+  digabung lintas tahun. Kotak angka dan grafik di atasnya sengaja tidak ikut tersaring —
+  `per_kategori` tidak membawa jenis kapal.
+- **Bulan docking tidak tersimpan di mana pun**, cuma `tahun`. `docking_parser` membaca
+  `PERIODE DOCKING : Nopember 2025` tapi hanya mengambil tahunnya, dan `created_at` itu waktu
+  impor, bukan waktu docking. Sumber bulan satu-satunya sekarang: daftar "Data Pengalaman"
+  (Excel di luar repo, kolom tanggal naik/turun dock).
 - **`satuan` punya 37 ejaan untuk ~20 satuan nyata**: `m²`(206)/`m2`(160)/`m'`(5),
   `mtr`(214)/`m`(59)/`mter`(1), `pcs`/`pc`/`buah`/`bh`, `tangki`/`tanki`, `liter`/`ltr`,
   `segel`/`shackle`. Belum dinormalisasi karena analitik yang ada tidak mengelompokkan per

@@ -1,3 +1,4 @@
+import base64
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -15,6 +16,7 @@ from app.schemas.catalog import (
     RepairListPreview,
     TipePerjanjian,
 )
+from app.services import biaya_docking
 from app.services import catalog as catalog_service
 from app.services import docking_parser, repair_list_parser
 
@@ -224,6 +226,36 @@ def import_repair_list_commit(
         sumber="import-repair-list",
     )
     return {"saved": saved}
+
+
+@router.post("/biaya-docking")
+async def biaya_docking_dari_repair_list(
+    _: Annotated[dict, Depends(get_current_user)],
+    file: UploadFile = File(...),
+):
+    """Repair list -> file Biaya Docking (.xlsx) dengan harga satuan kosong. Tidak menyimpan apa pun.
+
+    Berkasnya dikirim sebagai base64 di dalam JSON, bukan unduhan langsung: peringatan parser
+    ikut terbawa ke layar, dan nama berkas tidak butuh header Content-Disposition yang harus
+    dibuka dulu lewat CORS (frontend dan backend beda domain di Railway).
+    """
+    content = await file.read()
+    try:
+        lingkup = repair_list_parser.baca_lingkup(content, file.filename or "upload.xlsx")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membaca repair list: {e}")
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Berkas ini tidak bisa dibuka sebagai Excel. Buka di Excel, simpan ulang sebagai .xlsx, lalu coba lagi.",
+        )
+    tanggal = biaya_docking.hari_ini()
+    return {
+        "nama_berkas": biaya_docking.nama_berkas(lingkup, tanggal),
+        "jumlah_baris": len(lingkup["baris"]),
+        "peringatan": lingkup["peringatan"],
+        "isi": base64.b64encode(biaya_docking.buat(lingkup, tanggal)).decode(),
+    }
 
 
 @router.patch("")

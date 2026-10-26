@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Calculator, LayoutGrid, LogOut, Package, Search, TrendingUp, Upload } from "lucide-react";
+import { ArrowLeft, Calculator, FileText, LayoutGrid, LogOut, Package, Search, TrendingUp, Upload } from "lucide-react";
 import {
   api,
   PORTAL_URL,
@@ -13,6 +13,7 @@ import DockingImportPanel from "../components/DockingImportPanel";
 import RepairListImportPanel from "../components/RepairListImportPanel";
 import MaterialCatalogPanel from "../components/MaterialCatalogPanel";
 import AhspPanel from "../components/AhspPanel";
+import BiayaDockingPanel from "../components/BiayaDockingPanel";
 import PilihBerkas from "../components/PilihBerkas";
 // recharts itu dependensi terbesar di app ini (~100 kB gzip). Tab Analitik bukan
 // tampilan awal, jadi di-lazy supaya recharts tidak ikut di bundle pertama.
@@ -22,7 +23,7 @@ import logoIcon from "../assets/logo-icon.png";
 
 type Props = { auth: AuthUser; onLogout: () => void };
 
-type Tab = "view" | "material" | "ahsp" | "analitik" | "import";
+type Tab = "view" | "material" | "ahsp" | "analitik" | "biaya" | "import";
 
 const emptyFilters: Record<string, string> = {
   perusahaan: "Semua",
@@ -125,6 +126,7 @@ export default function DashboardPage({ auth, onLogout }: Props) {
       ? [{ key: "ahsp" as Tab, label: "Struktur Biaya", icon: Calculator }]
       : []),
     { key: "analitik", label: "Analitik", icon: TrendingUp },
+    { key: "biaya", label: "Biaya Docking", icon: FileText },
     { key: "import", label: "Import Excel", icon: Upload },
   ];
   const judulTab = navItems.find((n) => n.key === tab)?.label ?? "";
@@ -280,6 +282,8 @@ export default function DashboardPage({ auth, onLogout }: Props) {
               <AnalitikPanel auth={auth} />
             </Suspense>
           )}
+
+          {tab === "biaya" && <BiayaDockingPanel token={auth.token} />}
 
           {tab === "import" && (
             <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
