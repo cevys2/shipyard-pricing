@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CheckCircle2, Plus, Trash2, TriangleAlert } from "lucide-react";
-import { api, formatRp, type RepairListPreview } from "../lib/api";
+import { api, formatRp, type FilterOptions, type RepairListPreview } from "../lib/api";
+import { rapikanHeader } from "../lib/nama";
 import PilihBerkas from "./PilihBerkas";
 import PeringatanPerusahaanKosong from "./PeringatanPerusahaanKosong";
 
@@ -59,6 +60,8 @@ export default function RepairListImportPanel({ token, onImported }: Props) {
   const [preview, setPreview] = useState<RepairListPreview | null>(null);
   const [rows, setRows] = useState<EditRow[] | null>(null);
   const [header, setHeader] = useState({ nama_perusahaan: "", nama_kapal: "", tahun: "" });
+  /** Nama kapal/perusahaan yang sudah tersimpan, untuk `rapikanHeader`. */
+  const [namaAda, setNamaAda] = useState<FilterOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [menyimpan, setMenyimpan] = useState(0);
   const [error, setError] = useState("");
@@ -79,14 +82,16 @@ export default function RepairListImportPanel({ token, onImported }: Props) {
     setPreview(null);
     setRows(null);
     try {
-      const p = await api.repairListPreview(token, file);
+      const [p, ada] = await Promise.all([api.repairListPreview(token, file), api.filters(token).catch(() => null)]);
       setPreview(p);
       setRows(fromParsed(p.items));
-      setHeader({
-        nama_perusahaan: p.detected_nama_perusahaan,
-        nama_kapal: p.detected_nama_kapal,
-        tahun: p.detected_tahun,
-      });
+      setNamaAda(ada);
+      setHeader(
+        rapikanHeader(
+          { nama_perusahaan: p.detected_nama_perusahaan, nama_kapal: p.detected_nama_kapal, tahun: p.detected_tahun },
+          ada,
+        ),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal membaca file");
     } finally {
@@ -178,20 +183,22 @@ export default function RepairListImportPanel({ token, onImported }: Props) {
             <label className="block text-xs font-medium text-slate-600">
               Perusahaan
               <input
-                className={`mt-1 w-full rounded-lg border px-2 py-2 text-sm ${
+                className={`mt-1 w-full rounded-lg border px-2 py-2 text-sm uppercase ${
                   header.nama_perusahaan.trim() ? "border-slate-300" : "border-amber-400 bg-amber-50"
                 }`}
                 value={header.nama_perusahaan}
                 onChange={(e) => setHeader((h) => ({ ...h, nama_perusahaan: e.target.value }))}
+                onBlur={() => setHeader((h) => rapikanHeader(h, namaAda))}
               />
               <PeringatanPerusahaanKosong nama={header.nama_perusahaan} />
             </label>
             <label className="block text-xs font-medium text-slate-600">
               Kapal * <span className="font-normal text-slate-400">(dari nama sheet — periksa)</span>
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm uppercase"
                 value={header.nama_kapal}
                 onChange={(e) => setHeader((h) => ({ ...h, nama_kapal: e.target.value }))}
+                onBlur={() => setHeader((h) => rapikanHeader(h, namaAda))}
               />
             </label>
             <label className="block text-xs font-medium text-slate-600">

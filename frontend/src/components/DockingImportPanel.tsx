@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CheckCircle2, Plus, Repeat, Trash2 } from "lucide-react";
-import { api, formatRp, type DockingImportPreview } from "../lib/api";
+import { api, formatRp, type DockingImportPreview, type FilterOptions } from "../lib/api";
+import { rapikanHeader } from "../lib/nama";
 import PilihBerkas from "./PilihBerkas";
 import PeringatanPerusahaanKosong from "./PeringatanPerusahaanKosong";
 
@@ -57,6 +58,8 @@ export default function DockingImportPanel({ token, onImported }: Props) {
   const [sheetName, setSheetName] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [header, setHeader] = useState({ nama_perusahaan: "", nama_kapal: "", tahun: "" });
+  /** Nama kapal/perusahaan yang sudah tersimpan, untuk `rapikanHeader`. */
+  const [namaAda, setNamaAda] = useState<FilterOptions | null>(null);
   const [induk, setInduk] = useState<EditRow[] | null>(null);
   const [addendum, setAddendum] = useState<EditRow[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,14 +77,16 @@ export default function DockingImportPanel({ token, onImported }: Props) {
     setInduk(null);
     setAddendum(null);
     try {
-      const p = await api.dockingPreview(token, file);
+      const [p, ada] = await Promise.all([api.dockingPreview(token, file), api.filters(token).catch(() => null)]);
       setSheetName(p.sheet_name);
       setWarnings(p.warnings);
-      setHeader({
-        nama_perusahaan: p.detected_nama_perusahaan,
-        nama_kapal: p.detected_nama_kapal,
-        tahun: p.detected_tahun,
-      });
+      setNamaAda(ada);
+      setHeader(
+        rapikanHeader(
+          { nama_perusahaan: p.detected_nama_perusahaan, nama_kapal: p.detected_nama_kapal, tahun: p.detected_tahun },
+          ada,
+        ),
+      );
       setInduk(fromParsed(p.induk));
       setAddendum(fromParsed(p.addendum));
     } catch (e) {
@@ -194,20 +199,22 @@ export default function DockingImportPanel({ token, onImported }: Props) {
             <label className="block text-xs font-medium text-slate-600">
               Perusahaan
               <input
-                className={`mt-1 w-full rounded-lg border px-2 py-2 text-sm ${
+                className={`mt-1 w-full rounded-lg border px-2 py-2 text-sm uppercase ${
                   header.nama_perusahaan.trim() ? "border-slate-300" : "border-amber-400 bg-amber-50"
                 }`}
                 value={header.nama_perusahaan}
                 onChange={(e) => setHeader((h) => ({ ...h, nama_perusahaan: e.target.value }))}
+                onBlur={() => setHeader((h) => rapikanHeader(h, namaAda))}
               />
               <PeringatanPerusahaanKosong nama={header.nama_perusahaan} />
             </label>
             <label className="block text-xs font-medium text-slate-600">
               Kapal *
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm uppercase"
                 value={header.nama_kapal}
                 onChange={(e) => setHeader((h) => ({ ...h, nama_kapal: e.target.value }))}
+                onBlur={() => setHeader((h) => rapikanHeader(h, namaAda))}
               />
             </label>
             <label className="block text-xs font-medium text-slate-600">
