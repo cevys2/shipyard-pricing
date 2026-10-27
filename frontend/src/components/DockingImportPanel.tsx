@@ -110,16 +110,14 @@ export default function DockingImportPanel({ token, onImported }: Props) {
     const to = from === "induk" ? "addendum" : "induk";
     const fromSetter = from === "induk" ? setInduk : setAddendum;
     const toSetter = to === "induk" ? setInduk : setAddendum;
-    let moved: EditRow | undefined;
-    fromSetter((prev) => {
-      if (!prev) return prev;
-      moved = prev.find((r) => r.key === key);
-      return prev.filter((r) => r.key !== key);
-    });
-    if (moved) {
-      const m = moved;
-      toSetter((prev) => [...(prev ?? []), m]);
-    }
+    // Barisnya diambil dari state render ini, BUKAN dari dalam updater setState: React
+    // menjalankan updater belakangan (saat render berikutnya), jadi variabel yang diisi
+    // di dalamnya masih kosong waktu dibaca di sini -- barisnya terhapus dari tabel asal
+    // dan tidak pernah sampai ke tabel tujuan.
+    const m = (from === "induk" ? induk : addendum)?.find((r) => r.key === key);
+    if (!m) return;
+    fromSetter((prev) => (prev ? prev.filter((r) => r.key !== key) : prev));
+    toSetter((prev) => [...(prev ?? []), m]);
   }
 
   async function commit() {
