@@ -192,7 +192,10 @@ export default function DashboardPage({ auth, onLogout }: Props) {
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col">
+      {/* min-w-0: anak flex defaultnya tidak boleh lebih sempit dari isinya yang terlebar. Tanpa
+          ini satu grafik selebar 650px memaksa seluruh halaman bergeser ke samping di layar
+          sempit; dengan ini grafik mengecil dan tabel menggulir di dalam kotaknya sendiri. */}
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Tinggi dikunci setinggi versi yang ada kotak carinya, supaya halaman tidak melompat
             2px waktu pindah ke tab yang tidak punya kotak cari. */}
         <header className="flex min-h-[71px] items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
