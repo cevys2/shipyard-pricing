@@ -4,6 +4,12 @@ Bentuknya mengikuti Biaya Docking KMP Gerbang Samudra 3 2026 versi final (6 Okto
 judul, data kapal, description, tabel SCOPE OF WORK persis urutan repair list, lalu tepat di
 bawah item terakhir Jumlah / PPN 11% / TOTAL, terbilang, dan tanda tangan.
 
+Kecuali penomoran tabelnya (27 Oktober 2026). GS3 final menaruh semua nomor di kolom A, jadi
+"1", "1.1", "a.", lalu "1" lagi di bawah "b." berderet tanpa terlihat mana anak mana. Sekarang
+tiap tingkat punya kolom nomornya sendiri (A-E) dan teksnya mulai satu kolom di kanannya,
+seperti Biaya Docking Rhama Giri Nusa buatan tangan. Nomornya tetap nomor asli repair list --
+dinomori ulang berarti tidak bisa lagi dicocokkan dengan dokumen klien waktu nego.
+
 **Harga satuan sengaja dikosongkan.** Biaya Docking adalah harga PEMBUKA nego, bukan harga
 deal -- dan isi katalog justru harga deal. Mengisinya dari katalog berarti menawarkan harga
 akhir sebagai harga awal. Harganya diisi di Excel; semua angka di bawahnya ikut lewat rumus.
@@ -27,8 +33,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 # jabatannya berganti, ganti di sini.
 PENANDA_TANGAN = ("Alief Febriandy Ramadhan", "VP Business & Marketing")
 
-_LEBAR = {"A": 6, "B": 20, "C": 42, "D": 8, "E": 8, "F": 15, "G": 17, "H": 24}
-_KOLOM_AKHIR = 8  # H
+# A = nomor tingkat 0, B-E = nomor tingkat 1-4, F = teks. B:F selebar B:C lama (62), jadi
+# halaman cetaknya tidak ikut melebar.
+_LEBAR = {"A": 6, "B": 5, "C": 5, "D": 5, "E": 5, "F": 42, "G": 8, "H": 8, "I": 15, "J": 17, "K": 24}
+_TEKS = 6  # F
+_TINGKAT_MAKS = _TEKS - 2
+_QTY, _SAT, _HARGA, _JUMLAH, _KET = 7, 8, 9, 10, 11
+_KOLOM_AKHIR = _KET
 
 _TIPIS = Side(style="thin")
 _GANDA = Side(style="double")
@@ -158,11 +169,12 @@ def _bingkai(ws, r1: int, r2: int):
             )
 
 
-def _tinggi(teks: str, indent: int) -> float:
-    # ponytail: perkiraan dari jumlah huruf (~70 huruf Arial 10 per baris di kolom B:C, diukur
-    # dari PDF Excel). Excel tidak menyesuaikan tinggi sel gabungan sendiri; kalau sesekali
-    # kurang, tarik di Excel.
-    baris = max(1, math.ceil(len(teks) / max(20, 70 - 3 * indent)))
+def _tinggi(teks: str, kolom_awal: int) -> float:
+    # ponytail: perkiraan dari jumlah huruf (~70 huruf Arial 10 per baris selebar B:F = 62,
+    # diukur dari PDF Excel). Excel tidak menyesuaikan tinggi sel gabungan sendiri; kalau
+    # sesekali kurang, tarik di Excel.
+    lebar = sum(_LEBAR[chr(64 + c)] for c in range(kolom_awal, _TEKS + 1))
+    baris = max(1, math.ceil(len(teks) / max(20, 70 * lebar / 62)))
     return max(15.0, 13.0 * baris + 2)
 
 
@@ -174,44 +186,48 @@ def _kepala(ws, kapal: dict, tanggal: date) -> int:
     ws.row_dimensions[1].height = 24
 
     _tulis(ws, 4, 1, "No. Revisi :")
-    _tulis(ws, 4, 6, "Tanggal Terbit :", align=Alignment(horizontal="right"))
-    ws.merge_cells("G4:H4")
-    _tulis(ws, 4, 7, tanggal, fmt="[$-421]dd mmmm yyyy;@", align=Alignment(horizontal="left"))
+    _tulis(ws, 4, _HARGA, "Tanggal Terbit :", align=Alignment(horizontal="right"))
+    ws.merge_cells("J4:K4")
+    _tulis(ws, 4, _JUMLAH, tanggal, fmt="[$-421]dd mmmm yyyy;@", align=Alignment(horizontal="left"))
 
+    # Label di B:E (selebar kolom B lama), nilai di F.
     _pita(ws, 5, "DATA - DATA KAPAL")
     for k, (kunci, label) in enumerate(_KIRI):
         r = 6 + k
         _tulis(ws, r, 1, k + 1, align=Alignment(horizontal="center"))
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=5)
         _tulis(ws, r, 2, label)
-        _tulis(ws, r, 3, _teks_nilai(kapal, kunci), _F_TEKS_TEBAL)
+        _tulis(ws, r, _TEKS, _teks_nilai(kapal, kunci), _F_TEKS_TEBAL)
     for k, (kunci, nomor, label) in enumerate(_KANAN):
         r = 6 + k
         if nomor:
-            _tulis(ws, r, 4, int(nomor), align=Alignment(horizontal="center"))
-        ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
-        _tulis(ws, r, 5, label, _F_TEKS_TEBAL if kunci is None else _F_TEKS)
+            _tulis(ws, r, _QTY, int(nomor), align=Alignment(horizontal="center"))
+        ws.merge_cells(start_row=r, start_column=_SAT, end_row=r, end_column=_JUMLAH)
+        _tulis(ws, r, _SAT, label, _F_TEKS_TEBAL if kunci is None else _F_TEKS)
         if kunci:
-            _tulis(ws, r, 8, _teks_nilai(kapal, kunci), _F_TEKS_TEBAL)
+            _tulis(ws, r, _KET, _teks_nilai(kapal, kunci), _F_TEKS_TEBAL)
 
     nama, _ = _nilai(kapal, "nama_kapal")
     pemilik, _ = _nilai(kapal, "pemilik")
     _pita(ws, 17, "DESCRIPTION")
     _tulis(ws, 18, 1, 1, _F_TEKS_TEBAL, Alignment(horizontal="center"))
-    ws.merge_cells("B18:H18")
+    ws.merge_cells("B18:K18")
     _tulis(ws, 18, 2, f'Biaya pelaksanaan pekerjaan Docking kapal "{nama or ""}", berdasarkan :', _F_TEKS_TEBAL)
+    ws.merge_cells("B19:E19")
     _tulis(ws, 19, 2, "1.1", _F_TEKS_TEBAL, Alignment(horizontal="center"))
-    _tulis(ws, 19, 3, f"Surat dari {pemilik or ''}".rstrip(), _F_TEKS_TEBAL)
+    _tulis(ws, 19, _TEKS, f"Surat dari {pemilik or ''}".rstrip(), _F_TEKS_TEBAL)
     for k, label in enumerate(_SURAT):
+        ws.merge_cells(start_row=20 + k, start_column=2, end_row=20 + k, end_column=5)
         _tulis(ws, 20 + k, 2, label, align=Alignment(horizontal="right", indent=1))
-        _tulis(ws, 20 + k, 3, ":")
+        _tulis(ws, 20 + k, _TEKS, ":")
 
     _pita(ws, 27, "SCOPE OF WORK")
-    for rentang, teks in (("A28:A29", "NO."), ("B28:C29", "U R A I A N"), ("D28:D29", "QTY"),
-                          ("E28:E29", "SAT."), ("F28:G28", "HARGA (Rp.)"), ("H28:H29", "KETERANGAN")):
+    for rentang, teks in (("A28:A29", "NO."), ("B28:F29", "U R A I A N"), ("G28:G29", "QTY"),
+                          ("H28:H29", "SAT."), ("I28:J28", "HARGA (Rp.)"), ("K28:K29", "KETERANGAN")):
         ws.merge_cells(rentang)
         _tulis(ws, int(rentang[1:3]), ord(rentang[0]) - 64, teks, _F_PITA, _TENGAH)
-    _tulis(ws, 29, 6, "Satuan", _F_PITA, _TENGAH)
-    _tulis(ws, 29, 7, "Jumlah", _F_PITA, _TENGAH)
+    _tulis(ws, 29, _HARGA, "Satuan", _F_PITA, _TENGAH)
+    _tulis(ws, 29, _JUMLAH, "Jumlah", _F_PITA, _TENGAH)
     _grid(ws, 28, 29)
     for r in (28, 29):
         for c in range(1, _KOLOM_AKHIR + 1):
@@ -224,25 +240,37 @@ def _isi_tabel(ws, baris: list[dict], r0: int) -> int:
     for k, b in enumerate(baris):
         r = r0 + k
         font = _F_TABEL_TEBAL if b["seksi"] else _F_TABEL
-        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
-        _tulis(ws, r, 1, b["no"] or None, font, Alignment(horizontal="center", vertical="top"))
-        _tulis(ws, r, 2, b["uraian"], font,
-               Alignment(vertical="top", wrap_text=True, indent=b["indent"] * 2))
+        # Nomor di kolom tingkatnya, teks mulai satu kolom di kanannya sampai F.
+        # ponytail: lima kolom nomor; tingkat 5 ke atas (belum pernah ada) ditaruh di tingkat 4.
+        t = min(b["tingkat"], _TINGKAT_MAKS)
+        _tulis(ws, r, 1 + t, b["no"] or None, font,
+               Alignment(horizontal="center" if t == 0 else "left", vertical="top"))
+        if 2 + t < _TEKS:
+            ws.merge_cells(start_row=r, start_column=2 + t, end_row=r, end_column=_TEKS)
+        _tulis(ws, r, 2 + t, b["uraian"], font, Alignment(vertical="top", wrap_text=True))
         qty = b["qty"]
         fmt = "#,##0" if isinstance(qty, (int, float)) and float(qty).is_integer() else "#,##0.00"
-        _tulis(ws, r, 4, qty, font, Alignment(horizontal="right", vertical="top"), fmt)
-        _tulis(ws, r, 5, b["satuan"], font, Alignment(horizontal="center", vertical="top"))
-        _tulis(ws, r, 6, None, font, Alignment(vertical="top"), _AKUNTANSI)
+        _tulis(ws, r, _QTY, qty, font, Alignment(horizontal="right", vertical="top"), fmt)
+        _tulis(ws, r, _SAT, b["satuan"], font, Alignment(horizontal="center", vertical="top"))
+        _tulis(ws, r, _HARGA, None, font, Alignment(vertical="top"), _AKUNTANSI)
         # Rumus Jumlah di setiap baris ber-QTY, termasuk judul seksi yang ber-QTY ("I DOCKING/
         # GENERAL SERVICE 1 ls" di berkas Basarnas). Baris tanpa QTY tidak diberi rumus: harga
         # yang diisi di sana terlihat tanpa Jumlah, bukan diam-diam dihitung nol.
-        jumlah = f"=F{r}*D{r}" if qty is not None else None
-        _tulis(ws, r, 7, jumlah, font, Alignment(vertical="top"), _AKUNTANSI)
-        _tulis(ws, r, 8, b["keterangan"], Font(name="Arial", size=9, italic=True),
+        jumlah = f"=I{r}*G{r}" if qty is not None else None
+        _tulis(ws, r, _JUMLAH, jumlah, font, Alignment(vertical="top"), _AKUNTANSI)
+        _tulis(ws, r, _KET, b["keterangan"], Font(name="Arial", size=9, italic=True),
                Alignment(vertical="top", wrap_text=True))
-        ws.row_dimensions[r].height = _tinggi(b["uraian"], b["indent"])
+        ws.row_dimensions[r].height = _tinggi(b["uraian"], 2 + t)
     akhir = r0 + len(baris) - 1
     _grid(ws, r0, akhir)
+    # Tanpa garis tegak di antara kolom nomor B-F: satu blok uraian, seperti daftar bernomor
+    # di Word, bukan kotak-kotak kecil di depan tiap teks.
+    for r in range(r0, akhir + 1):
+        for c in range(2, _TEKS + 1):
+            b = ws.cell(r, c).border
+            ws.cell(r, c).border = Border(left=b.left if c == 2 else None,
+                                          right=b.right if c == _TEKS else None,
+                                          top=b.top, bottom=b.bottom)
     return akhir
 
 
@@ -283,38 +311,38 @@ def buat(lingkup: dict, tanggal: date) -> bytes:
     # Tepat di bawah item terakhir: Jumlah, PPN 11%, TOTAL. Tidak ada apa pun di antaranya.
     rj = akhir + 1
     for k, (label, rumus) in enumerate((
-        ("Jumlah Rp.", f"=SUM(G{r0}:G{akhir})"),
-        ("PPN 11% Rp.", f"=G{rj}*11%"),
-        ("TOTAL Rp.", f"=G{rj}+G{rj + 1}"),
+        ("Jumlah Rp.", f"=SUM(J{r0}:J{akhir})"),
+        ("PPN 11% Rp.", f"=J{rj}*11%"),
+        ("TOTAL Rp.", f"=J{rj}+J{rj + 1}"),
     )):
-        _tulis(ws, rj + k, 6, label, _F_TABEL_TEBAL, Alignment(horizontal="right"))
-        _tulis(ws, rj + k, 7, rumus, _F_TABEL_TEBAL, fmt=_AKUNTANSI)
-    _grid(ws, rj, rj + 2, 6, 7)
-    ws.cell(rj + 2, 7).border = Border(left=_TIPIS, right=_TIPIS, top=_TIPIS, bottom=_GANDA)
-    _terbilang(wb, f"G{rj + 2}")
+        _tulis(ws, rj + k, _HARGA, label, _F_TABEL_TEBAL, Alignment(horizontal="right"))
+        _tulis(ws, rj + k, _JUMLAH, rumus, _F_TABEL_TEBAL, fmt=_AKUNTANSI)
+    _grid(ws, rj, rj + 2, _HARGA, _JUMLAH)
+    ws.cell(rj + 2, _JUMLAH).border = Border(left=_TIPIS, right=_TIPIS, top=_TIPIS, bottom=_GANDA)
+    _terbilang(wb, f"J{rj + 2}")
 
     rt = rj + 4
-    ws.merge_cells(start_row=rt, start_column=1, end_row=rt, end_column=2)
+    ws.merge_cells(start_row=rt, start_column=1, end_row=rt, end_column=5)
     _tulis(ws, rt, 1, "Terbilang :", _F_PITA, Alignment(vertical="center"))
-    ws.merge_cells(start_row=rt, start_column=3, end_row=rt, end_column=_KOLOM_AKHIR)
-    _tulis(ws, rt, 3, "=terbilang!$B$6", Font(name="Calibri", size=12, bold=True, italic=True), _TENGAH)
+    ws.merge_cells(start_row=rt, start_column=_TEKS, end_row=rt, end_column=_KOLOM_AKHIR)
+    _tulis(ws, rt, _TEKS, "=terbilang!$B$6", Font(name="Calibri", size=12, bold=True, italic=True), _TENGAH)
     ws.row_dimensions[rt].height = 32
-    _grid(ws, rt, rt, 3, _KOLOM_AKHIR)
+    _grid(ws, rt, rt, _TEKS, _KOLOM_AKHIR)
 
     rs = rt + 2
     pemilik, _ = _nilai(kapal, "pemilik")
     _tulis(ws, rs, 2, "Disetujui,")
-    _tulis(ws, rs, 6, "Jakarta,", align=Alignment(horizontal="right"))
-    _tulis(ws, rs, 7, tanggal, fmt="[$-421]dd mmmm yyyy;@", align=Alignment(horizontal="left"))
+    _tulis(ws, rs, _HARGA, "Jakarta,", align=Alignment(horizontal="right"))
+    _tulis(ws, rs, _JUMLAH, tanggal, fmt="[$-421]dd mmmm yyyy;@", align=Alignment(horizontal="left"))
     _tulis(ws, rs + 1, 2, pemilik, _F_PITA)
-    _tulis(ws, rs + 1, 6, "PT. DUKUH RAYA Shipyard", _F_PITA)
-    _tulis(ws, rs + 6, 6, PENANDA_TANGAN[0], Font(name="Berlin Sans FB Demi", size=11, underline="single"))
-    _tulis(ws, rs + 7, 6, PENANDA_TANGAN[1], Font(name="Calibri", size=11, italic=True))
+    _tulis(ws, rs + 1, _HARGA, "PT. DUKUH RAYA Shipyard", _F_PITA)
+    _tulis(ws, rs + 6, _HARGA, PENANDA_TANGAN[0], Font(name="Berlin Sans FB Demi", size=11, underline="single"))
+    _tulis(ws, rs + 7, _HARGA, PENANDA_TANGAN[1], Font(name="Calibri", size=11, italic=True))
     ra = rs + 8
     _bingkai(ws, 1, ra)
 
     ws.sheet_view.showGridLines = False
-    ws.print_area = f"A1:H{ra}"
+    ws.print_area = f"A1:K{ra}"
     ws.print_title_rows = "28:29"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = "portrait"

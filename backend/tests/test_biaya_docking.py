@@ -85,11 +85,57 @@ def test_gaya_basarnas_volume_dua_kolom_dan_uraian_melebar():
         (None, "-", "1 x Primer", 273, "m²", 200),
     ]
     lingkup = baca_lingkup(_berkas(rows), "basarnas.xlsx")
-    assert [(b["uraian"], b["qty"], b["satuan"]) for b in lingkup["baris"]] == [
-        ("Pekerjaan Docking/General Service", 1, "Ls"),
-        ("LAMBUNG KAPAL", None, None),
-        ("a Pembersihan lambung", 273, "m²"),
-        ("- 1 x Primer", 273, "m²"),
+    assert [(b["no"], b["uraian"], b["qty"], b["satuan"]) for b in lingkup["baris"]] == [
+        ("A", "Pekerjaan Docking/General Service", 1, "Ls"),
+        ("B", "LAMBUNG KAPAL", None, None),
+        ("a", "Pembersihan lambung", 273, "m²"),
+        ("-", "1 x Primer", 273, "m²"),
+    ]
+
+
+def test_tingkat_gaya_gs3_dibaca_dari_urutan_nomor():
+    """Semua nomor di kolom NO. "1" sesudah "b." itu anak b., bukan butir teratas baru."""
+    rows = [
+        ("NO.", "URAIAN", "QTY", "SAT."),
+        ("I", "SEA CHEST dan SEA VALVE"),
+        (1, "Kotak Sea Chest"),
+        (1.1, "Buka plat sea greating", 5, "buah"),
+        (2, "Valve dan strainer"),
+        (2.1, "Valve"),
+        ("a.", "Valve dilepas dari kedudukannya"),
+        ("b.", "Valve sea chest kanan"),
+        (1, "Valve Uk. 10K 200", 1, "buah"),
+        (2, "Valve Uk. 10K 150", 1, "buah"),
+        ("c.", "Valve sea chest kiri"),
+        (1, "Valve Uk. 10K 200", 1, "buah"),
+        ("II", "LAIN - LAIN"),
+        (None, "Pekerjaan tambahan"),  # tanpa nomor, langsung di bawah seksi
+        (1, "Cleaning kamar mesin", 10, "m2"),
+    ]
+    lingkup = baca_lingkup(_berkas(rows), "gs3.xlsx")
+    assert [(b["no"], b["tingkat"]) for b in lingkup["baris"]] == [
+        ("I", 0), ("1", 0), ("1.1", 1), ("2", 0), ("2.1", 1), ("a.", 2), ("b.", 2),
+        ("1", 3), ("2", 3), ("c.", 2), ("1", 3), ("II", 0), ("", 0), ("1", 0),
+    ]
+
+
+def test_tingkat_gaya_basarnas_dibaca_dari_kolomnya():
+    """Nomor anak duduk di selnya sendiri di dalam wilayah uraian; kolomnya = tingkatnya."""
+    rows = [
+        ("NO", "URAIAN", None, None, "QTY", "SAT"),
+        (1, "Lambung Kapal"),
+        (None, "c", "Perawatan Kotak Laut"),
+        (None, None, "1).", "Pembersihan 8 unit lubang", 8, "Unit"),
+        (None, None, None, "Material plat aluminium"),  # teks tanpa nomor, sejajar teks 1).
+        (None, "d", "Penggantian anode", None, 37, "Unit"),
+    ]
+    lingkup = baca_lingkup(_berkas(rows), "basarnas.xlsx")
+    assert [(b["no"], b["uraian"], b["tingkat"]) for b in lingkup["baris"]] == [
+        ("1", "Lambung Kapal", 0),
+        ("c", "Perawatan Kotak Laut", 1),
+        ("1).", "Pembersihan 8 unit lubang", 2),
+        ("", "Material plat aluminium", 2),
+        ("d", "Penggantian anode", 1),
     ]
 
 
@@ -112,24 +158,28 @@ def test_file_biaya_docking_harga_kosong_rumus_hidup():
     r0 = 30
     akhir = r0 + len(lingkup["baris"]) - 1
     assert ws.cell(r0, 2).value == "PELAYANAN UMUM KAPAL"
-    assert ws.cell(akhir, 2).value == "Valve Uk. 10K 200"
 
     for k, b in enumerate(lingkup["baris"]):
         r = r0 + k
-        assert ws.cell(r, 6).value is None  # harga satuan: diisi Lutfi di Excel
-        assert ws.cell(r, 7).value == (f"=F{r}*D{r}" if b["qty"] is not None else None)
+        # Nomor di kolom tingkatnya (A = tingkat 0), teks satu kolom di kanannya.
+        assert ws.cell(r, 1 + b["tingkat"]).value == (b["no"] or None)
+        assert ws.cell(r, 2 + b["tingkat"]).value == b["uraian"]
+        assert ws.cell(r, 9).value is None  # harga satuan: diisi Lutfi di Excel
+        assert ws.cell(r, 10).value == (f"=I{r}*G{r}" if b["qty"] is not None else None)
+    # "1 Valve Uk. 10K 200" anak "a." anak "C": nomornya di E, teksnya di F.
+    assert (ws.cell(akhir, 5).value, ws.cell(akhir, 6).value) == ("1", "Valve Uk. 10K 200")
 
     # Tepat di bawah item terakhir, tanpa apa pun di antaranya.
-    assert [ws.cell(akhir + k, 6).value for k in (1, 2, 3)] == ["Jumlah Rp.", "PPN 11% Rp.", "TOTAL Rp."]
-    assert ws.cell(akhir + 1, 7).value == f"=SUM(G{r0}:G{akhir})"
-    assert ws.cell(akhir + 2, 7).value == f"=G{akhir + 1}*11%"
-    assert ws.cell(akhir + 3, 7).value == f"=G{akhir + 1}+G{akhir + 2}"
+    assert [ws.cell(akhir + k, 9).value for k in (1, 2, 3)] == ["Jumlah Rp.", "PPN 11% Rp.", "TOTAL Rp."]
+    assert ws.cell(akhir + 1, 10).value == f"=SUM(J{r0}:J{akhir})"
+    assert ws.cell(akhir + 2, 10).value == f"=J{akhir + 1}*11%"
+    assert ws.cell(akhir + 3, 10).value == f"=J{akhir + 1}+J{akhir + 2}"
 
     # Terbilang ikut TOTAL lewat sheet tersembunyi, bukan teks mati.
     tb = wb["terbilang"]
     assert tb.sheet_state == "hidden"
-    assert tb["B1"].value == f"=ROUND('Biaya Docking'!G{akhir + 3},0)"
-    assert ws.cell(akhir + 5, 3).value == "=terbilang!$B$6"
+    assert tb["B1"].value == f"=ROUND('Biaya Docking'!J{akhir + 3},0)"
+    assert ws.cell(akhir + 5, 6).value == "=terbilang!$B$6"
     assert tb.cell(115 + 1, 1).value == "Seratus Lima Belas"
 
 

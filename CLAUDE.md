@@ -165,6 +165,12 @@ Diketahui terbatas:
   bukan "memuat", karena dia diuji ke setiap sel termasuk nilai dan satuan (dijaga
   `tests/test_kunci_data_kapal.py`). Repair list GS3 asli: 17/18 kunci terisi (nomor order
   memang tidak ada di berkasnya). Format klien sendiri (repair list Basarnas, SPPBJ) belum didukung.
+  **Penomoran tabel bertingkat** (27 Oktober 2026, dipilih Lutfi): nomor tetap nomor asli repair
+  list, tapi tiap tingkat di kolomnya sendiri (A-E, teks di F) seperti Biaya Docking Rhama Giri
+  Nusa -- sengaja BEDA dari GS3 final yang menaruh semua nomor di kolom A. `tingkat` di
+  `baca_lingkup()` dibaca dari kolom nomor di berkas gaya Basarnas, dan dari urutan nomor di gaya
+  GS3 (`_tingkat_dari_nomor()`). Tidak dinomori ulang: nomornya harus bisa dicocokkan ke repair
+  list klien waktu nego.
 - **Analitik "Ke Mana Uangnya Pergi" cuma mencakup 40,4% baris** (3.243 dari 8.024,
   per 22 September 2026), dan cakupannya **tidak acak** — dia mengikuti jalur impor, jadi
   per kapal melompat dari 24% (SINDU TRITAMA) sampai 100% (PRATHITA IV). Karena itu

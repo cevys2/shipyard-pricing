@@ -587,10 +587,68 @@ def _teks_nomor(v) -> str:
     return str(v).strip()
 
 
+_POLA_NOMOR = re.compile(r"\(?(\d+(?:\.\d+)*|[A-Za-z]|[ivxIVX]{2,5})\)?\.?")
+
+
+def _gaya(no: str) -> tuple[str, tuple[int, ...]] | None:
+    """Jenis dan nilai sebuah nomor butir: "2.1" -> ("d2", (2, 1)), "b." -> ("a", (2,)),
+    "-" -> ("-", ()). None kalau bukan nomor (teks biasa)."""
+    t = no.strip()
+    if t in ("-", "–", "•", "·"):
+        return "-", ()
+    m = _POLA_NOMOR.fullmatch(t)
+    if not m:
+        return None
+    k = m.group(1)
+    if k[0].isdigit():
+        angka = tuple(int(x) for x in k.split("."))
+        return f"d{len(angka)}", angka
+    if len(k) > 1:
+        return ("i" if k.islower() else "I", (nilai_romawi(k.upper()),)) if is_roman(k.upper()) else None
+    return "a" if k.islower() else "A", (ord(k.lower()) - 96,)
+
+
+def _berikut(lama: tuple[int, ...], baru: tuple[int, ...]) -> bool:
+    """`baru` nomor sesudah `lama` di daftar yang sama: 2 -> 3, b -> c, 2.1 -> 2.2, - -> -."""
+    return not baru or (lama[:-1] == baru[:-1] and baru[-1] == lama[-1] + 1)
+
+
+def _tingkat_dari_nomor(baris: list[dict]) -> None:
+    """Tingkat tiap baris di berkas yang SEMUA nomornya ada di kolom NO (gaya GS3).
+
+    Bentuk nomor saja tidak cukup: di GS3 "1" bisa butir teratas, bisa juga anak "b."
+    (Valve sea chest kanan -> 1 Valve Uk. 10K 200). Jadi yang menentukan urutannya: nomor
+    yang melanjutkan daftar yang sudah terbuka (b -> c) kembali ke tingkat daftar itu;
+    nomor yang memulai daftar (1, a, x.1) membuka tingkat baru di bawah baris sebelumnya.
+    Baris tanpa nomor sejajar dengan baris bernomor terakhir. Seksi romawi mengosongkan semuanya.
+    """
+    terbuka: list[tuple[str, tuple[int, ...]]] = []  # daftar yang sedang terbuka, per tingkat
+    for b in baris:
+        g = None if b["seksi"] else _gaya(b["no"])
+        if b["seksi"]:
+            terbuka, b["tingkat"] = [], 0
+        elif g is None:
+            b["tingkat"] = max(len(terbuka) - 1, 0)
+        else:
+            sama = [t for t, (jenis, _) in enumerate(terbuka) if jenis == g[0]]
+            t = next((t for t in reversed(sama) if _berikut(terbuka[t][1], g[1])), None)
+            # Nomor yang bukan lanjutan dan bukan awal daftar (salah ketik, "6.2" dua kali di
+            # Rhama Giri Nusa) ikut daftar sejenis yang terdekat, bukan membuka tingkat baru.
+            if t is None and sama and g[1] and g[1][-1] != 1:
+                t = sama[-1]
+            t = len(terbuka) if t is None else t
+            terbuka[t:] = [g]
+            b["tingkat"] = t
+
+
 def _baris_lingkup(rows, kolom, nomor_awal: int) -> tuple[list[dict], list[str]]:
     baris: list[dict] = []
     peringatan: list[str] = []
     romawi_terakhir = 0
+    # Gaya Basarnas: nomor anak ("a", "1).", "-") duduk di selnya sendiri DI DALAM wilayah
+    # uraian, satu kolom lebih ke kanan tiap turun tingkat. Di berkas seperti itu tingkatnya
+    # dibaca dari kolomnya; kalau tidak ada satu pun, dari nomor di kolom NO (gaya GS3).
+    nomor_di_uraian = False
     for nomor, row in enumerate(rows, start=nomor_awal):
         # Uraian boleh melebar beberapa kolom (berkas Basarnas menggeser teks satu kolom ke
         # kanan tiap turun tingkat). Semua sel di antara kolom URAIAN dan QTY ikut, dan
@@ -611,6 +669,11 @@ def _baris_lingkup(rows, kolom, nomor_awal: int) -> tuple[list[dict], list[str]]
                 f"itu akan error sampai QTY-nya dibetulkan di Excel."
             )
         no = _teks_nomor(_sel(row, kolom["no"]))
+        # Kolom NO = tingkat 0; sel ke-j wilayah uraian = teks tingkat j, nomor tingkat j+1.
+        tingkat = 0 if no else wilayah[0][0]
+        if not no and len(wilayah) > 1 and _gaya(wilayah[0][1]):
+            j, no = wilayah.pop(0)
+            tingkat, nomor_di_uraian = j + 1, True
         # Urutan, bukan bentuk, yang menentukan seksi -- sama dengan jebakan #3 di atas.
         seksi = False
         if no.isupper() and is_roman(no):
@@ -621,7 +684,7 @@ def _baris_lingkup(rows, kolom, nomor_awal: int) -> tuple[list[dict], list[str]]
             {
                 "no": no,
                 "uraian": " ".join(t for _, t in wilayah),
-                "indent": wilayah[0][0],
+                "tingkat": tingkat,
                 "qty": qty,
                 "satuan": _teks_sel(row, kolom["sat"]) or None,
                 "keterangan": _teks_sel(row, kolom["ket"]) or None,
@@ -633,6 +696,9 @@ def _baris_lingkup(rows, kolom, nomor_awal: int) -> tuple[list[dict], list[str]]
     # Yang dibuang cuma ekor SESUDAH baris ber-QTY terakhir, dan disebut -- bukan aturan
     # "berhenti di baris kosong", yang akan memotong tabel diam-diam kalau ada baris kosong
     # di tengahnya.
+    if not nomor_di_uraian:
+        _tingkat_dari_nomor(baris)
+
     berqty = [k for k, b in enumerate(baris) if b["qty"] is not None]
     if not berqty:
         raise ValueError(
