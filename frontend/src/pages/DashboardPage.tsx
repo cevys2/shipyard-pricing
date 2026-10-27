@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Calculator, FileText, LayoutGrid, LogOut, Package, Scale, Search, TrendingUp, Upload } from "lucide-react";
+import { ArrowLeft, FileText, LayoutGrid, LogOut, Package, Scale, Search, TrendingUp, Upload } from "lucide-react";
 import {
   api,
   PORTAL_URL,
@@ -117,18 +117,16 @@ export default function DashboardPage({ auth, onLogout }: Props) {
     }
   }
 
-  // Seluruh endpoint /ahsp memakai require_admin, jadi tabnya disembunyikan dari yang bukan
-  // admin. Kalau tetap ditampilkan, satu-satunya yang mereka dapat adalah "Admin only" mentah
-  // dari backend. Ini cuma tampilan -- yang benar-benar menjaga tetap backend.
   const navItems: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { key: "view", label: "Dashboard & Data", icon: LayoutGrid },
     // Tepat di bawah katalog: dibuka sambil menyusun penawaran, untuk item yang harganya
     // tidak diingat. Terbuka untuk semua yang login, sama seperti endpoint-nya.
     { key: "harga", label: "Harga Wajar", icon: Scale },
     { key: "material", label: "Katalog Material", icon: Package },
-    ...(auth.role === "admin"
-      ? [{ key: "ahsp" as Tab, label: "Struktur Biaya", icon: Calculator }]
-      : []),
+    // Struktur Biaya (AHSP) disembunyikan 27 Oktober 2026 atas permintaan Lutfi. AhspPanel,
+    // endpoint /ahsp, dan datanya tetap ada. Membukanya lagi = kembalikan baris ini, khusus
+    // admin (seluruh /ahsp memakai require_admin):
+    //   ...(auth.role === "admin" ? [{ key: "ahsp" as Tab, label: "Struktur Biaya", icon: Calculator }] : []),
     { key: "analitik", label: "Analitik", icon: TrendingUp },
     { key: "biaya", label: "Biaya Docking", icon: FileText },
     { key: "import", label: "Import Excel", icon: Upload },

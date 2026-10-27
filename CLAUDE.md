@@ -138,7 +138,8 @@ nilainya dari layar dulu — jangan cukup menambahkannya di SQL.
 Sudah jalan: katalog harga jasa, katalog material + riwayat harga, analitik tren material,
 analitik **nilai pekerjaan** (volume × harga; 22 September 2026), filter **jenis kapal**,
 AHSP/Struktur Biaya (Langkah 3 sampai Sesi 3.2, sudah di produksi — termasuk membuat material
-baru langsung dari layar AHSP), kategori pekerjaan kanonik (11 kategori, 126 alias),
+baru langsung dari layar AHSP; **tabnya disembunyikan 27 Oktober 2026**, kode dan data tetap,
+cara membukanya lagi ada di `navItems` DashboardPage), kategori pekerjaan kanonik (11 kategori, 126 alias),
 impor Repair List (mode ketiga di tab Import Excel), dan layar **Harga Wajar** (tab sendiri,
 22 Oktober 2026 -- lihat bagiannya di bawah).
 
