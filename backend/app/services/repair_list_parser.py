@@ -692,26 +692,34 @@ def _baris_lingkup(rows, kolom, nomor_awal: int) -> tuple[list[dict], list[str]]
             }
         )
 
-    # Blok tanda tangan di bawah tabel kadang menaruh teks di kolom uraian ("Mengetahui,").
-    # Yang dibuang cuma ekor SESUDAH baris ber-QTY terakhir, dan disebut -- bukan aturan
-    # "berhenti di baris kosong", yang akan memotong tabel diam-diam kalau ada baris kosong
-    # di tengahnya.
     if not nomor_di_uraian:
         _tingkat_dari_nomor(baris)
 
-    berqty = [k for k, b in enumerate(baris) if b["qty"] is not None]
-    if not berqty:
+    if not any(b["qty"] is not None for b in baris):
         raise ValueError(
             "Tidak ada satu baris pun yang punya QTY -- kolom QTY/VOL kemungkinan salah "
             "terbaca. Cek judul kolomnya di berkas."
         )
-    ekor = baris[berqty[-1] + 1 :]
+    # Blok tanda tangan di bawah tabel kadang menaruh teks di kolom uraian ("Mengetahui,").
+    # Yang dibuang cuma ekor SESUDAH baris pekerjaan terakhir, dan disebut -- bukan aturan
+    # "berhenti di baris kosong", yang akan memotong tabel diam-diam kalau ada baris kosong
+    # di tengahnya. Baris pekerjaan = ber-QTY ATAU bernomor: dulu cuma ber-QTY, dan repair
+    # list KN SAR Laksmana 241 kehilangan 129 pekerjaan (seksi permesinan dsb. tanpa QTY);
+    # Gilimanuk II kehilangan "3. NDT Vacuum Test Pekerjaan Lambung".
+    terakhir = max(k for k, b in enumerate(baris) if b["qty"] is not None or _bernomor(b))
+    ekor = baris[terakhir + 1 :]
     if ekor:
         peringatan.append(
-            f"{len(ekor)} baris tanpa QTY di bawah item terakhir tidak ikut (dianggap bukan "
-            f"pekerjaan), mulai dari '{ekor[0]['uraian'][:60]}'."
+            f"{len(ekor)} baris tanpa QTY dan tanpa nomor di bawah item terakhir tidak ikut "
+            f"(dianggap bukan pekerjaan), mulai dari '{ekor[0]['uraian'][:60]}'."
         )
-    return baris[: berqty[-1] + 1], peringatan
+    return baris[: terakhir + 1], peringatan
+
+
+def _bernomor(b: dict) -> bool:
+    """Nomor di kolom NO, di selnya sendiri, atau di awal teks ("3. NDT ...", "- Fumigasi")."""
+    u = b["uraian"]
+    return bool(b["no"] or _ANAK_HURUF.match(u) or _ANAK_ANGKA.match(u) or _ANAK_STRIP.match(u))
 
 
 def _data_kapal(rows) -> dict[str, dict]:

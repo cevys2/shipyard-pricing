@@ -72,6 +72,22 @@ def test_ekor_tanda_tangan_dibuang_dan_disebut():
     assert any("Mengetahui" in p for p in lingkup["peringatan"])
 
 
+def test_pekerjaan_tanpa_qty_di_akhir_tetap_ikut():
+    """Laksmana 241: seksi terakhir tanpa QTY sama sekali. Yang dibuang cuma tanda tangan."""
+    rows = [
+        ("NO", "URAIAN", "QTY", "SAT"),
+        ("A", "LAMBUNG KAPAL"),
+        (1, "Pengecatan lambung", 224, "m2"),
+        ("G", "Fumigasi"),  # bernomor di kolom NO, tanpa QTY
+        (None, "3. NDT Vacuum Test Pekerjaan Lambung"),  # nomor di awal teks (Gilimanuk II)
+        (None, "Mengetahui,"),
+        (None, "PRASETYO ADHI KURNIAWAN,S.T."),
+    ]
+    lingkup = baca_lingkup(_berkas(rows), "laksmana.xlsx")
+    assert [b["uraian"] for b in lingkup["baris"]][-2:] == ["Fumigasi", "3. NDT Vacuum Test Pekerjaan Lambung"]
+    assert any("2 baris" in p and "Mengetahui" in p for p in lingkup["peringatan"])
+
+
 def test_gaya_basarnas_volume_dua_kolom_dan_uraian_melebar():
     """VOL | SAT di baris sub-judul, "SATUAN" di baris judul = kolom HARGA satuan."""
     rows = [
